@@ -23,7 +23,8 @@
     "dev": "tsx src/cli.tsx",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "package:npm": "npm run build && npm pack --pack-destination release"
+    "package:npm": "npm run build && npm pack --pack-destination release",
+    "package:bin": "powershell -ExecutionPolicy Bypass -File scripts/build-binaries.ps1"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.206",
@@ -38,6 +39,7 @@
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
     "ink-testing-library": "^4.0.0",
+    "react-devtools-core": "^4.28.5",
     "tsx": "^4.23.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
