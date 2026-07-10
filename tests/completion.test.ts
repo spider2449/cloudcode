@@ -64,3 +64,32 @@ describe("argument provider", () => {
     expect(getSuggestions("/help x", 7, ctx())).toEqual([]);
   });
 });
+
+describe("@file provider", () => {
+  const files = ["src/cli.tsx", "src/ui/App.tsx", "README.md"];
+
+  it("suggests files for an @token before the cursor", () => {
+    const s = getSuggestions("look at @cli", 12, ctx({ listFiles: () => files }));
+    expect(s.map(x => x.value)).toEqual(["@src/cli.tsx"]);
+    expect(s[0]).toMatchObject({ replaceStart: 8, replaceEnd: 12, label: "src/cli.tsx" });
+  });
+
+  it("works with @ at the start of input", () => {
+    const s = getSuggestions("@READ", 5, ctx({ listFiles: () => files }));
+    expect(s.map(x => x.value)).toEqual(["@README.md"]);
+  });
+
+  it("takes priority over the argument provider", () => {
+    const s = getSuggestions("/model @cli", 11, ctx({ listFiles: () => files }));
+    expect(s[0].value).toBe("@src/cli.tsx");
+  });
+
+  it("returns nothing when no files match or no @token", () => {
+    expect(getSuggestions("@zzz", 4, ctx({ listFiles: () => files }))).toEqual([]);
+    expect(getSuggestions("plain text", 10, ctx({ listFiles: () => files }))).toEqual([]);
+  });
+
+  it("ignores an @ that is part of an email-like word", () => {
+    expect(getSuggestions("mail me a@b", 11, ctx({ listFiles: () => files }))).toEqual([]);
+  });
+});

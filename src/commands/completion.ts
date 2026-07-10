@@ -1,4 +1,5 @@
 import type { Command } from "./types.js";
+import { fuzzyFilter } from "./fileIndex.js";
 
 export interface Suggestion {
   value: string;
@@ -45,7 +46,21 @@ function argumentSuggestions(text: string, cursor: number, ctx: CompletionContex
   }));
 }
 
-const PROVIDERS = [argumentSuggestions, commandNameSuggestions];
+function fileSuggestions(text: string, cursor: number, ctx: CompletionContext): Suggestion[] {
+  // @token immediately before the cursor; @ must be at start or after whitespace
+  const before = text.slice(0, cursor);
+  const m = /(^|\s)@([\w./-]*)$/.exec(before);
+  if (!m) return [];
+  const atStart = m.index + m[1].length;
+  return fuzzyFilter(ctx.listFiles(), m[2]).map(p => ({
+    value: `@${p}`,
+    label: p,
+    replaceStart: atStart,
+    replaceEnd: cursor
+  }));
+}
+
+const PROVIDERS = [fileSuggestions, argumentSuggestions, commandNameSuggestions];
 
 export function getSuggestions(text: string, cursor: number, ctx: CompletionContext): Suggestion[] {
   for (const provider of PROVIDERS) {
