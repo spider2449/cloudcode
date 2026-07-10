@@ -47,6 +47,34 @@ describe("App", () => {
     expect(lastFrame()).toContain("hello from model");
   });
 
+  it("shows token usage and context percent after a result message", async () => {
+    const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
+    const usageQueryFn = (args: { prompt: AsyncIterable<unknown> }) => {
+      const gen = (async function* () {
+        yield { type: "system", subtype: "init", session_id: "sess-1" };
+        for await (const _ of args.prompt) {
+          yield { type: "assistant", message: { content: [{ type: "text", text: "hello from model" }] } };
+          yield {
+            type: "result", subtype: "success", total_cost_usd: 0.01, duration_ms: 5,
+            usage: { input_tokens: 9000, cache_read_input_tokens: 3000, cache_creation_input_tokens: 0, output_tokens: 345 }
+          };
+        }
+      })();
+      return Object.assign(gen, { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn() });
+    };
+    const { stdin, lastFrame } = render(
+      <App cwd="/p" providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index} queryFn={usageQueryFn as never} />
+    );
+    await wait();
+    stdin.write("hi");
+    await wait();
+    stdin.write("\r");
+    await wait(100);
+    expect(lastFrame()).toContain("12.3k tok");
+    expect(lastFrame()).toContain("(6%)");
+    expect(lastFrame()).toContain("$0.0100");
+  });
+
   it("shows an error notice instead of crashing when a slash command rejects", async () => {
     const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
     const rejectingQueryFn = (args: { prompt: AsyncIterable<unknown> }) => {

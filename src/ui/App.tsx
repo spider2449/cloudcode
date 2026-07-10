@@ -18,6 +18,7 @@ import { PermissionDialog } from "./PermissionDialog.js";
 import { StatusBar } from "./StatusBar.js";
 import { ResumePicker } from "./ResumePicker.js";
 import { WorkingIndicator } from "./WorkingIndicator.js";
+import { useGitStatus } from "./useGitStatus.js";
 import { loadMcpServers, formatMcpStatus } from "../agent/mcp.js";
 import { loadSkills, formatSkillList, type Skill } from "../agent/skills.js";
 import { mergeSkillCommands } from "../commands/skillCommands.js";
@@ -46,6 +47,12 @@ export function App(props: AppProps) {
   const [permissionQueue, setPermissionQueue] = useState<PermissionRequest[]>([]);
   const [showResumePicker, setShowResumePicker] = useState(props.openResumeOnStart ?? false);
   const [cost, setCost] = useState(0);
+  const [tokens, setTokens] = useState(0);
+  const [contextPct, setContextPct] = useState<number | undefined>(undefined);
+  const [turnCount, setTurnCount] = useState(0);
+  const startedAtRef = useRef(Date.now());
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const CONTEXT_WINDOW = 200_000;
   const [streamText, setStreamText] = useState("");
   const streamRef = useRef("");
   const [activeTool, setActiveTool] = useState<string | undefined>(undefined);
@@ -87,6 +94,14 @@ export function App(props: AppProps) {
       setActiveTool(undefined);
       const cost = (msg as { total_cost_usd?: number }).total_cost_usd;
       if (typeof cost === "number") setCost(prev => prev + cost);
+      const usage = (msg as { usage?: Record<string, number> }).usage;
+      if (usage) {
+        const input = (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
+        const output = usage.output_tokens ?? 0;
+        setTokens(prev => prev + input + output);
+        setContextPct(Math.min(100, Math.round((input / CONTEXT_WINDOW) * 100)));
+      }
+      setTurnCount(prev => prev + 1);
       setPhase("idle");
     }
   }
@@ -144,6 +159,13 @@ export function App(props: AppProps) {
     return () => { void sessionRef.current?.dispose(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => setElapsedMs(Date.now() - startedAtRef.current), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const git = useGitStatus(props.cwd, turnCount);
 
   async function restartSession(name: string, resume?: string): Promise<void> {
     await sessionRef.current?.dispose();
@@ -281,7 +303,11 @@ export function App(props: AppProps) {
       {!showResumePicker && phase !== "permission" && (
         <InputBox completionCtx={completionCtx} onSubmit={handleSubmit} disabled={phase === "streaming"} history={historyRef.current} />
       )}
-      <StatusBar provider={providerName} model={model} mode={mode} cwd={props.cwd} costUsd={cost} />
+      <StatusBar
+        provider={providerName} model={model} mode={mode} cwd={props.cwd} costUsd={cost}
+        gitBranch={git.branch} gitDirty={git.dirty}
+        tokens={tokens} contextPct={contextPct} elapsedMs={elapsedMs}
+      />
     </Box>
   );
 }
