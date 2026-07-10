@@ -27,6 +27,8 @@ function mockCtx(): CommandContext {
     notice: vi.fn(),
     clearSession: vi.fn().mockResolvedValue(undefined),
     setModel: vi.fn().mockResolvedValue(undefined),
+    availableModels: vi.fn().mockReturnValue([]),
+    currentModel: vi.fn().mockReturnValue(undefined),
     setPermissionMode: vi.fn().mockResolvedValue(undefined),
     switchProvider: vi.fn().mockResolvedValue(undefined),
     openResumePicker: vi.fn(),

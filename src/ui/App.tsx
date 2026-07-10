@@ -16,6 +16,7 @@ import { MessageList } from "./MessageList.js";
 import { InputBox } from "./InputBox.js";
 import { PermissionDialog } from "./PermissionDialog.js";
 import { StatusBar } from "./StatusBar.js";
+import { fetchModels } from "../agent/models.js";
 import { ResumePicker } from "./ResumePicker.js";
 import { WorkingIndicator } from "./WorkingIndicator.js";
 import { useGitStatus } from "./useGitStatus.js";
@@ -74,10 +75,12 @@ export function App(props: AppProps) {
   const [themeName, setThemeName] = useState(() => loadThemeName());
   const skillsRef = useRef<Skill[]>([]);
   const fileIndexRef = useRef(new FileIndex(props.cwd));
+  const availableModelsRef = useRef<string[]>([]);
   const mcpServersRef = useRef<Record<string, Record<string, unknown>>>({});
   const completionCtx: CompletionContext = {
     registry,
     providerNames: () => Object.keys(props.providers),
+    availableModels: () => availableModelsRef.current,
     listFiles: () => fileIndexRef.current.list(),
     refreshFiles: () => fileIndexRef.current.refresh()
   };
@@ -118,6 +121,10 @@ export function App(props: AppProps) {
   }
 
   function createSession(name: string, resume?: string, modeOverride?: PermissionMode): AgentSession {
+    availableModelsRef.current = [];
+    void fetchModels(props.providers[name] ?? {}).then(models => {
+      availableModelsRef.current = models;
+    });
     mcpServersRef.current = loadMcpServers(props.cwd);
     skillsRef.current = loadSkills(props.cwd);
     setRegistry(mergeSkillCommands(buildRegistry(), skillsRef.current));
@@ -190,6 +197,8 @@ export function App(props: AppProps) {
     notice,
     clearSession: async () => { setItems([]); setStream(""); setActiveTool(undefined); await restartSession(providerName); },
     setModel: async m => { await sessionRef.current?.setModel(m); setModel(m); setServedModel(undefined); },
+    availableModels: () => availableModelsRef.current,
+    currentModel: () => model,
     setPermissionMode: async m => {
       const pm = m as PermissionMode;
       if (pm === "bypassPermissions") {

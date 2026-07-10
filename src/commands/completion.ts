@@ -12,6 +12,7 @@ export interface Suggestion {
 export interface CompletionContext {
   registry: Map<string, Command>;
   providerNames(): string[];
+  availableModels(): string[];
   listFiles(): string[];
   refreshFiles?(): void;
 }

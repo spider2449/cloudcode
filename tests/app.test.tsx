@@ -6,6 +6,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { App } from "../src/ui/App.js";
 import { SessionIndex } from "../src/agent/sessionIndex.js";
+import { fetchModels } from "../src/agent/models.js";
+
+vi.mock("../src/agent/models.js", () => ({
+  fetchModels: vi.fn().mockResolvedValue(["model-a", "model-b"])
+}));
 
 const wait = (ms = 30) => new Promise(r => setTimeout(r, ms));
 
@@ -36,6 +41,12 @@ function makeApp() {
 }
 
 describe("App", () => {
+  it("fetches the provider model list on session creation", async () => {
+    makeApp();
+    await wait(50);
+    expect(vi.mocked(fetchModels)).toHaveBeenCalledWith({});
+  });
+
   it("seeds session model and permission mode from initial props", async () => {
     const captured: Record<string, unknown>[] = [];
     const capturingQueryFn = (args: { prompt: AsyncIterable<unknown>; options: Record<string, unknown> }) => {

@@ -5,6 +5,8 @@ export interface CommandContext {
   notice(text: string): void;
   clearSession(): Promise<void>;
   setModel(model: string): Promise<void>;
+  availableModels(): string[];
+  currentModel(): string | undefined;
   setPermissionMode(mode: PermissionMode): Promise<void>;
   switchProvider(name: string): Promise<void>;
   openResumePicker(): void;
