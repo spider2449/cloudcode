@@ -1,15 +1,49 @@
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 
+export type DiffLine = { sign: "+" | "-" | " "; text: string };
+
 export type DisplayItem =
   | { kind: "user"; text: string }
   | { kind: "assistant"; text: string }
   | { kind: "tool"; label: string }
   | { kind: "notice"; text: string }
   | { kind: "error"; text: string }
-  | { kind: "result"; costUsd?: number; durationMs?: number };
+  | { kind: "result"; costUsd?: number; durationMs?: number }
+  | { kind: "diff"; lines: DiffLine[] };
 
 function truncate(s: string, max = 80): string {
   return s.length > max ? s.slice(0, max - 1) + "…" : s;
+}
+
+export function streamDelta(msg: SDKMessage): string | undefined {
+  const m = msg as Record<string, unknown>;
+  if (m.type !== "stream_event") return undefined;
+  const event = m.event as { type?: string; delta?: { type?: string; text?: string } } | undefined;
+  if (event?.type === "content_block_delta" && event.delta?.type === "text_delta") {
+    return event.delta.text;
+  }
+  return undefined;
+}
+
+export function diffLines(name: string, input: Record<string, unknown>, cap = 20): DiffLine[] {
+  const lines: DiffLine[] = [];
+  if (name === "Edit") {
+    if (typeof input.old_string === "string" && input.old_string !== "") {
+      for (const l of input.old_string.split("\n")) lines.push({ sign: "-", text: l });
+    }
+    if (typeof input.new_string === "string" && input.new_string !== "") {
+      for (const l of input.new_string.split("\n")) lines.push({ sign: "+", text: l });
+    }
+  } else if (name === "Write") {
+    if (typeof input.content === "string" && input.content !== "") {
+      for (const l of input.content.split("\n")) lines.push({ sign: "+", text: l });
+    }
+  }
+  if (lines.length > cap) {
+    const extra = lines.length - cap;
+    return [...lines.slice(0, cap), { sign: " ", text: `… (+${extra} more)` }];
+  }
+  return lines;
 }
 
 export function toolLabel(name: string, input: Record<string, unknown>): string {
@@ -33,6 +67,8 @@ export function toDisplayItems(msg: SDKMessage): DisplayItem[] {
           kind: "tool",
           label: toolLabel(String(block.name), (block.input ?? {}) as Record<string, unknown>)
         });
+        const dl = diffLines(String(block.name), (block.input ?? {}) as Record<string, unknown>);
+        if (dl.length > 0) items.push({ kind: "diff", lines: dl });
       }
     }
     return items;

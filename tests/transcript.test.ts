@@ -46,3 +46,61 @@ describe("toDisplayItems", () => {
     expect(toDisplayItems({ type: "system", subtype: "init" } as unknown as SDKMessage)).toEqual([]);
   });
 });
+
+import { streamDelta, diffLines } from "../src/ui/transcript.js";
+
+describe("streamDelta", () => {
+  it("extracts text deltas from stream events", () => {
+    const msg = {
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "text_delta", text: "hel" } }
+    } as unknown as SDKMessage;
+    expect(streamDelta(msg)).toBe("hel");
+  });
+
+  it("returns undefined for other messages and non-text deltas", () => {
+    expect(streamDelta({ type: "assistant", message: { content: [] } } as unknown as SDKMessage)).toBeUndefined();
+    expect(streamDelta({
+      type: "stream_event",
+      event: { type: "content_block_delta", delta: { type: "input_json_delta", partial_json: "{" } }
+    } as unknown as SDKMessage)).toBeUndefined();
+  });
+});
+
+describe("diffLines", () => {
+  it("maps Edit old/new strings to -/+ lines", () => {
+    expect(diffLines("Edit", { old_string: "a\nb", new_string: "c" })).toEqual([
+      { sign: "-", text: "a" },
+      { sign: "-", text: "b" },
+      { sign: "+", text: "c" }
+    ]);
+  });
+
+  it("maps Write content to + lines and caps with ellipsis", () => {
+    const content = Array.from({ length: 30 }, (_, i) => `line${i}`).join("\n");
+    const lines = diffLines("Write", { content });
+    expect(lines).toHaveLength(21);
+    expect(lines[20]).toEqual({ sign: " ", text: "… (+10 more)" });
+  });
+
+  it("returns empty for other tools", () => {
+    expect(diffLines("Bash", { command: "ls" })).toEqual([]);
+  });
+});
+
+describe("toDisplayItems diff emission", () => {
+  it("emits a diff item after Edit tool chips", () => {
+    const msg = {
+      type: "assistant",
+      message: { content: [
+        { type: "tool_use", name: "Edit", input: { file_path: "/x.ts", old_string: "a", new_string: "b" } }
+      ] }
+    } as unknown as SDKMessage;
+    const items = toDisplayItems(msg);
+    expect(items[0].kind).toBe("tool");
+    expect(items[1]).toEqual({
+      kind: "diff",
+      lines: [{ sign: "-", text: "a" }, { sign: "+", text: "b" }]
+    });
+  });
+});
