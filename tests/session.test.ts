@@ -88,3 +88,63 @@ describe("AgentSession", () => {
     await expect(session.interrupt()).resolves.toBeUndefined();
   });
 });
+
+describe("AgentSession MCP", () => {
+  it("passes mcpServers into query options and captures init tools", async () => {
+    let seenOptions: Record<string, unknown> = {};
+    const queryFn = (args: { prompt: AsyncIterable<unknown>; options: Record<string, unknown> }) => {
+      seenOptions = args.options;
+      const gen = (async function* () {
+        yield { type: "system", subtype: "init", session_id: "sess-1", tools: ["Bash", "mcp__github__get_repo"] };
+      })();
+      return Object.assign(gen, { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn() });
+    };
+    const session = new AgentSession({
+      providerName: "anthropic",
+      provider: {},
+      permissionMode: "default",
+      cwd: "/p",
+      mcpServers: { github: { command: "npx" } },
+      onMessage: () => {},
+      onPermissionRequest: () => {},
+      onSessionId: () => {},
+      queryFn: queryFn as never
+    });
+    session.start();
+    await vi.waitFor(() => expect(session.tools).toEqual(["Bash", "mcp__github__get_repo"]));
+    expect(seenOptions.mcpServers).toEqual({ github: { command: "npx" } });
+    await session.dispose();
+  });
+
+  it("mcpStatus returns SDK statuses, and [] when unsupported", async () => {
+    const statuses = [{ name: "github", status: "connected" }];
+    const withStatus = () => {
+      const gen = (async function* () {})();
+      return Object.assign(gen, {
+        interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn(),
+        mcpServerStatus: vi.fn().mockResolvedValue(statuses)
+      });
+    };
+    const s1 = new AgentSession({
+      providerName: "anthropic", provider: {}, permissionMode: "default", cwd: "/p",
+      onMessage: () => {}, onPermissionRequest: () => {}, onSessionId: () => {},
+      queryFn: withStatus as never
+    });
+    s1.start();
+    expect(await s1.mcpStatus()).toEqual(statuses);
+    await s1.dispose();
+
+    const without = () => {
+      const gen = (async function* () {})();
+      return Object.assign(gen, { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn() });
+    };
+    const s2 = new AgentSession({
+      providerName: "anthropic", provider: {}, permissionMode: "default", cwd: "/p",
+      onMessage: () => {}, onPermissionRequest: () => {}, onSessionId: () => {},
+      queryFn: without as never
+    });
+    s2.start();
+    expect(await s2.mcpStatus()).toEqual([]);
+    await s2.dispose();
+  });
+});

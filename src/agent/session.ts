@@ -1,6 +1,7 @@
 import { query, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { AsyncQueue } from "./asyncQueue.js";
 import { providerEnv, type ProviderConfig } from "./providers.js";
+import type { McpServerConfig, McpServerStatusEntry } from "./mcp.js";
 
 export type PermissionMode = "default" | "acceptEdits" | "bypassPermissions";
 
@@ -17,6 +18,7 @@ export interface AgentSessionOptions {
   permissionMode: PermissionMode;
   resume?: string;
   cwd: string;
+  mcpServers?: Record<string, McpServerConfig>;
   onMessage(msg: SDKMessage): void;
   onPermissionRequest(req: PermissionRequest): void;
   onSessionId(id: string): void;
@@ -27,6 +29,7 @@ export class AgentSession {
   private input = new AsyncQueue<SDKUserMessage>();
   private q: Query | undefined;
   sessionId: string | undefined;
+  tools: string[] = [];
 
   constructor(private opts: AgentSessionOptions) {}
 
@@ -39,6 +42,7 @@ export class AgentSession {
         permissionMode: this.opts.permissionMode,
         resume: this.opts.resume,
         cwd: this.opts.cwd,
+        mcpServers: this.opts.mcpServers as never,
         env: { ...process.env, ...providerEnv(this.opts.provider) },
         includePartialMessages: true,
         canUseTool: (toolName, input) =>
@@ -65,6 +69,7 @@ export class AgentSession {
         if (msg.type === "system" && "subtype" in msg && msg.subtype === "init") {
           this.sessionId = (msg as { session_id: string }).session_id;
           this.opts.onSessionId(this.sessionId);
+          this.tools = (msg as { tools?: string[] }).tools ?? [];
         }
         this.opts.onMessage(msg);
       }
@@ -100,6 +105,15 @@ export class AgentSession {
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {
     await this.q?.setPermissionMode(mode);
+  }
+
+  async mcpStatus(): Promise<McpServerStatusEntry[]> {
+    try {
+      const q = this.q as unknown as { mcpServerStatus?: () => Promise<McpServerStatusEntry[]> } | undefined;
+      return q?.mcpServerStatus ? await q.mcpServerStatus() : [];
+    } catch {
+      return [];
+    }
   }
 
   async dispose(): Promise<void> {
