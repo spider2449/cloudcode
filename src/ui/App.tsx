@@ -52,6 +52,7 @@ export function App(props: AppProps) {
   const [providerName, setProviderName] = useState(props.initialProvider);
   const [model, setModel] = useState<string | undefined>(modelFor(props.initialProvider));
   const [mode, setMode] = useState<PermissionMode>(props.initialMode ?? "default");
+  const [servedModel, setServedModel] = useState<string | undefined>(undefined);
   const [permissionQueue, setPermissionQueue] = useState<PermissionRequest[]>([]);
   const [showResumePicker, setShowResumePicker] = useState(props.openResumeOnStart ?? false);
   const [cost, setCost] = useState(0);
@@ -85,6 +86,8 @@ export function App(props: AppProps) {
   const setStream = (text: string) => { streamRef.current = text; setStreamText(text); };
 
   function handleMessage(msg: SDKMessage): void {
+    const served = (msg as { message?: { model?: string } }).message?.model;
+    if (served) setServedModel(served);
     const delta = streamDelta(msg);
     if (delta) { setStream(streamRef.current + delta); return; }
     const mapped = toDisplayItems(msg);
@@ -180,12 +183,13 @@ export function App(props: AppProps) {
     firstMessageRef.current = undefined;
     sessionRef.current = createSession(name, resume);
     setModel(modelFor(name));
+    setServedModel(undefined);
   }
 
   const ctx: CommandContext = {
     notice,
     clearSession: async () => { setItems([]); setStream(""); setActiveTool(undefined); await restartSession(providerName); },
-    setModel: async m => { await sessionRef.current?.setModel(m); setModel(m); },
+    setModel: async m => { await sessionRef.current?.setModel(m); setModel(m); setServedModel(undefined); },
     setPermissionMode: async m => {
       await sessionRef.current?.setPermissionMode(m as PermissionMode);
       setMode(m as PermissionMode);
@@ -315,7 +319,7 @@ export function App(props: AppProps) {
           <InputBox completionCtx={completionCtx} onSubmit={handleSubmit} disabled={phase === "streaming"} history={historyRef.current} />
         )}
         <StatusBar
-          provider={providerName} model={model} mode={mode} cwd={props.cwd} costUsd={cost}
+          provider={providerName} model={model} servedModel={servedModel} mode={mode} cwd={props.cwd} costUsd={cost}
           gitBranch={git.branch} gitDirty={git.dirty}
           tokens={tokens} contextPct={contextPct} elapsedMs={elapsedMs}
         />

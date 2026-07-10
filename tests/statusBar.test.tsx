@@ -40,6 +40,27 @@ describe("StatusBar", () => {
     expect(f).toContain("anthropic · default · /repo");
   });
 
+  it("shows requested→served when the API served a different model", () => {
+    const { lastFrame } = render(
+      <StatusBar provider="anthropic" model="claude-sonnet-5" servedModel="claude-sonnet-5-20260203" mode="default" cwd="/r" />
+    );
+    expect(lastFrame()).toContain("anthropic/claude-sonnet-5→claude-sonnet-5-20260203");
+  });
+
+  it("shows just the model when served matches requested", () => {
+    const { lastFrame } = render(
+      <StatusBar provider="anthropic" model="m1" servedModel="m1" mode="default" cwd="/r" />
+    );
+    expect(lastFrame()).toContain("anthropic/m1 ·");
+  });
+
+  it("shows the served model when no model was requested", () => {
+    const { lastFrame } = render(
+      <StatusBar provider="anthropic" servedModel="m2" mode="default" cwd="/r" />
+    );
+    expect(lastFrame()).toContain("anthropic/m2");
+  });
+
   it("shows tokens without percent when contextPct missing", () => {
     const { lastFrame } = render(
       <StatusBar provider="p" mode="default" cwd="/r" tokens={500} />

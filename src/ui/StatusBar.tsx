@@ -5,6 +5,7 @@ import { useTheme } from "./ThemeContext.js";
 interface Props {
   provider: string;
   model?: string;
+  servedModel?: string;
   mode: string;
   cwd: string;
   costUsd?: number;
@@ -29,10 +30,12 @@ export function formatElapsed(ms: number): string {
   return `${s}s`;
 }
 
-export function StatusBar({ provider, model, mode, cwd, costUsd, gitBranch, gitDirty, tokens, contextPct, elapsedMs }: Props) {
+export function StatusBar({ provider, model, servedModel, mode, cwd, costUsd, gitBranch, gitDirty, tokens, contextPct, elapsedMs }: Props) {
   const theme = useTheme();
   const segments: string[] = [];
-  segments.push(provider + (model ? `/${model}` : ""));
+  const modelLabel =
+    servedModel && model && servedModel !== model ? `${model}→${servedModel}` : servedModel ?? model;
+  segments.push(provider + (modelLabel ? `/${modelLabel}` : ""));
   segments.push(mode);
   if (gitBranch) segments.push(`⎇ ${gitBranch}${gitDirty ? "*" : ""}`);
   if (tokens != null && tokens > 0) {

@@ -64,6 +64,33 @@ describe("App", () => {
     expect(lastFrame()).toContain("my-model");
   });
 
+  it("shows the model actually served by the API in the status bar", async () => {
+    const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
+    const servedQueryFn = (args: { prompt: AsyncIterable<unknown> }) => {
+      const gen = (async function* () {
+        yield { type: "system", subtype: "init", session_id: "sess-1" };
+        for await (const _ of args.prompt) {
+          yield { type: "assistant", message: { model: "served-model-id", content: [{ type: "text", text: "hi" }] } };
+          yield { type: "result", subtype: "success", total_cost_usd: 0.01, duration_ms: 5 };
+        }
+      })();
+      return Object.assign(gen, { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn() });
+    };
+    const { stdin, lastFrame } = render(
+      <App
+        cwd="/p"
+        providers={{ anthropic: { model: "requested-model" } }}
+        initialProvider="anthropic"
+        sessionIndex={index}
+        queryFn={servedQueryFn as never}
+      />
+    );
+    await wait();
+    stdin.write("hi\r");
+    await wait(100);
+    expect(lastFrame()).toContain("requested-model→served-model-id");
+  });
+
   it("round-trips a user message to assistant output", async () => {
     const { stdin, lastFrame } = makeApp();
     await wait();
