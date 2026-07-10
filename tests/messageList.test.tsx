@@ -17,4 +17,23 @@ describe("MessageList", () => {
     expect(frame).toContain("⏺ Read /x.ts");
     expect(frame).toContain("Done.");
   });
+
+  it("renders diff items with signs", () => {
+    const { lastFrame } = render(
+      <MessageList items={[
+        { kind: "diff", lines: [{ sign: "-", text: "old line" }, { sign: "+", text: "new line" }] }
+      ]} />
+    );
+    expect(lastFrame()).toContain("- old line");
+    expect(lastFrame()).toContain("+ new line");
+  });
+
+  it("renders assistant markdown (bold survives as text)", () => {
+    const { lastFrame } = render(
+      <MessageList items={[{ kind: "assistant", text: "**hello** world" }]} />
+    );
+    expect(lastFrame()).toContain("hello");
+    expect(lastFrame()).toContain("world");
+    expect(lastFrame()).not.toContain("**hello**");
+  });
 });
