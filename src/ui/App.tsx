@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useInput } from "ink";
 import type { query, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { AgentSession, type PermissionMode, type PermissionRequest } from "../agent/session.js";
@@ -19,6 +19,8 @@ import { StatusBar } from "./StatusBar.js";
 import { ResumePicker } from "./ResumePicker.js";
 import { WorkingIndicator } from "./WorkingIndicator.js";
 import { loadMcpServers, formatMcpStatus } from "../agent/mcp.js";
+import { loadSkills, formatSkillList, type Skill } from "../agent/skills.js";
+import { mergeSkillCommands } from "../commands/skillCommands.js";
 
 export interface AppProps {
   cwd: string;
@@ -53,7 +55,8 @@ export function App(props: AppProps) {
   const lastCtrlCRef = useRef(0);
   const historyRef = useRef(new History());
   const permissionStoreRef = useRef(new PermissionStore(props.cwd));
-  const registry = useMemo(() => buildRegistry(), []);
+  const [registry, setRegistry] = useState(() => buildRegistry());
+  const skillsRef = useRef<Skill[]>([]);
   const fileIndexRef = useRef(new FileIndex(props.cwd));
   const mcpServersRef = useRef<Record<string, Record<string, unknown>>>({});
   const completionCtx: CompletionContext = {
@@ -90,6 +93,8 @@ export function App(props: AppProps) {
 
   function createSession(name: string, resume?: string): AgentSession {
     mcpServersRef.current = loadMcpServers(props.cwd);
+    skillsRef.current = loadSkills(props.cwd);
+    setRegistry(mergeSkillCommands(buildRegistry(), skillsRef.current));
     const session = new AgentSession({
       providerName: name,
       provider: props.providers[name],
@@ -187,7 +192,20 @@ export function App(props: AppProps) {
         (await sessionRef.current?.mcpStatus()) ?? [],
         sessionRef.current?.tools ?? []
       ),
+    sendPrompt: text => sendUserMessage(text),
+    listSkills: () => formatSkillList(skillsRef.current),
   };
+
+  function sendUserMessage(text: string): void {
+    if (!firstMessageRef.current) {
+      firstMessageRef.current = text;
+      if (sessionRef.current?.sessionId) recordSession(sessionRef.current.sessionId, providerName);
+    }
+    setItems(prev => [...prev, { kind: "user", text }]);
+    setPhase("streaming");
+    setWorkStartedAt(Date.now());
+    sessionRef.current?.send(text);
+  }
 
   function handleSubmit(text: string): void {
     const slash = parseSlash(text);
@@ -199,14 +217,7 @@ export function App(props: AppProps) {
       });
       return;
     }
-    if (!firstMessageRef.current) {
-      firstMessageRef.current = text;
-      if (sessionRef.current?.sessionId) recordSession(sessionRef.current.sessionId, providerName);
-    }
-    setItems(prev => [...prev, { kind: "user", text }]);
-    setPhase("streaming");
-    setWorkStartedAt(Date.now());
-    sessionRef.current?.send(text);
+    sendUserMessage(text);
   }
 
   useInput((_input, key) => {
