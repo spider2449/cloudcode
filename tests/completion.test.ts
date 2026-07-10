@@ -41,3 +41,26 @@ describe("applySuggestion", () => {
     expect(r).toEqual({ text: "/permissions ", cursor: 13 });
   });
 });
+
+describe("argument provider", () => {
+  it("suggests permission modes and subcommands", () => {
+    const s = getSuggestions("/permissions ", 13, ctx());
+    expect(s.map(x => x.value)).toEqual(["default", "acceptEdits", "bypassPermissions", "list", "clear"]);
+    expect(s[0]).toMatchObject({ replaceStart: 13, replaceEnd: 13 });
+  });
+
+  it("filters argument suggestions by prefix", () => {
+    const s = getSuggestions("/permissions cl", 15, ctx());
+    expect(s.map(x => x.value)).toEqual(["clear"]);
+    expect(s[0]).toMatchObject({ replaceStart: 13, replaceEnd: 15 });
+  });
+
+  it("suggests provider names for /provider", () => {
+    const s = getSuggestions("/provider lo", 12, ctx());
+    expect(s.map(x => x.value)).toEqual(["local"]);
+  });
+
+  it("returns nothing for commands without completeArgs", () => {
+    expect(getSuggestions("/help x", 7, ctx())).toEqual([]);
+  });
+});

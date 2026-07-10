@@ -30,7 +30,22 @@ function commandNameSuggestions(text: string, cursor: number, ctx: CompletionCon
     }));
 }
 
-const PROVIDERS = [commandNameSuggestions];
+function argumentSuggestions(text: string, cursor: number, ctx: CompletionContext): Suggestion[] {
+  const m = /^\/(\w+)\s+/.exec(text);
+  if (!m || cursor !== text.length) return [];
+  const cmd = ctx.registry.get(m[1]);
+  if (!cmd?.completeArgs) return [];
+  const argStart = m[0].length;
+  const prefix = text.slice(argStart, cursor);
+  return cmd.completeArgs(prefix, ctx).map(v => ({
+    value: v,
+    label: v,
+    replaceStart: argStart,
+    replaceEnd: cursor
+  }));
+}
+
+const PROVIDERS = [argumentSuggestions, commandNameSuggestions];
 
 export function getSuggestions(text: string, cursor: number, ctx: CompletionContext): Suggestion[] {
   for (const provider of PROVIDERS) {

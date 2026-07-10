@@ -38,6 +38,9 @@ const commands: Command[] = [
       }
       await ctx.setPermissionMode(args as PermissionMode);
       ctx.notice(`Permission mode: ${args}.`);
+    },
+    completeArgs(prefix) {
+      return [...MODES, "list", "clear"].filter(v => v.startsWith(prefix));
     }
   },
   {
@@ -46,6 +49,9 @@ const commands: Command[] = [
     async run(ctx, args) {
       if (!args) { ctx.notice(`Providers: ${ctx.providerNames().join(", ")}`); return; }
       await ctx.switchProvider(args);
+    },
+    completeArgs(prefix, ctx) {
+      return ctx.providerNames().filter(v => v.startsWith(prefix));
     }
   },
   {
