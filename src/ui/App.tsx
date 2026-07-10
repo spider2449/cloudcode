@@ -29,6 +29,8 @@ export interface AppProps {
   cwd: string;
   providers: Record<string, ProviderConfig>;
   initialProvider: string;
+  initialModel?: string;
+  initialMode?: PermissionMode;
   resume?: string;
   sessionIndex: SessionIndex;
   queryFn?: typeof query;
@@ -42,11 +44,14 @@ const CONTEXT_WINDOW = 200_000;
 
 export function App(props: AppProps) {
   const { exit } = useApp();
+  function modelFor(name: string): string | undefined {
+    return (name === props.initialProvider ? props.initialModel : undefined) ?? props.providers[name]?.model;
+  }
   const [items, setItems] = useState<DisplayItem[]>([]);
   const [phase, setPhase] = useState<Phase>("idle");
   const [providerName, setProviderName] = useState(props.initialProvider);
-  const [model, setModel] = useState<string | undefined>(props.providers[props.initialProvider]?.model);
-  const [mode, setMode] = useState<PermissionMode>("default");
+  const [model, setModel] = useState<string | undefined>(modelFor(props.initialProvider));
+  const [mode, setMode] = useState<PermissionMode>(props.initialMode ?? "default");
   const [permissionQueue, setPermissionQueue] = useState<PermissionRequest[]>([]);
   const [showResumePicker, setShowResumePicker] = useState(props.openResumeOnStart ?? false);
   const [cost, setCost] = useState(0);
@@ -116,7 +121,7 @@ export function App(props: AppProps) {
     const session = new AgentSession({
       providerName: name,
       provider: props.providers[name],
-      model: props.providers[name]?.model,
+      model: modelFor(name),
       permissionMode: mode,
       resume,
       cwd: props.cwd,
@@ -174,7 +179,7 @@ export function App(props: AppProps) {
     await sessionRef.current?.dispose();
     firstMessageRef.current = undefined;
     sessionRef.current = createSession(name, resume);
-    setModel(props.providers[name]?.model);
+    setModel(modelFor(name));
   }
 
   const ctx: CommandContext = {
@@ -194,7 +199,7 @@ export function App(props: AppProps) {
       try {
         await restartSession(name);
         setProviderName(name);
-        setModel(props.providers[name]?.model);
+        setModel(modelFor(name));
         notice(`Provider: ${name}`);
       } catch (err) {
         notice(`Failed to switch provider: ${String(err)}. Staying on ${previous}.`);

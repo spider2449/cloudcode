@@ -3,6 +3,7 @@ import { render } from "ink";
 import { parseArgs } from "node:util";
 import { App } from "./ui/App.js";
 import { loadProviders } from "./agent/providers.js";
+import { loadSettings } from "./agent/settings.js";
 import { SessionIndex } from "./agent/sessionIndex.js";
 import { VERSION } from "./version.js";
 
@@ -10,7 +11,7 @@ const { values } = parseArgs({
   options: {
     continue: { type: "boolean", default: false },
     resume: { type: "boolean", default: false },
-    provider: { type: "string", default: "anthropic" },
+    provider: { type: "string" },
     version: { type: "boolean", default: false }
   }
 });
@@ -21,9 +22,15 @@ if (values.version) {
 }
 
 const providers = loadProviders();
-if (!providers[values.provider!]) {
-  console.error(`Unknown provider "${values.provider}". Known: ${Object.keys(providers).join(", ")}. Add custom providers in ~/.cloudcode/providers.json (see README).`);
-  process.exit(1);
+const settings = loadSettings();
+let providerName = values.provider ?? settings.provider ?? "anthropic";
+if (!providers[providerName]) {
+  if (values.provider) {
+    console.error(`Unknown provider "${values.provider}". Known: ${Object.keys(providers).join(", ")}. Add custom providers in ~/.cloudcode/providers.json (see README).`);
+    process.exit(1);
+  }
+  console.error(`Saved default provider "${providerName}" not found; using anthropic.`);
+  providerName = "anthropic";
 }
 
 const sessionIndex = new SessionIndex();
@@ -38,7 +45,9 @@ render(
   <App
     cwd={cwd}
     providers={providers}
-    initialProvider={values.provider!}
+    initialProvider={providerName}
+    initialModel={settings.model}
+    initialMode={settings.permissionMode}
     resume={resume}
     sessionIndex={sessionIndex}
     openResumeOnStart={values.resume}

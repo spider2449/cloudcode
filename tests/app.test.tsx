@@ -36,6 +36,34 @@ function makeApp() {
 }
 
 describe("App", () => {
+  it("seeds session model and permission mode from initial props", async () => {
+    const captured: Record<string, unknown>[] = [];
+    const capturingQueryFn = (args: { prompt: AsyncIterable<unknown>; options: Record<string, unknown> }) => {
+      captured.push(args.options);
+      const gen = (async function* () {
+        yield { type: "system", subtype: "init", session_id: "sess-1" };
+        for await (const _ of args.prompt) { /* drain */ }
+      })();
+      return Object.assign(gen, { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn() });
+    };
+    const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
+    const { lastFrame } = render(
+      <App
+        cwd="/p"
+        providers={{ anthropic: { model: "provider-default" } }}
+        initialProvider="anthropic"
+        initialModel="my-model"
+        initialMode="acceptEdits"
+        sessionIndex={index}
+        queryFn={capturingQueryFn as never}
+      />
+    );
+    await wait(50);
+    expect(captured[0]).toMatchObject({ model: "my-model", permissionMode: "acceptEdits" });
+    expect(lastFrame()).toContain("acceptEdits");
+    expect(lastFrame()).toContain("my-model");
+  });
+
   it("round-trips a user message to assistant output", async () => {
     const { stdin, lastFrame } = makeApp();
     await wait();
