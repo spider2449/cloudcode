@@ -1,2 +1,17 @@
-cloudcode {version} — connected to {provider} ({model})
-Type a prompt to start, or / for commands.
+ ██████╗██╗      ██████╗ ██╗   ██╗██████╗  ██████╗ ██████╗ ██████╗ ███████╗
+██╔════╝██║     ██╔═══██╗██║   ██║██╔══██╗██╔════╝██╔═══██╗██╔══██╗██╔════╝
+██║     ██║     ██║   ██║██║   ██║██║  ██║██║     ██║   ██║██║  ██║█████╗
+██║     ██║     ██║   ██║██║   ██║██║  ██║██║     ██║   ██║██║  ██║██╔══╝
+╚██████╗███████╗╚██████╔╝╚██████╔╝██████╔╝╚██████╗╚██████╔╝██████╔╝███████╗
+ ╚═════╝╚══════╝ ╚═════╝  ╚═════╝ ╚═════╝  ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝
+
+Welcome to cloudcode v{version}
+Provider: {provider}   Model: {model}
+
+Tips:
+  /help      show available commands
+  /model     switch model
+  /resume    pick up a previous session
+  Shift+Tab  cycle permission modes
+
+Type a prompt to begin.
