@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadWelcome } from "../src/ui/welcome.js";
+import { loadWelcome, setEmbeddedWelcome } from "../src/ui/welcome.js";
 
 const vars = { version: "0.1.0", provider: "anthropic", model: "claude-sonnet-5" };
 
@@ -42,5 +42,24 @@ describe("loadWelcome", () => {
     const text = loadWelcome(vars);
     expect(text).toBeTruthy();
     expect(text).not.toContain("{version}");
+  });
+});
+
+describe("embedded welcome", () => {
+  it("falls back to embedded text when the file is missing", () => {
+    setEmbeddedWelcome("Embedded {version} on {provider}");
+    const out = loadWelcome(
+      { version: "9.9.9", provider: "anthropic" },
+      "Z:/definitely/missing/welcome.txt"
+    );
+    expect(out).toBe("Embedded 9.9.9 on anthropic");
+  });
+
+  it("still prefers the file on disk when it exists", () => {
+    setEmbeddedWelcome("Embedded {version}");
+    // welcome.txt at package root exists in the repo
+    const out = loadWelcome({ version: "1.0.0", provider: "anthropic" });
+    expect(out).not.toBe("Embedded 1.0.0");
+    expect(out).toContain("1.0.0");
   });
 });

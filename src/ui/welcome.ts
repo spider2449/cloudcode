@@ -8,6 +8,13 @@ export interface WelcomeVars {
   model?: string;
 }
 
+let embeddedWelcome: string | undefined;
+
+/** Used by single-file binary builds, where welcome.txt is embedded rather than on disk. */
+export function setEmbeddedWelcome(text: string): void {
+  embeddedWelcome = text;
+}
+
 function defaultPath(): string {
   // src/ui/ (dev) and dist/ui/ (build) are both two levels below package root.
   const here = dirname(fileURLToPath(import.meta.url));
@@ -19,7 +26,8 @@ export function loadWelcome(vars: WelcomeVars, filePath = defaultPath()): string
   try {
     raw = readFileSync(filePath, "utf8");
   } catch {
-    return undefined;
+    if (embeddedWelcome === undefined) return undefined;
+    raw = embeddedWelcome;
   }
   const values: Record<string, string> = {
     version: vars.version,
