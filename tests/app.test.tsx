@@ -91,6 +91,33 @@ describe("App", () => {
     expect(lastFrame()).toContain("requested-model→served-model-id");
   });
 
+  it("restarts the session with bypassPermissions baked in instead of switching live", async () => {
+    const captured: Record<string, unknown>[] = [];
+    const setPermissionMode = vi.fn();
+    const capturingQueryFn = (args: { prompt: AsyncIterable<unknown>; options: Record<string, unknown> }) => {
+      captured.push(args.options);
+      const gen = (async function* () {
+        yield { type: "system", subtype: "init", session_id: `sess-${captured.length}` };
+        for await (const _ of args.prompt) { /* drain */ }
+      })();
+      return Object.assign(gen, { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode });
+    };
+    const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
+    const { stdin, lastFrame } = render(
+      <App cwd="/p" providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index} queryFn={capturingQueryFn as never} />
+    );
+    await wait(50);
+    stdin.write("[Z"); // shift+tab: default -> acceptEdits (live switch)
+    await wait(50);
+    expect(setPermissionMode).toHaveBeenCalledWith("acceptEdits");
+    stdin.write("[Z"); // shift+tab: acceptEdits -> bypassPermissions (restart)
+    await wait(100);
+    expect(setPermissionMode).not.toHaveBeenCalledWith("bypassPermissions");
+    expect(captured).toHaveLength(2);
+    expect(captured[1]).toMatchObject({ permissionMode: "bypassPermissions", resume: "sess-1" });
+    expect(lastFrame()).toContain("bypassPermissions");
+  });
+
   it("round-trips a user message to assistant output", async () => {
     const { stdin, lastFrame } = makeApp();
     await wait();

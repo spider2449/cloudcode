@@ -117,7 +117,7 @@ export function App(props: AppProps) {
     }
   }
 
-  function createSession(name: string, resume?: string): AgentSession {
+  function createSession(name: string, resume?: string, modeOverride?: PermissionMode): AgentSession {
     mcpServersRef.current = loadMcpServers(props.cwd);
     skillsRef.current = loadSkills(props.cwd);
     setRegistry(mergeSkillCommands(buildRegistry(), skillsRef.current));
@@ -125,7 +125,7 @@ export function App(props: AppProps) {
       providerName: name,
       provider: props.providers[name],
       model: modelFor(name),
-      permissionMode: mode,
+      permissionMode: modeOverride ?? mode,
       resume,
       cwd: props.cwd,
       mcpServers: mcpServersRef.current,
@@ -178,10 +178,10 @@ export function App(props: AppProps) {
 
   const git = useGitStatus(props.cwd, turnCount);
 
-  async function restartSession(name: string, resume?: string): Promise<void> {
+  async function restartSession(name: string, resume?: string, modeOverride?: PermissionMode): Promise<void> {
     await sessionRef.current?.dispose();
     firstMessageRef.current = undefined;
-    sessionRef.current = createSession(name, resume);
+    sessionRef.current = createSession(name, resume, modeOverride);
     setModel(modelFor(name));
     setServedModel(undefined);
   }
@@ -191,8 +191,17 @@ export function App(props: AppProps) {
     clearSession: async () => { setItems([]); setStream(""); setActiveTool(undefined); await restartSession(providerName); },
     setModel: async m => { await sessionRef.current?.setModel(m); setModel(m); setServedModel(undefined); },
     setPermissionMode: async m => {
-      await sessionRef.current?.setPermissionMode(m as PermissionMode);
-      setMode(m as PermissionMode);
+      const pm = m as PermissionMode;
+      if (pm === "bypassPermissions") {
+        // The SDK rejects a live switch to bypass unless the CLI was launched
+        // with it; restart the session with the mode baked in, resuming the
+        // conversation.
+        setMode(pm);
+        await restartSession(providerName, sessionRef.current?.sessionId, pm);
+        return;
+      }
+      await sessionRef.current?.setPermissionMode(pm);
+      setMode(pm);
     },
     switchProvider: async name => {
       if (!props.providers[name]) {
