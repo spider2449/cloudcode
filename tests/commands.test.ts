@@ -1,9 +1,26 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { parseSlash } from "../src/commands/registry.js";
 import { buildRegistry } from "../src/commands/builtins.js";
 import { mergeSkillCommands } from "../src/commands/skillCommands.js";
 import type { Skill } from "../src/agent/skills.js";
 import type { CommandContext } from "../src/commands/types.js";
+import { loadSettings, saveSetting } from "../src/agent/settings.js";
+import { loadThemeName } from "../src/ui/theme.js";
+
+vi.mock("../src/agent/settings.js", () => ({
+  loadSettings: vi.fn().mockReturnValue({}),
+  saveSetting: vi.fn()
+}));
+vi.mock("../src/ui/theme.js", async importOriginal => ({
+  ...(await importOriginal<typeof import("../src/ui/theme.js")>()),
+  loadThemeName: vi.fn().mockReturnValue("dark")
+}));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(loadSettings).mockReturnValue({});
+  vi.mocked(loadThemeName).mockReturnValue("dark");
+});
 
 function mockCtx(): CommandContext {
   return {
@@ -52,7 +69,7 @@ describe("parseSlash", () => {
 describe("builtins", () => {
   it("registers all v1 commands", () => {
     const names = [...buildRegistry().keys()].sort();
-    expect(names).toEqual(["clear", "compact", "cost", "exit", "help", "init", "mcp", "model", "permissions", "provider", "resume", "skills", "theme"]);
+    expect(names).toEqual(["clear", "compact", "config", "cost", "exit", "help", "init", "mcp", "model", "permissions", "provider", "resume", "skills", "theme"]);
   });
 
   it("/model with arg sets model; without arg notices usage", async () => {
@@ -154,6 +171,84 @@ describe("/theme", () => {
   it("completes theme names", () => {
     const cmd = buildRegistry().get("theme")!;
     expect(cmd.completeArgs!("l", {} as never)).toEqual(["light"]);
+  });
+});
+
+describe("/config", () => {
+  it("lists all keys with persisted values when no arg is given", async () => {
+    vi.mocked(loadSettings).mockReturnValue({ provider: "local" });
+    const ctx = mockCtx();
+    await buildRegistry().get("config")!.run(ctx, "");
+    expect(ctx.notice).toHaveBeenCalledWith(
+      "provider = local\nmodel = (unset)\npermissionMode = (unset)\ntheme = dark"
+    );
+  });
+
+  it("shows a single key's value", async () => {
+    vi.mocked(loadSettings).mockReturnValue({});
+    const ctx = mockCtx();
+    await buildRegistry().get("config")!.run(ctx, "model");
+    expect(ctx.notice).toHaveBeenCalledWith("model = (unset)");
+  });
+
+  it("rejects an unknown key", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("config")!.run(ctx, "editor vim");
+    expect(saveSetting).not.toHaveBeenCalled();
+    expect(ctx.notice).toHaveBeenCalledWith("Unknown key: editor. Keys: provider, model, permissionMode, theme");
+  });
+
+  it("sets provider: persists then switches live", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("config")!.run(ctx, "provider local");
+    expect(saveSetting).toHaveBeenCalledWith("provider", "local");
+    expect(ctx.switchProvider).toHaveBeenCalledWith("local");
+    expect(ctx.notice).toHaveBeenCalledWith("provider = local (saved)");
+  });
+
+  it("rejects an unknown provider without persisting", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("config")!.run(ctx, "provider nope");
+    expect(saveSetting).not.toHaveBeenCalled();
+    expect(ctx.switchProvider).not.toHaveBeenCalled();
+    expect(ctx.notice).toHaveBeenCalledWith("Unknown provider: nope. Providers: anthropic, local");
+  });
+
+  it("sets model: persists then applies live", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("config")!.run(ctx, "model claude-sonnet-5");
+    expect(saveSetting).toHaveBeenCalledWith("model", "claude-sonnet-5");
+    expect(ctx.setModel).toHaveBeenCalledWith("claude-sonnet-5");
+    expect(ctx.notice).toHaveBeenCalledWith("model = claude-sonnet-5 (saved)");
+  });
+
+  it("sets permissionMode with validation", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("config")!.run(ctx, "permissionMode acceptEdits");
+    expect(saveSetting).toHaveBeenCalledWith("permissionMode", "acceptEdits");
+    expect(ctx.setPermissionMode).toHaveBeenCalledWith("acceptEdits");
+    await buildRegistry().get("config")!.run(ctx, "permissionMode yolo");
+    expect(ctx.notice).toHaveBeenCalledWith("Valid modes: default, acceptEdits, bypassPermissions");
+  });
+
+  it("sets theme by delegating to setTheme, never touching settings.json", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("config")!.run(ctx, "theme mono");
+    expect(ctx.setTheme).toHaveBeenCalledWith("mono");
+    expect(saveSetting).not.toHaveBeenCalledWith("theme", expect.anything());
+    expect(ctx.notice).toHaveBeenCalledWith("theme = mono (saved)");
+    await buildRegistry().get("config")!.run(ctx, "theme solarized");
+    expect(ctx.setTheme).not.toHaveBeenCalledWith("solarized");
+    expect(ctx.notice).toHaveBeenCalledWith("Unknown theme: solarized. Themes: dark, light, mono");
+  });
+
+  it("completes keys and values", () => {
+    const cmd = buildRegistry().get("config")!;
+    const cctx = { providerNames: () => ["anthropic", "local"] } as never;
+    expect(cmd.completeArgs!("p", cctx)).toEqual(["provider", "permissionMode"]);
+    expect(cmd.completeArgs!("theme m", cctx)).toEqual(["theme mono"]);
+    expect(cmd.completeArgs!("provider l", cctx)).toEqual(["provider local"]);
+    expect(cmd.completeArgs!("model cla", cctx)).toEqual([]);
   });
 });
 

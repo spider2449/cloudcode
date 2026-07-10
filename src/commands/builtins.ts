@@ -1,8 +1,17 @@
 import type { Command, CommandContext } from "./types.js";
 import type { PermissionMode } from "../agent/session.js";
-import { THEMES } from "../ui/theme.js";
+import { THEMES, loadThemeName } from "../ui/theme.js";
+import { loadSettings, saveSetting, type Settings } from "../agent/settings.js";
 
 const MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
+
+const CONFIG_KEYS = ["provider", "model", "permissionMode", "theme"] as const;
+type ConfigKey = (typeof CONFIG_KEYS)[number];
+
+function configValue(key: ConfigKey): string {
+  if (key === "theme") return loadThemeName();
+  return loadSettings()[key as keyof Settings] ?? "(unset)";
+}
 
 const commands: Command[] = [
   {
@@ -22,6 +31,66 @@ const commands: Command[] = [
     name: "compact",
     description: "Summarize the conversation to free context",
     async run(ctx) { ctx.sendPrompt("/compact"); }
+  },
+  {
+    name: "config",
+    description: "Get/set startup defaults: /config [provider|model|permissionMode|theme] [value]",
+    async run(ctx, args) {
+      const [key, ...rest] = args.split(/\s+/).filter(Boolean);
+      const value = rest.join(" ");
+      if (!key) {
+        ctx.notice(CONFIG_KEYS.map(k => `${k} = ${configValue(k)}`).join("\n"));
+        return;
+      }
+      if (!CONFIG_KEYS.includes(key as ConfigKey)) {
+        ctx.notice(`Unknown key: ${key}. Keys: ${CONFIG_KEYS.join(", ")}`);
+        return;
+      }
+      if (!value) {
+        ctx.notice(`${key} = ${configValue(key as ConfigKey)}`);
+        return;
+      }
+      switch (key as ConfigKey) {
+        case "provider":
+          if (!ctx.providerNames().includes(value)) {
+            ctx.notice(`Unknown provider: ${value}. Providers: ${ctx.providerNames().join(", ")}`);
+            return;
+          }
+          saveSetting("provider", value);
+          await ctx.switchProvider(value);
+          break;
+        case "model":
+          saveSetting("model", value);
+          await ctx.setModel(value);
+          break;
+        case "permissionMode":
+          if (!MODES.includes(value as PermissionMode)) {
+            ctx.notice("Valid modes: default, acceptEdits, bypassPermissions");
+            return;
+          }
+          saveSetting("permissionMode", value);
+          await ctx.setPermissionMode(value as PermissionMode);
+          break;
+        case "theme":
+          if (!(value in THEMES)) {
+            ctx.notice(`Unknown theme: ${value}. Themes: ${Object.keys(THEMES).join(", ")}`);
+            return;
+          }
+          ctx.setTheme(value);
+          break;
+      }
+      ctx.notice(`${key} = ${value} (saved)`);
+    },
+    completeArgs(prefix, cctx) {
+      const parts = prefix.split(/\s+/);
+      if (parts.length <= 1) return CONFIG_KEYS.filter(k => k.startsWith(parts[0] ?? ""));
+      const [key, valuePrefix = ""] = parts;
+      const values =
+        key === "provider" ? cctx.providerNames() :
+        key === "permissionMode" ? MODES :
+        key === "theme" ? Object.keys(THEMES) : [];
+      return values.filter(v => v.startsWith(valuePrefix)).map(v => `${key} ${v}`);
+    }
   },
   {
     name: "init",
