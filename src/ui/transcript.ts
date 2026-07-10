@@ -1,0 +1,47 @@
+import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+
+export type DisplayItem =
+  | { kind: "user"; text: string }
+  | { kind: "assistant"; text: string }
+  | { kind: "tool"; label: string }
+  | { kind: "notice"; text: string }
+  | { kind: "error"; text: string }
+  | { kind: "result"; costUsd?: number; durationMs?: number };
+
+function truncate(s: string, max = 80): string {
+  return s.length > max ? s.slice(0, max - 1) + "…" : s;
+}
+
+export function toolLabel(name: string, input: Record<string, unknown>): string {
+  let detail: string;
+  if (typeof input.file_path === "string") detail = input.file_path;
+  else if (typeof input.command === "string") detail = truncate(input.command);
+  else detail = truncate(JSON.stringify(input));
+  return `${name} ${detail}`;
+}
+
+export function toDisplayItems(msg: SDKMessage): DisplayItem[] {
+  const m = msg as Record<string, unknown>;
+  if (m.type === "assistant") {
+    const content = (m.message as { content: Array<Record<string, unknown>> }).content ?? [];
+    const items: DisplayItem[] = [];
+    for (const block of content) {
+      if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
+        items.push({ kind: "assistant", text: block.text });
+      } else if (block.type === "tool_use") {
+        items.push({
+          kind: "tool",
+          label: toolLabel(String(block.name), (block.input ?? {}) as Record<string, unknown>)
+        });
+      }
+    }
+    return items;
+  }
+  if (m.type === "result") {
+    if (m.subtype === "success") {
+      return [{ kind: "result", costUsd: m.total_cost_usd as number, durationMs: m.duration_ms as number }];
+    }
+    return [{ kind: "error", text: String(m.result ?? m.subtype) }];
+  }
+  return [];
+}
