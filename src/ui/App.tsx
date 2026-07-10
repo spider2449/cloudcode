@@ -22,6 +22,8 @@ import { useGitStatus } from "./useGitStatus.js";
 import { loadMcpServers, formatMcpStatus } from "../agent/mcp.js";
 import { loadSkills, formatSkillList, type Skill } from "../agent/skills.js";
 import { mergeSkillCommands } from "../commands/skillCommands.js";
+import { THEMES, loadThemeName, saveThemeName } from "./theme.js";
+import { ThemeProvider } from "./ThemeContext.js";
 
 export interface AppProps {
   cwd: string;
@@ -63,6 +65,7 @@ export function App(props: AppProps) {
   const historyRef = useRef(new History());
   const permissionStoreRef = useRef(new PermissionStore(props.cwd));
   const [registry, setRegistry] = useState(() => buildRegistry());
+  const [themeName, setThemeName] = useState(() => loadThemeName());
   const skillsRef = useRef<Skill[]>([]);
   const fileIndexRef = useRef(new FileIndex(props.cwd));
   const mcpServersRef = useRef<Record<string, Record<string, unknown>>>({});
@@ -216,6 +219,8 @@ export function App(props: AppProps) {
       ),
     sendPrompt: text => sendUserMessage(text),
     listSkills: () => formatSkillList(skillsRef.current),
+    setTheme: name => { setThemeName(name); saveThemeName(name); },
+    listThemes: () => Object.keys(THEMES).map(n => `${n === themeName ? "●" : " "} ${n}`).join("\n"),
   };
 
   function sendUserMessage(text: string): void {
@@ -279,35 +284,37 @@ export function App(props: AppProps) {
   }
 
   return (
-    <Box flexDirection="column">
-      <MessageList items={items} />
-      {streamText !== "" && <Text>{streamText}</Text>}
-      {phase === "streaming" && <WorkingIndicator label={activeTool ? `Running ${activeTool}` : "Thinking"} startedAt={workStartedAt} />}
-      {showResumePicker && (
-        <ResumePicker
-          entries={props.sessionIndex.list()}
-          onPick={e => {
-            setShowResumePicker(false);
-            setItems([]);
-            const provider = props.providers[e.provider] ? e.provider : providerName;
-            setProviderName(provider);
-            setModel(props.providers[provider]?.model);
-            void restartSession(provider, e.id);
-          }}
-          onCancel={() => setShowResumePicker(false)}
+    <ThemeProvider theme={THEMES[themeName] ?? THEMES.dark}>
+      <Box flexDirection="column">
+        <MessageList items={items} />
+        {streamText !== "" && <Text>{streamText}</Text>}
+        {phase === "streaming" && <WorkingIndicator label={activeTool ? `Running ${activeTool}` : "Thinking"} startedAt={workStartedAt} />}
+        {showResumePicker && (
+          <ResumePicker
+            entries={props.sessionIndex.list()}
+            onPick={e => {
+              setShowResumePicker(false);
+              setItems([]);
+              const provider = props.providers[e.provider] ? e.provider : providerName;
+              setProviderName(provider);
+              setModel(props.providers[provider]?.model);
+              void restartSession(provider, e.id);
+            }}
+            onCancel={() => setShowResumePicker(false)}
+          />
+        )}
+        {phase === "permission" && activePermission && (
+          <PermissionDialog request={activePermission} onDecision={decidePermission} />
+        )}
+        {!showResumePicker && phase !== "permission" && (
+          <InputBox completionCtx={completionCtx} onSubmit={handleSubmit} disabled={phase === "streaming"} history={historyRef.current} />
+        )}
+        <StatusBar
+          provider={providerName} model={model} mode={mode} cwd={props.cwd} costUsd={cost}
+          gitBranch={git.branch} gitDirty={git.dirty}
+          tokens={tokens} contextPct={contextPct} elapsedMs={elapsedMs}
         />
-      )}
-      {phase === "permission" && activePermission && (
-        <PermissionDialog request={activePermission} onDecision={decidePermission} />
-      )}
-      {!showResumePicker && phase !== "permission" && (
-        <InputBox completionCtx={completionCtx} onSubmit={handleSubmit} disabled={phase === "streaming"} history={historyRef.current} />
-      )}
-      <StatusBar
-        provider={providerName} model={model} mode={mode} cwd={props.cwd} costUsd={cost}
-        gitBranch={git.branch} gitDirty={git.dirty}
-        tokens={tokens} contextPct={contextPct} elapsedMs={elapsedMs}
-      />
-    </Box>
+      </Box>
+    </ThemeProvider>
   );
 }

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import type { SessionEntry } from "../agent/sessionIndex.js";
+import { useTheme } from "./ThemeContext.js";
 
 interface Props {
   entries: SessionEntry[];
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function ResumePicker({ entries, onPick, onCancel }: Props) {
+  const theme = useTheme();
   const [index, setIndex] = useState(0);
 
   useInput((_input, key) => {
@@ -19,11 +21,11 @@ export function ResumePicker({ entries, onPick, onCancel }: Props) {
   });
 
   if (entries.length === 0) {
-    return <Text color="gray">No past sessions. Press Esc to close.</Text>;
+    return <Text color={theme.muted}>No past sessions. Press Esc to close.</Text>;
   }
   return (
     <Box flexDirection="column" borderStyle="round" paddingX={1}>
-      <Text color="yellow">Resume a session (↑/↓, Enter, Esc)</Text>
+      <Text color={theme.warning}>Resume a session (↑/↓, Enter, Esc)</Text>
       {entries.map((e, i) => (
         <Text key={e.id} inverse={i === index}>
           {e.timestamp}  [{e.provider}]  {e.firstMessage.slice(0, 60)}

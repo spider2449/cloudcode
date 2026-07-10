@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import type { Suggestion } from "../commands/completion.js";
+import { useTheme } from "./ThemeContext.js";
 
 const MAX_ROWS = 8;
 
@@ -16,6 +17,7 @@ interface Props {
 }
 
 export function SuggestionMenu({ suggestions, selected }: Props) {
+  const theme = useTheme();
   const { start, end } = visibleWindow(suggestions.length, selected);
   const width = Math.max(...suggestions.map(s => s.label.length));
   return (
@@ -24,10 +26,10 @@ export function SuggestionMenu({ suggestions, selected }: Props) {
         const isSelected = start + i === selected;
         return (
           <Box key={s.label}>
-            <Text color={isSelected ? "cyan" : undefined}>
+            <Text color={isSelected ? theme.accent : undefined}>
               {isSelected ? "▶ " : "  "}{s.label.padEnd(width + 2)}
             </Text>
-            {s.description && <Text color="gray">{s.description}</Text>}
+            {s.description && <Text color={theme.muted}>{s.description}</Text>}
           </Box>
         );
       })}

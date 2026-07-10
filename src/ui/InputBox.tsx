@@ -3,6 +3,7 @@ import { Box, Text, useInput } from "ink";
 import { getSuggestions, applySuggestion, type CompletionContext } from "../commands/completion.js";
 import { SuggestionMenu } from "./SuggestionMenu.js";
 import type { History } from "../agent/history.js";
+import { useTheme } from "./ThemeContext.js";
 
 interface Props {
   completionCtx: CompletionContext;
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export function InputBox({ completionCtx, onSubmit, disabled, history }: Props) {
+  const theme = useTheme();
   const [value, setValue] = useState("");
   const [cursor, setCursor] = useState(0);
   const [selected, setSelected] = useState(0);
@@ -155,7 +157,7 @@ export function InputBox({ completionCtx, onSubmit, disabled, history }: Props) 
       <Box borderStyle="round" paddingX={1}>
         <Text>{"> "}{before}{disabled ? "" : "█"}{after}</Text>
       </Box>
-      {disabled && <Text color="gray">working… (Esc to interrupt)</Text>}
+      {disabled && <Text color={theme.muted}>working… (Esc to interrupt)</Text>}
       {!disabled && suggestions.length > 0 && (
         <SuggestionMenu suggestions={suggestions} selected={Math.min(selected, suggestions.length - 1)} />
       )}

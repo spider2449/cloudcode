@@ -1,5 +1,6 @@
 import React from "react";
 import { Text } from "ink";
+import { useTheme } from "./ThemeContext.js";
 
 interface Props {
   provider: string;
@@ -29,6 +30,7 @@ export function formatElapsed(ms: number): string {
 }
 
 export function StatusBar({ provider, model, mode, cwd, costUsd, gitBranch, gitDirty, tokens, contextPct, elapsedMs }: Props) {
+  const theme = useTheme();
   const segments: string[] = [];
   segments.push(provider + (model ? `/${model}` : ""));
   segments.push(mode);
@@ -40,7 +42,7 @@ export function StatusBar({ provider, model, mode, cwd, costUsd, gitBranch, gitD
   if (elapsedMs != null && elapsedMs > 0) segments.push(formatElapsed(elapsedMs));
   segments.push(cwd);
   return (
-    <Text color="gray" dimColor>
+    <Text color={theme.muted} dimColor>
       {segments.join(" · ")}
     </Text>
   );

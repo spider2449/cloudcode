@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Text } from "ink";
 import Spinner from "ink-spinner";
+import { useTheme } from "./ThemeContext.js";
 
 interface Props {
   label: string;
@@ -8,6 +9,7 @@ interface Props {
 }
 
 export function WorkingIndicator({ label, startedAt }: Props) {
+  const theme = useTheme();
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -17,8 +19,8 @@ export function WorkingIndicator({ label, startedAt }: Props) {
 
   const seconds = Math.floor((Date.now() - startedAt) / 1000);
   return (
-    <Text color="cyan">
-      <Spinner type="dots" /> {label}… <Text color="gray">({seconds}s · Esc to interrupt)</Text>
+    <Text color={theme.accent}>
+      <Spinner type="dots" /> {label}… <Text color={theme.muted}>({seconds}s · Esc to interrupt)</Text>
     </Text>
   );
 }

@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { toolLabel } from "./transcript.js";
+import { useTheme } from "./ThemeContext.js";
 
 interface Props {
   request: { toolName: string; input: Record<string, unknown> };
@@ -27,6 +28,7 @@ const FILE_OPTIONS: Option[] = [
 ];
 
 export function PermissionDialog({ request, onDecision }: Props) {
+  const theme = useTheme();
   const hasFilePath = typeof request.input.file_path === "string";
   const options = hasFilePath ? FILE_OPTIONS : BASE_OPTIONS;
   const [selected, setSelected] = useState(0);
@@ -50,8 +52,8 @@ export function PermissionDialog({ request, onDecision }: Props) {
   });
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
-      <Text color="yellow">Permission required</Text>
+    <Box flexDirection="column" borderStyle="round" borderColor={theme.warning} paddingX={1}>
+      <Text color={theme.warning}>Permission required</Text>
       <Text>{toolLabel(request.toolName, request.input)}</Text>
       <Box gap={2} flexWrap="wrap">
         {options.map((opt, i) => (
