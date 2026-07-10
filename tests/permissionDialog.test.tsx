@@ -13,6 +13,7 @@ describe("PermissionDialog", () => {
     );
     expect(lastFrame()).toContain("Bash");
     expect(lastFrame()).toContain("ls");
+    await wait();
     stdin.write("y");
     await wait();
     expect(onDecision).toHaveBeenCalledWith(true);
@@ -23,6 +24,7 @@ describe("PermissionDialog", () => {
     const { stdin } = render(
       <PermissionDialog request={{ toolName: "Bash", input: { command: "ls" } }} onDecision={onDecision} />
     );
+    await wait();
     stdin.write("n");
     await wait();
     expect(onDecision).toHaveBeenCalledWith(false);

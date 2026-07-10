@@ -10,6 +10,7 @@ describe("InputBox", () => {
   it("submits typed text on Enter", async () => {
     const onSubmit = vi.fn();
     const { stdin } = render(<InputBox registry={buildRegistry()} onSubmit={onSubmit} disabled={false} />);
+    await wait();
     stdin.write("hi");
     await wait();
     stdin.write("\r");
@@ -19,6 +20,7 @@ describe("InputBox", () => {
 
   it("shows slash completions", async () => {
     const { stdin, lastFrame } = render(<InputBox registry={buildRegistry()} onSubmit={() => {}} disabled={false} />);
+    await wait();
     stdin.write("/pro");
     await wait();
     expect(lastFrame()).toContain("provider");
