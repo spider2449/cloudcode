@@ -40,6 +40,7 @@ export class AgentSession {
         resume: this.opts.resume,
         cwd: this.opts.cwd,
         env: { ...process.env, ...providerEnv(this.opts.provider) },
+        includePartialMessages: true,
         canUseTool: (toolName, input) =>
           new Promise(resolvePermission => {
             this.opts.onPermissionRequest({
