@@ -4,27 +4,59 @@ import { toolLabel } from "./transcript.js";
 
 interface Props {
   request: { toolName: string; input: Record<string, unknown> };
-  onDecision(allow: boolean): void;
+  onDecision(allow: boolean, rememberAs?: "allow" | "deny"): void;
 }
 
+interface Option {
+  label: string;
+  hotkey: string;
+  allow: boolean;
+  rememberAs?: "allow" | "deny";
+}
+
+const BASE_OPTIONS: Option[] = [
+  { label: "Yes (y)", hotkey: "y", allow: true },
+  { label: "No (n)", hotkey: "n", allow: false }
+];
+
+const FILE_OPTIONS: Option[] = [
+  { label: "Yes (y)", hotkey: "y", allow: true },
+  { label: "Always for this directory (a)", hotkey: "a", allow: true, rememberAs: "allow" },
+  { label: "No (n)", hotkey: "n", allow: false },
+  { label: "Never for this directory (d)", hotkey: "d", allow: false, rememberAs: "deny" }
+];
+
 export function PermissionDialog({ request, onDecision }: Props) {
-  const [selected, setSelected] = useState<0 | 1>(0); // 0 = Yes, 1 = No
+  const hasFilePath = typeof request.input.file_path === "string";
+  const options = hasFilePath ? FILE_OPTIONS : BASE_OPTIONS;
+  const [selected, setSelected] = useState(0);
+
+  const decide = (opt: Option) => {
+    if (opt.rememberAs) onDecision(opt.allow, opt.rememberAs);
+    else onDecision(opt.allow);
+  };
 
   useInput((input, key) => {
-    if (input.toLowerCase() === "y") onDecision(true);
-    else if (input.toLowerCase() === "n" || key.escape) onDecision(false);
-    else if (key.leftArrow || key.rightArrow || key.upArrow || key.downArrow) {
-      setSelected(s => (s === 0 ? 1 : 0));
-    } else if (key.return) onDecision(selected === 0);
+    const hot = options.find(o => o.hotkey === input.toLowerCase());
+    if (hot) { decide(hot); return; }
+    if (key.escape) { onDecision(false); return; }
+    if (key.leftArrow || key.upArrow) {
+      setSelected(s => (s + options.length - 1) % options.length);
+    } else if (key.rightArrow || key.downArrow) {
+      setSelected(s => (s + 1) % options.length);
+    } else if (key.return) {
+      decide(options[selected]);
+    }
   });
 
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="yellow" paddingX={1}>
       <Text color="yellow">Permission required</Text>
       <Text>{toolLabel(request.toolName, request.input)}</Text>
-      <Box gap={2}>
-        <Text inverse={selected === 0}> Yes (y) </Text>
-        <Text inverse={selected === 1}> No (n) </Text>
+      <Box gap={2} flexWrap="wrap">
+        {options.map((opt, i) => (
+          <Text key={opt.hotkey} inverse={i === selected}> {opt.label} </Text>
+        ))}
       </Box>
     </Box>
   );

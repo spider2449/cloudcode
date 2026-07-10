@@ -29,4 +29,61 @@ describe("PermissionDialog", () => {
     await wait();
     expect(onDecision).toHaveBeenCalledWith(false);
   });
+
+  it("shows four options for file_path requests", async () => {
+    const { lastFrame } = render(
+      <PermissionDialog request={{ toolName: "Write", input: { file_path: "/p/a.ts" } }} onDecision={() => {}} />
+    );
+    await wait();
+    const frame = lastFrame()!;
+    expect(frame).toContain("Yes (y)");
+    expect(frame).toContain("Always for this directory (a)");
+    expect(frame).toContain("No (n)");
+    expect(frame).toContain("Never for this directory (d)");
+  });
+
+  it("hotkey 'a' resolves allow with remember", async () => {
+    const onDecision = vi.fn();
+    const { stdin } = render(
+      <PermissionDialog request={{ toolName: "Write", input: { file_path: "/p/a.ts" } }} onDecision={onDecision} />
+    );
+    await wait();
+    stdin.write("a");
+    await wait();
+    expect(onDecision).toHaveBeenCalledWith(true, "allow");
+  });
+
+  it("hotkey 'd' resolves deny with remember", async () => {
+    const onDecision = vi.fn();
+    const { stdin } = render(
+      <PermissionDialog request={{ toolName: "Write", input: { file_path: "/p/a.ts" } }} onDecision={onDecision} />
+    );
+    await wait();
+    stdin.write("d");
+    await wait();
+    expect(onDecision).toHaveBeenCalledWith(false, "deny");
+  });
+
+  it("arrow + Enter selects 'Always for this directory'", async () => {
+    const onDecision = vi.fn();
+    const { stdin } = render(
+      <PermissionDialog request={{ toolName: "Write", input: { file_path: "/p/a.ts" } }} onDecision={onDecision} />
+    );
+    await wait();
+    stdin.write("[C"); // right arrow -> option index 1
+    await wait();
+    stdin.write("\r");
+    await wait();
+    expect(onDecision).toHaveBeenCalledWith(true, "allow");
+  });
+
+  it("keeps two options for requests without file_path", async () => {
+    const { lastFrame } = render(
+      <PermissionDialog request={{ toolName: "Bash", input: { command: "ls" } }} onDecision={() => {}} />
+    );
+    await wait();
+    expect(lastFrame()).not.toContain("Always for this directory");
+    expect(lastFrame()).toContain("Yes (y)");
+    expect(lastFrame()).toContain("No (n)");
+  });
 });
