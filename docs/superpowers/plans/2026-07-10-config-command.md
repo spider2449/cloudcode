@@ -30,7 +30,7 @@
   - `loadSettings(filePath?: string): Settings` — `{}` on missing/corrupt/non-object; drops non-string `provider`/`model` and invalid `permissionMode` values
   - `saveSetting(key: keyof Settings, value: string, filePath?: string): void` — read-modify-write preserving other keys
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/settings.test.ts`:
 
@@ -81,12 +81,12 @@ describe("settings persistence", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npx vitest run tests/settings.test.ts`
 Expected: FAIL — module `../src/agent/settings.js` does not exist.
 
-- [ ] **Step 3: Implement the module**
+- [x] **Step 3: Implement the module**
 
 Create `src/agent/settings.ts`:
 
@@ -127,12 +127,12 @@ export function saveSetting(key: keyof Settings, value: string, filePath: string
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npx vitest run tests/settings.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/agent/settings.ts tests/settings.test.ts
@@ -151,7 +151,7 @@ git commit -m "feat: settings module for persisted startup defaults"
 - Consumes: `loadSettings`/`saveSetting` from `src/agent/settings.ts` (Task 1); `THEMES`, `loadThemeName` from `src/ui/theme.ts`; existing ctx methods `providerNames`, `switchProvider`, `setModel`, `setPermissionMode`, `setTheme`, `notice`; the file-local `MODES` constant in builtins.ts.
 - Produces: builtin `config` in the registry with `completeArgs` (keys for the first token; values for `provider`/`permissionMode`/`theme` second tokens, returned as `"<key> <value>"` because completion replaces the whole args region — see `argumentSuggestions` in `src/commands/completion.ts`).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `tests/commands.test.ts`, mock the settings and theme persistence at the top of the file (after the existing imports):
 
@@ -265,12 +265,12 @@ Update the registry-names assertion:
     expect(names).toEqual(["clear", "compact", "config", "cost", "exit", "help", "init", "mcp", "model", "permissions", "provider", "resume", "skills", "theme"]);
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npx vitest run tests/commands.test.ts`
 Expected: FAIL — `config` command missing.
 
-- [ ] **Step 3: Implement the builtin**
+- [x] **Step 3: Implement the builtin**
 
 In `src/commands/builtins.ts`, add imports:
 
@@ -356,12 +356,12 @@ Insert the command into the `commands` array (after `compact`):
   },
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npx vitest run tests/commands.test.ts`
 Expected: PASS (all existing + new).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/commands/builtins.ts tests/commands.test.ts
@@ -381,7 +381,7 @@ git commit -m "feat: /config builtin to get/set startup defaults"
 - Consumes: `loadSettings(): Settings` from `src/agent/settings.ts` (Task 1).
 - Produces: `AppProps` gains `initialModel?: string` and `initialMode?: PermissionMode`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `tests/app.test.tsx` inside `describe("App")`:
 
@@ -415,12 +415,12 @@ Add to `tests/app.test.tsx` inside `describe("App")`:
   });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/app.test.tsx`
 Expected: FAIL — session options carry `provider-default` and `default`, and the props don't exist (typecheck would also fail).
 
-- [ ] **Step 3: Implement App changes**
+- [x] **Step 3: Implement App changes**
 
 In `src/ui/App.tsx`:
 
@@ -460,7 +460,7 @@ In `restartSession`, change the model reset line:
     setModel(modelFor(name));
 ```
 
-- [ ] **Step 4: Implement cli.tsx changes**
+- [x] **Step 4: Implement cli.tsx changes**
 
 Replace the provider option and validation block in `src/cli.tsx`:
 
@@ -507,16 +507,16 @@ render(
 );
 ```
 
-- [ ] **Step 5: Run full suite and typecheck**
+- [x] **Step 5: Run full suite and typecheck**
 
 Run: `npx vitest run && npx tsc --noEmit`
 Expected: all tests PASS, typecheck clean.
 
-- [ ] **Step 6: Manual smoke check**
+- [x] **Step 6: Manual smoke check**
 
 Run the TUI: `/config` (list), `/config model claude-sonnet-5`, `/config permissionMode acceptEdits`, restart and confirm the status bar shows the persisted model and mode; `cloudcode --provider anthropic` still overrides a saved provider. (Skip if running non-interactively; leave for human.)
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/cli.tsx src/ui/App.tsx tests/app.test.tsx
