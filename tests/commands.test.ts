@@ -20,7 +20,9 @@ function mockCtx(): CommandContext {
     clearPermissionRules: vi.fn(),
     mcpStatus: vi.fn().mockResolvedValue("github  connected  tools: get_repo"),
     sendPrompt: vi.fn(),
-    listSkills: vi.fn().mockReturnValue("/a  does a  (project)")
+    listSkills: vi.fn().mockReturnValue("/a  does a  (project)"),
+    setTheme: vi.fn(),
+    listThemes: vi.fn().mockReturnValue("● dark\n  light\n  mono")
   };
 }
 
@@ -50,7 +52,7 @@ describe("parseSlash", () => {
 describe("builtins", () => {
   it("registers all v1 commands", () => {
     const names = [...buildRegistry().keys()].sort();
-    expect(names).toEqual(["clear", "compact", "cost", "exit", "help", "init", "mcp", "model", "permissions", "provider", "resume", "skills"]);
+    expect(names).toEqual(["clear", "compact", "cost", "exit", "help", "init", "mcp", "model", "permissions", "provider", "resume", "skills", "theme"]);
   });
 
   it("/model with arg sets model; without arg notices usage", async () => {
@@ -123,6 +125,35 @@ describe("/skills", () => {
     await buildRegistry().get("skills")!.run(ctx, "");
     expect(ctx.listSkills).toHaveBeenCalled();
     expect(ctx.notice).toHaveBeenCalledWith("/a  does a  (project)");
+  });
+});
+
+describe("/theme", () => {
+  it("lists themes when no arg is given", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("theme")!.run(ctx, "");
+    expect(ctx.listThemes).toHaveBeenCalled();
+    expect(ctx.notice).toHaveBeenCalledWith("● dark\n  light\n  mono");
+    expect(ctx.setTheme).not.toHaveBeenCalled();
+  });
+
+  it("switches to a known theme", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("theme")!.run(ctx, "light");
+    expect(ctx.setTheme).toHaveBeenCalledWith("light");
+    expect(ctx.notice).toHaveBeenCalledWith("Theme: light");
+  });
+
+  it("rejects an unknown theme", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("theme")!.run(ctx, "solarized");
+    expect(ctx.setTheme).not.toHaveBeenCalled();
+    expect(ctx.notice).toHaveBeenCalledWith("Unknown theme: solarized. Themes: dark, light, mono");
+  });
+
+  it("completes theme names", () => {
+    const cmd = buildRegistry().get("theme")!;
+    expect(cmd.completeArgs!("l", {} as never)).toEqual(["light"]);
   });
 });
 

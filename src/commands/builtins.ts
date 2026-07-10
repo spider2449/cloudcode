@@ -1,5 +1,6 @@
 import type { Command, CommandContext } from "./types.js";
 import type { PermissionMode } from "../agent/session.js";
+import { THEMES } from "../ui/theme.js";
 
 const MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
 
@@ -83,6 +84,22 @@ const commands: Command[] = [
     name: "skills",
     description: "List discovered skills",
     async run(ctx) { ctx.notice(ctx.listSkills()); }
+  },
+  {
+    name: "theme",
+    description: "Switch color theme: /theme <dark|light|mono>",
+    async run(ctx, args) {
+      if (!args) { ctx.notice(ctx.listThemes()); return; }
+      if (!(args in THEMES)) {
+        ctx.notice(`Unknown theme: ${args}. Themes: ${Object.keys(THEMES).join(", ")}`);
+        return;
+      }
+      ctx.setTheme(args);
+      ctx.notice(`Theme: ${args}`);
+    },
+    completeArgs(prefix) {
+      return Object.keys(THEMES).filter(v => v.startsWith(prefix));
+    }
   },
   {
     name: "exit",

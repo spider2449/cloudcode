@@ -16,6 +16,8 @@ export interface CommandContext {
   mcpStatus(): Promise<string>;
   sendPrompt(text: string): void;
   listSkills(): string;
+  setTheme(name: string): void;
+  listThemes(): string;
 }
 
 export interface Command {
