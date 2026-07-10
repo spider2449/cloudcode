@@ -99,6 +99,28 @@ describe("InputBox", () => {
     expect(history.back()).toBe("remember me");
   });
 
+  it("submits on Enter when the input already equals the only suggestion", async () => {
+    const onSubmit = vi.fn();
+    const { stdin } = render(<InputBox completionCtx={completionCtx()} onSubmit={onSubmit} disabled={false} history={tempHistory()} />);
+    await wait();
+    stdin.write("/theme dark");
+    await wait();
+    stdin.write("\r");
+    await wait();
+    expect(onSubmit).toHaveBeenCalledWith("/theme dark");
+  });
+
+  it("submits a fully typed completion value even with trailing whitespace", async () => {
+    const onSubmit = vi.fn();
+    const { stdin } = render(<InputBox completionCtx={completionCtx()} onSubmit={onSubmit} disabled={false} history={tempHistory()} />);
+    await wait();
+    stdin.write("/config permissionMode bypassPermissions ");
+    await wait();
+    stdin.write("\r");
+    await wait();
+    expect(onSubmit).toHaveBeenCalledWith("/config permissionMode bypassPermissions");
+  });
+
   it("continues to a new line when the line ends with backslash", async () => {
     const onSubmit = vi.fn();
     const { stdin } = render(<InputBox completionCtx={completionCtx()} onSubmit={onSubmit} disabled={false} history={tempHistory()} />);

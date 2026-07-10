@@ -75,6 +75,13 @@ export function InputBox({ completionCtx, onSubmit, disabled, history }: Props) 
     update(r.text, r.cursor);
   };
 
+  // True when accepting the selected suggestion would leave the input as-is
+  // (the value is already fully typed); Enter should submit, not re-accept.
+  const acceptIsNoop = (suggestions: ReturnType<typeof currentSuggestions>) => {
+    const s = suggestions[Math.min(selectedRef.current, suggestions.length - 1)];
+    return applySuggestion(valueRef.current, s).text === valueRef.current.trimEnd();
+  };
+
   useInput((input, key) => {
     if (disabled) return;
     if (key.ctrl || key.meta) return;
@@ -130,7 +137,7 @@ export function InputBox({ completionCtx, onSubmit, disabled, history }: Props) 
       return;
     }
     if (key.return && !input) {
-      if (menuOpen) accept(menu);
+      if (menuOpen && !acceptIsNoop(menu)) accept(menu);
       else submit();
       return;
     }
@@ -138,7 +145,7 @@ export function InputBox({ completionCtx, onSubmit, disabled, history }: Props) 
     for (const ch of input) {
       if (ch === "\r" || ch === "\n") {
         const m = currentSuggestions();
-        if (m.length > 0) accept(m);
+        if (m.length > 0 && !acceptIsNoop(m)) accept(m);
         else submit();
       } else if (ch >= " ") {
         const v = valueRef.current;
