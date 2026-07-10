@@ -45,7 +45,7 @@ export function StatusBar({ provider, model, servedModel, mode, cwd, costUsd, gi
   if (elapsedMs != null && elapsedMs > 0) segments.push(formatElapsed(elapsedMs));
   segments.push(cwd);
   return (
-    <Text color={theme.muted} dimColor>
+    <Text color={theme.muted}>
       {segments.join(" · ")}
     </Text>
   );
