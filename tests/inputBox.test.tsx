@@ -16,6 +16,7 @@ const tempHistory = () => new History(join(mkdtempSync(join(tmpdir(), "cc-")), "
 const completionCtx = (): CompletionContext => ({
   registry: buildRegistry(),
   providerNames: () => [],
+  availableModels: () => [],
   listFiles: () => []
 });
 

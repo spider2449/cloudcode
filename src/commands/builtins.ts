@@ -93,7 +93,8 @@ const commands: Command[] = [
       const values =
         key === "provider" ? cctx.providerNames() :
         key === "permissionMode" ? MODES :
-        key === "theme" ? Object.keys(THEMES) : [];
+        key === "theme" ? Object.keys(THEMES) :
+        key === "model" ? cctx.availableModels() : [];
       return values.filter(v => v.startsWith(valuePrefix)).map(v => `${key} ${v}`);
     }
   },
@@ -104,12 +105,24 @@ const commands: Command[] = [
   },
   {
     name: "model",
-    description: "Switch model: /model <model-name>",
+    description: "Switch model: /model <model-name>; no arg lists available models",
     async run(ctx, args) {
-      if (!args) { ctx.notice("Usage: /model <model-name>"); return; }
+      if (!args) {
+        const models = ctx.availableModels();
+        if (models.length === 0) {
+          ctx.notice("Usage: /model <model-name> (model list unavailable for this provider)");
+          return;
+        }
+        const current = ctx.currentModel();
+        ctx.notice(models.map(m => `${m === current ? "●" : " "} ${m}`).join("\n"));
+        return;
+      }
       saveSetting("model", args);
       await ctx.setModel(args);
       ctx.notice(`Model set to ${args}.`);
+    },
+    completeArgs(prefix, cctx) {
+      return cctx.availableModels().filter(m => m.startsWith(prefix));
     }
   },
   {

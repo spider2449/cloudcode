@@ -47,6 +47,15 @@ describe("App", () => {
     expect(vi.mocked(fetchModels)).toHaveBeenCalledWith({});
   });
 
+  it("completes /model from the fetched list in the UI", async () => {
+    const { stdin, lastFrame } = makeApp();
+    await wait(50);
+    stdin.write("/model model-");
+    await wait(50);
+    expect(lastFrame()).toContain("model-a");
+    expect(lastFrame()).toContain("model-b");
+  });
+
   it("seeds session model and permission mode from initial props", async () => {
     const captured: Record<string, unknown>[] = [];
     const capturingQueryFn = (args: { prompt: AsyncIterable<unknown>; options: Record<string, unknown> }) => {

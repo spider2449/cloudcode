@@ -74,13 +74,29 @@ describe("builtins", () => {
     expect(names).toEqual(["clear", "compact", "config", "cost", "exit", "help", "init", "mcp", "model", "permissions", "provider", "resume", "skills", "theme"]);
   });
 
-  it("/model with arg sets model; without arg notices usage", async () => {
+  it("/model with arg sets model; without arg lists fetched models", async () => {
     const reg = buildRegistry();
     const ctx = mockCtx();
     await reg.get("model")!.run(ctx, "claude-sonnet-5");
     expect(ctx.setModel).toHaveBeenCalledWith("claude-sonnet-5");
+    vi.mocked(ctx.availableModels).mockReturnValue(["m-one", "m-two"]);
+    vi.mocked(ctx.currentModel).mockReturnValue("m-two");
     await reg.get("model")!.run(ctx, "");
-    expect(ctx.notice).toHaveBeenCalledWith("Usage: /model <model-name>");
+    expect(ctx.notice).toHaveBeenCalledWith("  m-one\n● m-two");
+  });
+
+  it("/model without arg falls back to usage when no list is available", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("model")!.run(ctx, "");
+    expect(ctx.notice).toHaveBeenCalledWith(
+      "Usage: /model <model-name> (model list unavailable for this provider)"
+    );
+  });
+
+  it("/model completes from the fetched list", () => {
+    const cmd = buildRegistry().get("model")!;
+    const cctx = { availableModels: () => ["llama-3", "qwen-2.5"] } as never;
+    expect(cmd.completeArgs!("ll", cctx)).toEqual(["llama-3"]);
   });
 
   it("/permissions rejects unknown mode", async () => {
@@ -270,11 +286,11 @@ describe("/config", () => {
 
   it("completes keys and values", () => {
     const cmd = buildRegistry().get("config")!;
-    const cctx = { providerNames: () => ["anthropic", "local"] } as never;
+    const cctx = { providerNames: () => ["anthropic", "local"], availableModels: () => ["claude-sonnet-5"] } as never;
     expect(cmd.completeArgs!("p", cctx)).toEqual(["provider", "permissionMode"]);
     expect(cmd.completeArgs!("theme m", cctx)).toEqual(["theme mono"]);
     expect(cmd.completeArgs!("provider l", cctx)).toEqual(["provider local"]);
-    expect(cmd.completeArgs!("model cla", cctx)).toEqual([]);
+    expect(cmd.completeArgs!("model cla", cctx)).toEqual(["model claude-sonnet-5"]);
   });
 });
 
