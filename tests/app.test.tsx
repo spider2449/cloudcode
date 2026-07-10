@@ -47,6 +47,36 @@ describe("App", () => {
     expect(lastFrame()).toContain("hello from model");
   });
 
+  it("shows an error notice instead of crashing when a slash command rejects", async () => {
+    const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
+    const rejectingQueryFn = (args: { prompt: AsyncIterable<unknown> }) => {
+      const gen = (async function* () {
+        yield { type: "system", subtype: "init", session_id: "sess-1" };
+        for await (const _ of args.prompt) { /* drain */ }
+      })();
+      return Object.assign(gen, {
+        interrupt: vi.fn(),
+        setModel: vi.fn().mockRejectedValue(new Error("not a recognized model id")),
+        setPermissionMode: vi.fn()
+      });
+    };
+    const { stdin, lastFrame } = render(
+      <App
+        cwd="/p"
+        providers={{ anthropic: {} }}
+        initialProvider="anthropic"
+        sessionIndex={index}
+        queryFn={rejectingQueryFn as never}
+      />
+    );
+    await wait();
+    stdin.write("/model bogus");
+    await wait();
+    stdin.write("\r");
+    await wait(100);
+    expect(lastFrame()).toContain("not a recognized model id");
+  });
+
   it("handles unknown slash command with a notice", async () => {
     const { stdin, lastFrame } = makeApp();
     await wait();

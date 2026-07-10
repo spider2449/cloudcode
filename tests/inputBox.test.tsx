@@ -18,6 +18,26 @@ describe("InputBox", () => {
     expect(onSubmit).toHaveBeenCalledWith("hi");
   });
 
+  it("submits a full line pasted as one chunk with trailing newline", async () => {
+    const onSubmit = vi.fn();
+    const { stdin } = render(<InputBox registry={buildRegistry()} onSubmit={onSubmit} disabled={false} />);
+    await wait();
+    stdin.write("/model claude-opus-4-8\r");
+    await wait();
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit).toHaveBeenCalledWith("/model claude-opus-4-8");
+  });
+
+  it("submits each line of a multi-line paste separately, leaving nothing behind", async () => {
+    const onSubmit = vi.fn();
+    const { stdin, lastFrame } = render(<InputBox registry={buildRegistry()} onSubmit={onSubmit} disabled={false} />);
+    await wait();
+    stdin.write("/model a\r/model b\r");
+    await wait();
+    expect(onSubmit.mock.calls).toEqual([["/model a"], ["/model b"]]);
+    expect(lastFrame()).not.toContain("model");
+  });
+
   it("shows slash completions", async () => {
     const { stdin, lastFrame } = render(<InputBox registry={buildRegistry()} onSubmit={() => {}} disabled={false} />);
     await wait();

@@ -133,7 +133,9 @@ export function App(props: AppProps) {
     if (slash) {
       const cmd = registry.get(slash.name);
       if (!cmd) { notice(`Unknown command: /${slash.name}`); return; }
-      void cmd.run(ctx, slash.args);
+      cmd.run(ctx, slash.args).catch(err => {
+        setItems(prev => [...prev, { kind: "error", text: err instanceof Error ? err.message : String(err) }]);
+      });
       return;
     }
     if (!firstMessageRef.current) {
@@ -149,7 +151,9 @@ export function App(props: AppProps) {
     if (key.escape && phase === "streaming") void sessionRef.current?.interrupt();
     if (key.tab && key.shift) {
       const next = MODE_CYCLE[(MODE_CYCLE.indexOf(mode) + 1) % MODE_CYCLE.length];
-      void ctx.setPermissionMode(next);
+      ctx.setPermissionMode(next).catch(err => {
+        setItems(prev => [...prev, { kind: "error", text: err instanceof Error ? err.message : String(err) }]);
+      });
     }
     if (key.ctrl && _input === "c") {
       const now = Date.now();
