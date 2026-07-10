@@ -50,7 +50,7 @@ describe("parseSlash", () => {
 describe("builtins", () => {
   it("registers all v1 commands", () => {
     const names = [...buildRegistry().keys()].sort();
-    expect(names).toEqual(["clear", "cost", "exit", "help", "mcp", "model", "permissions", "provider", "resume", "skills"]);
+    expect(names).toEqual(["clear", "compact", "cost", "exit", "help", "init", "mcp", "model", "permissions", "provider", "resume", "skills"]);
   });
 
   it("/model with arg sets model; without arg notices usage", async () => {
@@ -73,6 +73,20 @@ describe("builtins", () => {
     const ctx = mockCtx();
     await buildRegistry().get("provider")!.run(ctx, "local");
     expect(ctx.switchProvider).toHaveBeenCalledWith("local");
+  });
+});
+
+describe("/compact and /init", () => {
+  it("/compact forwards to the SDK", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("compact")!.run(ctx, "");
+    expect(ctx.sendPrompt).toHaveBeenCalledWith("/compact");
+  });
+
+  it("/init forwards to the SDK", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("init")!.run(ctx, "");
+    expect(ctx.sendPrompt).toHaveBeenCalledWith("/init");
   });
 });
 

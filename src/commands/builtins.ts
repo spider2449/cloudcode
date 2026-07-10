@@ -18,6 +18,16 @@ const commands: Command[] = [
     async run(ctx) { await ctx.clearSession(); ctx.notice("Started a new session."); }
   },
   {
+    name: "compact",
+    description: "Summarize the conversation to free context",
+    async run(ctx) { ctx.sendPrompt("/compact"); }
+  },
+  {
+    name: "init",
+    description: "Analyze the codebase and generate CLAUDE.md",
+    async run(ctx) { ctx.sendPrompt("/init"); }
+  },
+  {
     name: "model",
     description: "Switch model: /model <model-name>",
     async run(ctx, args) {
