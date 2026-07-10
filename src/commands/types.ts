@@ -10,6 +10,8 @@ export interface CommandContext {
   costSummary(): string;
   providerNames(): string[];
   exit(): void;
+  listPermissionRules(): string;
+  clearPermissionRules(): void;
 }
 
 export interface Command {

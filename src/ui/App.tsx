@@ -5,6 +5,7 @@ import { AgentSession, type PermissionMode, type PermissionRequest } from "../ag
 import { History } from "../agent/history.js";
 import type { ProviderConfig } from "../agent/providers.js";
 import { SessionIndex } from "../agent/sessionIndex.js";
+import { PermissionStore } from "../agent/permissionStore.js";
 import { buildRegistry, } from "../commands/builtins.js";
 import { parseSlash } from "../commands/registry.js";
 import type { CommandContext } from "../commands/types.js";
@@ -48,6 +49,7 @@ export function App(props: AppProps) {
   const sessionRef = useRef<AgentSession | null>(null);
   const lastCtrlCRef = useRef(0);
   const historyRef = useRef(new History());
+  const permissionStoreRef = useRef(new PermissionStore(props.cwd));
   const registry = useMemo(() => buildRegistry(), []);
 
   const notice = (text: string) => setItems(prev => [...prev, { kind: "notice", text }]);
@@ -147,7 +149,13 @@ export function App(props: AppProps) {
     openResumePicker: () => setShowResumePicker(true),
     costSummary: () => `Session cost: $${cost.toFixed(4)}`,
     providerNames: () => Object.keys(props.providers),
-    exit: () => { void sessionRef.current?.dispose(); exit(); }
+    exit: () => { void sessionRef.current?.dispose(); exit(); },
+    listPermissionRules: () => {
+      const rules = permissionStoreRef.current.list();
+      if (rules.length === 0) return "No permission rules.";
+      return rules.map(r => `${r.decision === "allow" ? "✓" : "✗"} ${r.tool} ${r.dir}`).join("\n");
+    },
+    clearPermissionRules: () => permissionStoreRef.current.clear(),
   };
 
   function handleSubmit(text: string): void {

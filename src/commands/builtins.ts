@@ -28,8 +28,10 @@ const commands: Command[] = [
   },
   {
     name: "permissions",
-    description: "Set permission mode: /permissions <default|acceptEdits|bypassPermissions>",
+    description: "Permission mode or rules: /permissions <default|acceptEdits|bypassPermissions|list|clear>",
     async run(ctx, args) {
+      if (args === "list") { ctx.notice(ctx.listPermissionRules()); return; }
+      if (args === "clear") { ctx.clearPermissionRules(); ctx.notice("Cleared all permission rules for this project."); return; }
       if (!MODES.includes(args as PermissionMode)) {
         ctx.notice("Valid modes: default, acceptEdits, bypassPermissions");
         return;

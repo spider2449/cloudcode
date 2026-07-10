@@ -13,7 +13,9 @@ function mockCtx(): CommandContext {
     openResumePicker: vi.fn(),
     costSummary: vi.fn().mockReturnValue("$0.01"),
     providerNames: vi.fn().mockReturnValue(["anthropic", "local"]),
-    exit: vi.fn()
+    exit: vi.fn(),
+    listPermissionRules: vi.fn().mockReturnValue("✓ Write /p/src"),
+    clearPermissionRules: vi.fn()
   };
 }
 
@@ -52,6 +54,24 @@ describe("builtins", () => {
     const ctx = mockCtx();
     await buildRegistry().get("provider")!.run(ctx, "local");
     expect(ctx.switchProvider).toHaveBeenCalledWith("local");
+  });
+});
+
+describe("/permissions list and clear", () => {
+  it("lists rules", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("permissions")!.run(ctx, "list");
+    expect(ctx.listPermissionRules).toHaveBeenCalled();
+    expect(ctx.notice).toHaveBeenCalledWith("✓ Write /p/src");
+    expect(ctx.setPermissionMode).not.toHaveBeenCalled();
+  });
+
+  it("clears rules", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("permissions")!.run(ctx, "clear");
+    expect(ctx.clearPermissionRules).toHaveBeenCalled();
+    expect(ctx.notice).toHaveBeenCalledWith("Cleared all permission rules for this project.");
+    expect(ctx.setPermissionMode).not.toHaveBeenCalled();
   });
 });
 
