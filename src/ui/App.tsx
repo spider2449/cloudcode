@@ -36,6 +36,7 @@ export interface AppProps {
 type Phase = "idle" | "streaming" | "permission";
 
 const MODE_CYCLE: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
+const CONTEXT_WINDOW = 200_000;
 
 export function App(props: AppProps) {
   const { exit } = useApp();
@@ -52,7 +53,6 @@ export function App(props: AppProps) {
   const [turnCount, setTurnCount] = useState(0);
   const startedAtRef = useRef(Date.now());
   const [elapsedMs, setElapsedMs] = useState(0);
-  const CONTEXT_WINDOW = 200_000;
   const [streamText, setStreamText] = useState("");
   const streamRef = useRef("");
   const [activeTool, setActiveTool] = useState<string | undefined>(undefined);
