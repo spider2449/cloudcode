@@ -71,6 +71,31 @@ describe("loadSkills", () => {
     const skills = loadSkills(cwd, join(root, "nouser"));
     expect(skills).toEqual([{ name: "cc-skill", description: "from claude", content: "Body", source: "claude" }]);
   });
+
+  it("parses frontmatter-only file without trailing newline", () => {
+    const cwd = join(root, "proj");
+    writeSkill(join(cwd, ".cloudcode", "skills"), "bare", "---\nname: bare\ndescription: no body\n---");
+    const skills = loadSkills(cwd, join(root, "nouser"));
+    expect(skills).toEqual([{
+      name: "bare",
+      description: "no body",
+      content: "",
+      source: "project"
+    }]);
+  });
+
+  it("does not treat a value ending in --- as the closing delimiter", () => {
+    const cwd = join(root, "proj");
+    writeSkill(join(cwd, ".cloudcode", "skills"), "tricky",
+      "---\ndescription: dashes---\nname: tricky\n---\nBody text");
+    const skills = loadSkills(cwd, join(root, "nouser"));
+    expect(skills).toEqual([{
+      name: "tricky",
+      description: "dashes---",
+      content: "Body text",
+      source: "project"
+    }]);
+  });
 });
 
 describe("formatSkillList", () => {

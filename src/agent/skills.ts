@@ -16,17 +16,19 @@ interface ParsedSkillFile {
 }
 
 function parseSkillFile(raw: string): ParsedSkillFile | undefined {
-  const match = /^---\r?\n([\s\S]*?)\r?\n?---\r?\n([\s\S]*)$/.exec(raw);
-  if (!match) return undefined;
+  const lines = raw.split(/\r?\n/);
+  if (lines[0]?.trim() !== "---") return undefined;
+  const end = lines.findIndex((line, i) => i > 0 && line.trim() === "---");
+  if (end === -1) return undefined;
   const frontmatter: Record<string, string> = {};
-  for (const line of match[1].split(/\r?\n/)) {
+  for (const line of lines.slice(1, end)) {
     const kv = /^(\w+):\s*(.*)$/.exec(line);
     if (kv) frontmatter[kv[1]] = kv[2].trim();
   }
   return {
     name: frontmatter.name,
     description: frontmatter.description ?? "",
-    content: match[2].trim()
+    content: lines.slice(end + 1).join("\n").trim()
   };
 }
 
