@@ -110,7 +110,10 @@ export function App(props: AppProps) {
       setMode(m as PermissionMode);
     },
     switchProvider: async name => {
-      if (!props.providers[name]) { notice(`Unknown provider: ${name}. Providers: ${Object.keys(props.providers).join(", ")}`); return; }
+      if (!props.providers[name]) {
+        notice(`Unknown provider: ${name}. Providers: ${Object.keys(props.providers).join(", ")}. Add custom providers in ~/.cloudcode/providers.json (see README).`);
+        return;
+      }
       const previous = providerName;
       try {
         await restartSession(name);

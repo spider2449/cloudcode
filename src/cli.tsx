@@ -22,7 +22,7 @@ if (values.version) {
 
 const providers = loadProviders();
 if (!providers[values.provider!]) {
-  console.error(`Unknown provider "${values.provider}". Known: ${Object.keys(providers).join(", ")}`);
+  console.error(`Unknown provider "${values.provider}". Known: ${Object.keys(providers).join(", ")}. Add custom providers in ~/.cloudcode/providers.json (see README).`);
   process.exit(1);
 }
 
