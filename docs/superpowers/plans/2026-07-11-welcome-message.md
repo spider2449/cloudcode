@@ -1,10 +1,10 @@
-# Startup Welcome Message Implementation Plan
+﻿# Startup Welcome Message Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Show a startup message in the transcript, loaded from an editable `welcome.txt` at the package root with `{version}`/`{provider}`/`{model}` placeholders.
 
-**Architecture:** A new `src/ui/welcome.ts` module resolves the package root from `import.meta.url`, reads `welcome.txt`, and substitutes placeholders. `App.tsx` seeds its `items` state with the result as a `notice` display item. Missing/unreadable file → no message.
+**Architecture:** A new `src/ui/welcome.ts` module resolves the package root from `import.meta.url`, reads `welcome.txt`, and substitutes placeholders. `App.tsx` seeds its `items` state with the result as a `notice` display item. Missing/unreadable file â†’ no message.
 
 **Tech Stack:** TypeScript, Node fs, Ink/React, vitest.
 
@@ -26,7 +26,7 @@
 **Interfaces:**
 - Produces: `loadWelcome(vars: WelcomeVars, filePath?: string): string | undefined` where `WelcomeVars = { version: string; provider: string; model?: string }`. `filePath` overrides the default package-root path (used by tests). Returns rendered text or `undefined` if the file is missing/unreadable.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/welcome.test.ts`:
 
@@ -48,8 +48,8 @@ function tmpFile(content: string): string {
 
 describe("loadWelcome", () => {
   it("substitutes placeholders", () => {
-    const file = tmpFile("cloudcode {version} — {provider} ({model})");
-    expect(loadWelcome(vars, file)).toBe("cloudcode 0.1.0 — anthropic (claude-sonnet-5)");
+    const file = tmpFile("cloudcode {version} â€” {provider} ({model})");
+    expect(loadWelcome(vars, file)).toBe("cloudcode 0.1.0 â€” anthropic (claude-sonnet-5)");
   });
 
   it("leaves unknown placeholders as-is", () => {
@@ -79,17 +79,17 @@ describe("loadWelcome", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npx vitest run tests/welcome.test.ts`
-Expected: FAIL — cannot resolve `../src/ui/welcome.js`.
+Expected: FAIL â€” cannot resolve `../src/ui/welcome.js`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `welcome.txt` at the package root:
 
 ```text
-cloudcode {version} — connected to {provider} ({model})
+cloudcode {version} â€” connected to {provider} ({model})
 Type a prompt to start, or / for commands.
 ```
 
@@ -131,12 +131,12 @@ export function loadWelcome(vars: WelcomeVars, filePath = defaultPath()): string
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npx vitest run tests/welcome.test.ts`
 Expected: PASS (6 tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add welcome.txt src/ui/welcome.ts tests/welcome.test.ts
@@ -152,7 +152,7 @@ git commit -m "feat: loadWelcome reads package-root welcome.txt with placeholder
 **Interfaces:**
 - Consumes: `loadWelcome(vars: {version, provider, model}): string | undefined` from `../ui/welcome.js`; `VERSION` from `../version.js`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 In `tests/app.test.tsx`, follow the file's existing render/setup helpers (read the file first) and add:
 
@@ -165,12 +165,12 @@ it("shows the welcome message on startup", () => {
 
 If the file has no shared helper, mount `<App>` with the same minimal props used by the first existing test in that file.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/app.test.tsx`
 Expected: the new test FAILS (welcome text not rendered); existing tests still pass.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `src/ui/App.tsx`, add imports:
 
@@ -192,9 +192,9 @@ const [items, setItems] = useState<DisplayItem[]>(() => {
 });
 ```
 
-Note: `/clear` and resume-picker both call `setItems([])`, so the welcome message is not re-shown — matches the spec.
+Note: `/clear` and resume-picker both call `setItems([])`, so the welcome message is not re-shown â€” matches the spec.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npx vitest run tests/app.test.tsx`
 Expected: PASS, including the new test.
@@ -202,11 +202,11 @@ Expected: PASS, including the new test.
 Then run the full suite: `npx vitest run`
 Expected: all tests PASS.
 
-- [ ] **Step 5: Manual check**
+- [x] **Step 5: Manual check**
 
-Run: `npm run dev` — the welcome message with substituted version/provider/model appears at the top before the first prompt. Exit with double Ctrl+C.
+Run: `npm run dev` â€” the welcome message with substituted version/provider/model appears at the top before the first prompt. Exit with double Ctrl+C.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/ui/App.tsx tests/app.test.tsx
