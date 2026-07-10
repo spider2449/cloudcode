@@ -37,7 +37,7 @@ export function App(props: AppProps) {
   const [mode, setMode] = useState<PermissionMode>("default");
   const [permissionQueue, setPermissionQueue] = useState<PermissionRequest[]>([]);
   const [showResumePicker, setShowResumePicker] = useState(props.openResumeOnStart ?? false);
-  const costRef = useRef(0);
+  const [cost, setCost] = useState(0);
   const firstMessageRef = useRef<string | undefined>(undefined);
   const sessionRef = useRef<AgentSession | null>(null);
   const lastCtrlCRef = useRef(0);
@@ -51,7 +51,7 @@ export function App(props: AppProps) {
     const t = (msg as { type: string }).type;
     if (t === "result") {
       const cost = (msg as { total_cost_usd?: number }).total_cost_usd;
-      if (typeof cost === "number") costRef.current += cost;
+      if (typeof cost === "number") setCost(prev => prev + cost);
       setPhase("idle");
     }
   }
@@ -98,6 +98,7 @@ export function App(props: AppProps) {
     await sessionRef.current?.dispose();
     firstMessageRef.current = undefined;
     sessionRef.current = createSession(name, resume);
+    setModel(props.providers[name]?.model);
   }
 
   const ctx: CommandContext = {
@@ -122,7 +123,7 @@ export function App(props: AppProps) {
       }
     },
     openResumePicker: () => setShowResumePicker(true),
-    costSummary: () => `Session cost: $${costRef.current.toFixed(4)}`,
+    costSummary: () => `Session cost: $${cost.toFixed(4)}`,
     providerNames: () => Object.keys(props.providers),
     exit: () => { void sessionRef.current?.dispose(); exit(); }
   };
@@ -191,7 +192,7 @@ export function App(props: AppProps) {
       {!showResumePicker && phase !== "permission" && (
         <InputBox registry={registry} onSubmit={handleSubmit} disabled={phase === "streaming"} />
       )}
-      <StatusBar provider={providerName} model={model} mode={mode} cwd={props.cwd} />
+      <StatusBar provider={providerName} model={model} mode={mode} cwd={props.cwd} costUsd={cost} />
     </Box>
   );
 }

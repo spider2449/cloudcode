@@ -64,4 +64,27 @@ describe("AgentSession", () => {
     expect(result).toMatchObject({ behavior: "allow" });
     await session.dispose();
   });
+
+  it("interrupt() resolves even when the underlying query's interrupt rejects", async () => {
+    const queryFn = () => {
+      const gen = (async function* () {})();
+      return Object.assign(gen, {
+        interrupt: vi.fn().mockRejectedValue(new Error("boom")),
+        setModel: vi.fn(),
+        setPermissionMode: vi.fn()
+      });
+    };
+    const session = new AgentSession({
+      providerName: "anthropic",
+      provider: {},
+      permissionMode: "default",
+      cwd: "/p",
+      onMessage: () => {},
+      onPermissionRequest: () => {},
+      onSessionId: () => {},
+      queryFn: queryFn as never
+    });
+    session.start();
+    await expect(session.interrupt()).resolves.toBeUndefined();
+  });
 });

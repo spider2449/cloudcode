@@ -86,7 +86,11 @@ export class AgentSession {
   }
 
   async interrupt(): Promise<void> {
-    await this.q?.interrupt();
+    try {
+      await this.q?.interrupt();
+    } catch {
+      // ignore errors during interrupt
+    }
   }
 
   async setModel(model: string): Promise<void> {
