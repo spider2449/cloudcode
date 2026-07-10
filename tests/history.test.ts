@@ -27,8 +27,10 @@ describe("History", () => {
     const b = new History(file);
     expect(b.back()).toBe("cmd149");
     let count = 1;
-    while (b.back() !== "cmd50") count++;
+    let v: string | undefined = "cmd149";
+    while (v !== "cmd50") { v = b.back(); count++; }
     expect(count).toBe(100);
+    expect(b.back()).toBe("cmd50"); // stays at oldest
   });
 
   it("dedupes consecutive duplicates", () => {
