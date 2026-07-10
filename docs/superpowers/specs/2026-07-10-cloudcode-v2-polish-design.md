@@ -14,8 +14,10 @@ upgraded input box (cursor movement, history, multi-line).
 
 Targeted upgrades with small mature libraries (chosen over adopting a full component
 suite or hand-rolling): SDK `includePartialMessages` for streaming, `marked` +
-`marked-terminal` for markdown/highlighting, `ink-spinner` for the spinner,
-`ink-text-input` for the input field.
+`marked-terminal` for markdown/highlighting, `ink-spinner` for the spinner.
+The input field extends the existing chunk-safe handler with cursor support instead
+of adopting `ink-text-input`, whose submit-on-`key.return` chunk handling would
+reintroduce the paste-mangling bug fixed in commit 5a343bf.
 
 ## 1. Token Streaming
 
@@ -57,9 +59,10 @@ suite or hand-rolling): SDK `includePartialMessages` for streaming, `marked` +
 
 ## 4. Input Box Upgrade
 
-- Replace the hand-rolled character handling in `InputBox` with `ink-text-input`
-  (cursor movement, Home/End, paste handled by the library). Our wrapper keeps:
-  slash-completion hints, Tab completion, disabled state.
+- Extend the chunk-safe `InputBox` handler with a cursor index: Left/Right move the
+  cursor, insertion and backspace operate at the cursor, and the rendered value
+  shows a block cursor at the current position. Slash-completion hints, Tab
+  completion, and the disabled state stay as-is.
 - Command history: Up/Down cycles through past inputs. Persisted to
   `~/.cloudcode/history.json` (most recent 100 entries), loaded at startup, shared
   across sessions. Module: `src/agent/history.ts` with
