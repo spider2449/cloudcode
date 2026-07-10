@@ -4,7 +4,7 @@
 
 **Goal:** Show a startup message in the transcript, loaded from an editable `welcome.txt` at the package root with `{version}`/`{provider}`/`{model}` placeholders.
 
-**Architecture:** A new `src/ui/welcome.ts` module resolves the package root from `import.meta.url`, reads `welcome.txt`, and substitutes placeholders. `App.tsx` seeds its `items` state with the result as a `notice` display item. Missing/unreadable file â†’ no message.
+**Architecture:** A new `src/ui/welcome.ts` module resolves the package root from `import.meta.url`, reads `welcome.txt`, and substitutes placeholders. `App.tsx` seeds its `items` state with the result as a `notice` display item. Missing/unreadable file → no message.
 
 **Tech Stack:** TypeScript, Node fs, Ink/React, vitest.
 
@@ -48,8 +48,8 @@ function tmpFile(content: string): string {
 
 describe("loadWelcome", () => {
   it("substitutes placeholders", () => {
-    const file = tmpFile("cloudcode {version} â€” {provider} ({model})");
-    expect(loadWelcome(vars, file)).toBe("cloudcode 0.1.0 â€” anthropic (claude-sonnet-5)");
+    const file = tmpFile("cloudcode {version} — {provider} ({model})");
+    expect(loadWelcome(vars, file)).toBe("cloudcode 0.1.0 — anthropic (claude-sonnet-5)");
   });
 
   it("leaves unknown placeholders as-is", () => {
@@ -82,14 +82,14 @@ describe("loadWelcome", () => {
 - [x] **Step 2: Run tests to verify they fail**
 
 Run: `npx vitest run tests/welcome.test.ts`
-Expected: FAIL â€” cannot resolve `../src/ui/welcome.js`.
+Expected: FAIL — cannot resolve `../src/ui/welcome.js`.
 
 - [x] **Step 3: Write the implementation**
 
 Create `welcome.txt` at the package root:
 
 ```text
-cloudcode {version} â€” connected to {provider} ({model})
+cloudcode {version} — connected to {provider} ({model})
 Type a prompt to start, or / for commands.
 ```
 
@@ -192,7 +192,7 @@ const [items, setItems] = useState<DisplayItem[]>(() => {
 });
 ```
 
-Note: `/clear` and resume-picker both call `setItems([])`, so the welcome message is not re-shown â€” matches the spec.
+Note: `/clear` and resume-picker both call `setItems([])`, so the welcome message is not re-shown — matches the spec.
 
 - [x] **Step 4: Run tests to verify they pass**
 
@@ -204,7 +204,7 @@ Expected: all tests PASS.
 
 - [x] **Step 5: Manual check**
 
-Run: `npm run dev` â€” the welcome message with substituted version/provider/model appears at the top before the first prompt. Exit with double Ctrl+C.
+Run: `npm run dev` — the welcome message with substituted version/provider/model appears at the top before the first prompt. Exit with double Ctrl+C.
 
 - [x] **Step 6: Commit**
 
