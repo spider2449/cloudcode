@@ -1,17 +1,29 @@
 {
   "name": "cloudcode",
   "version": "0.1.0",
+  "description": "Terminal AI coding agent built on the Claude Agent SDK",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "cloudcode": "dist/cli.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/spider2449/cloudcode.git"
+  },
   "engines": {
     "node": ">=18"
   },
+  "files": [
+    "dist",
+    "welcome.txt",
+    "README.md"
+  ],
   "scripts": {
     "dev": "tsx src/cli.tsx",
     "build": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "package:npm": "npm run build && npm pack --pack-destination release"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.206",
