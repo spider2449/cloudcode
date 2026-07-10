@@ -25,6 +25,8 @@ import { loadSkills, formatSkillList, type Skill } from "../agent/skills.js";
 import { mergeSkillCommands } from "../commands/skillCommands.js";
 import { THEMES, loadThemeName, saveThemeName } from "./theme.js";
 import { ThemeProvider } from "./ThemeContext.js";
+import { loadWelcome } from "./welcome.js";
+import { VERSION } from "../version.js";
 
 export interface AppProps {
   cwd: string;
@@ -48,7 +50,14 @@ export function App(props: AppProps) {
   function modelFor(name: string): string | undefined {
     return (name === props.initialProvider ? props.initialModel : undefined) ?? props.providers[name]?.model;
   }
-  const [items, setItems] = useState<DisplayItem[]>([]);
+  const [items, setItems] = useState<DisplayItem[]>(() => {
+    const welcome = loadWelcome({
+      version: VERSION,
+      provider: props.initialProvider,
+      model: modelFor(props.initialProvider)
+    });
+    return welcome ? [{ kind: "notice", text: welcome }] : [];
+  });
   const [phase, setPhase] = useState<Phase>("idle");
   const [providerName, setProviderName] = useState(props.initialProvider);
   const [model, setModel] = useState<string | undefined>(modelFor(props.initialProvider));

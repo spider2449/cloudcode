@@ -41,6 +41,12 @@ function makeApp() {
 }
 
 describe("App", () => {
+  it("shows the welcome message on startup", async () => {
+    const { lastFrame } = makeApp();
+    await wait(30);
+    expect(lastFrame()).toContain("cloudcode 0.1.0");
+  });
+
   it("fetches the provider model list on session creation", async () => {
     makeApp();
     await wait(50);
