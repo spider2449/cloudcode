@@ -41,4 +41,10 @@ describe("settings persistence", () => {
     writeFileSync(file, JSON.stringify({ permissionMode: "acceptEdits" }));
     expect(loadSettings(file)).toEqual({ permissionMode: "acceptEdits" });
   });
+
+  it("drops a persisted bypassPermissions (session-only mode)", () => {
+    const file = join(dir(), "settings.json");
+    writeFileSync(file, JSON.stringify({ permissionMode: "bypassPermissions" }));
+    expect(loadSettings(file)).toEqual({});
+  });
 });

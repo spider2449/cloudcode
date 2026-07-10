@@ -9,7 +9,9 @@ export interface Settings {
   permissionMode?: PermissionMode;
 }
 
-const VALID_MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
+// bypassPermissions is deliberately not persistable: a saved bypass would make
+// every future session auto-approve all tool calls. It stays session-only.
+const PERSISTABLE_MODES: PermissionMode[] = ["default", "acceptEdits"];
 const DEFAULT_FILE = () => join(configDir(), "settings.json");
 
 export function loadSettings(filePath: string = DEFAULT_FILE()): Settings {
@@ -19,7 +21,7 @@ export function loadSettings(filePath: string = DEFAULT_FILE()): Settings {
     const out: Settings = {};
     if (typeof raw.provider === "string") out.provider = raw.provider;
     if (typeof raw.model === "string") out.model = raw.model;
-    if (VALID_MODES.includes(raw.permissionMode)) out.permissionMode = raw.permissionMode;
+    if (PERSISTABLE_MODES.includes(raw.permissionMode)) out.permissionMode = raw.permissionMode;
     return out;
   } catch {
     // missing or invalid file: no persisted settings

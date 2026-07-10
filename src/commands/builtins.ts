@@ -68,6 +68,11 @@ const commands: Command[] = [
             ctx.notice("Valid modes: default, acceptEdits, bypassPermissions");
             return;
           }
+          if (value === "bypassPermissions") {
+            await ctx.setPermissionMode(value);
+            ctx.notice("permissionMode = bypassPermissions (session only, not saved)");
+            return;
+          }
           saveSetting("permissionMode", value);
           await ctx.setPermissionMode(value as PermissionMode);
           break;

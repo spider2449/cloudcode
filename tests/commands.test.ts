@@ -231,6 +231,14 @@ describe("/config", () => {
     expect(ctx.notice).toHaveBeenCalledWith("Valid modes: default, acceptEdits, bypassPermissions");
   });
 
+  it("applies bypassPermissions live but never persists it", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("config")!.run(ctx, "permissionMode bypassPermissions");
+    expect(ctx.setPermissionMode).toHaveBeenCalledWith("bypassPermissions");
+    expect(saveSetting).not.toHaveBeenCalled();
+    expect(ctx.notice).toHaveBeenCalledWith("permissionMode = bypassPermissions (session only, not saved)");
+  });
+
   it("sets theme by delegating to setTheme, never touching settings.json", async () => {
     const ctx = mockCtx();
     await buildRegistry().get("config")!.run(ctx, "theme mono");
