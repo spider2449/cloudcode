@@ -1,0 +1,2 @@
+cloudcode {version} — connected to {provider} ({model})
+Type a prompt to start, or / for commands.
