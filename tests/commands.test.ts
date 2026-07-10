@@ -16,7 +16,9 @@ function mockCtx(): CommandContext {
     exit: vi.fn(),
     listPermissionRules: vi.fn().mockReturnValue("✓ Write /p/src"),
     clearPermissionRules: vi.fn(),
-    mcpStatus: vi.fn().mockResolvedValue("github  connected  tools: get_repo")
+    mcpStatus: vi.fn().mockResolvedValue("github  connected  tools: get_repo"),
+    sendPrompt: vi.fn(),
+    listSkills: vi.fn().mockReturnValue("/a  does a  (project)")
   };
 }
 
@@ -32,7 +34,7 @@ describe("parseSlash", () => {
 describe("builtins", () => {
   it("registers all v1 commands", () => {
     const names = [...buildRegistry().keys()].sort();
-    expect(names).toEqual(["clear", "cost", "exit", "help", "mcp", "model", "permissions", "provider", "resume"]);
+    expect(names).toEqual(["clear", "cost", "exit", "help", "mcp", "model", "permissions", "provider", "resume", "skills"]);
   });
 
   it("/model with arg sets model; without arg notices usage", async () => {
@@ -82,6 +84,15 @@ describe("/permissions list and clear", () => {
     expect(ctx.clearPermissionRules).toHaveBeenCalled();
     expect(ctx.notice).toHaveBeenCalledWith("Cleared all permission rules for this project.");
     expect(ctx.setPermissionMode).not.toHaveBeenCalled();
+  });
+});
+
+describe("/skills", () => {
+  it("prints the skill list", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("skills")!.run(ctx, "");
+    expect(ctx.listSkills).toHaveBeenCalled();
+    expect(ctx.notice).toHaveBeenCalledWith("/a  does a  (project)");
   });
 });
 

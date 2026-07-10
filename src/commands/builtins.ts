@@ -70,6 +70,11 @@ const commands: Command[] = [
     async run(ctx) { ctx.notice(await ctx.mcpStatus()); }
   },
   {
+    name: "skills",
+    description: "List discovered skills",
+    async run(ctx) { ctx.notice(ctx.listSkills()); }
+  },
+  {
     name: "exit",
     description: "Quit cloudcode",
     async run(ctx) { ctx.exit(); }

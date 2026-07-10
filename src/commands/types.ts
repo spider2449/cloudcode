@@ -14,6 +14,8 @@ export interface CommandContext {
   listPermissionRules(): string;
   clearPermissionRules(): void;
   mcpStatus(): Promise<string>;
+  sendPrompt(text: string): void;
+  listSkills(): string;
 }
 
 export interface Command {
