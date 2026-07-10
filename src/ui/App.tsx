@@ -21,6 +21,7 @@ export interface AppProps {
   resume?: string;
   sessionIndex: SessionIndex;
   queryFn?: typeof query;
+  openResumeOnStart?: boolean;
 }
 
 type Phase = "idle" | "streaming" | "permission";
@@ -35,7 +36,7 @@ export function App(props: AppProps) {
   const [model, setModel] = useState<string | undefined>(props.providers[props.initialProvider]?.model);
   const [mode, setMode] = useState<PermissionMode>("default");
   const [permissionQueue, setPermissionQueue] = useState<PermissionRequest[]>([]);
-  const [showResumePicker, setShowResumePicker] = useState(false);
+  const [showResumePicker, setShowResumePicker] = useState(props.openResumeOnStart ?? false);
   const costRef = useRef(0);
   const firstMessageRef = useRef<string | undefined>(undefined);
   const sessionRef = useRef<AgentSession | null>(null);

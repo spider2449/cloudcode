@@ -1,0 +1,46 @@
+import React from "react";
+import { render } from "ink";
+import { parseArgs } from "node:util";
+import { App } from "./ui/App.js";
+import { loadProviders } from "./agent/providers.js";
+import { SessionIndex } from "./agent/sessionIndex.js";
+import { VERSION } from "./version.js";
+
+const { values } = parseArgs({
+  options: {
+    continue: { type: "boolean", default: false },
+    resume: { type: "boolean", default: false },
+    provider: { type: "string", default: "anthropic" },
+    version: { type: "boolean", default: false }
+  }
+});
+
+if (values.version) {
+  console.log(`cloudcode ${VERSION}`);
+  process.exit(0);
+}
+
+const providers = loadProviders();
+if (!providers[values.provider!]) {
+  console.error(`Unknown provider "${values.provider}". Known: ${Object.keys(providers).join(", ")}`);
+  process.exit(1);
+}
+
+const sessionIndex = new SessionIndex();
+const cwd = process.cwd();
+let resume: string | undefined;
+if (values.continue) {
+  resume = sessionIndex.latestForCwd(cwd)?.id;
+  if (!resume) console.error("No previous session for this directory; starting fresh.");
+}
+
+render(
+  <App
+    cwd={cwd}
+    providers={providers}
+    initialProvider={values.provider!}
+    resume={resume}
+    sessionIndex={sessionIndex}
+    openResumeOnStart={values.resume}
+  />
+);
