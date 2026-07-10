@@ -96,4 +96,59 @@ describe("App", () => {
     await wait(100);
     expect(lastFrame()).toContain("local");
   });
+
+  it("streams partial text then replaces it with the final message", async () => {
+    const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
+    let releaseFinal: () => void = () => {};
+    const gate = new Promise<void>(r => { releaseFinal = r; });
+    const streamingQueryFn = (args: { prompt: AsyncIterable<unknown> }) => {
+      const gen = (async function* () {
+        yield { type: "system", subtype: "init", session_id: "sess-1" };
+        for await (const _ of args.prompt) {
+          yield { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "par" } } };
+          yield { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "tial" } } };
+          await gate;
+          yield { type: "assistant", message: { content: [{ type: "text", text: "partial and final" }] } };
+          yield { type: "result", subtype: "success", total_cost_usd: 0.01, duration_ms: 100 };
+        }
+      })();
+      return Object.assign(gen, { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn() });
+    };
+    const { stdin, lastFrame } = render(
+      <App cwd="/p" providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index} queryFn={streamingQueryFn as never} />
+    );
+    await wait();
+    stdin.write("go");
+    await wait();
+    stdin.write("\r");
+    await wait(100);
+    expect(lastFrame()).toContain("partial");          // partial text visible while gated
+    releaseFinal();
+    await wait(100);
+    expect(lastFrame()).toContain("partial and final"); // final replaces it
+    const finalFrame = lastFrame()!;
+    expect(finalFrame.match(/partial/g)!.length).toBe(1); // no duplicate partial+final
+  });
+
+  it("shows the working indicator while streaming", async () => {
+    const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
+    const neverEndingQueryFn = (args: { prompt: AsyncIterable<unknown> }) => {
+      const gen = (async function* () {
+        yield { type: "system", subtype: "init", session_id: "sess-1" };
+        for await (const _ of args.prompt) {
+          await new Promise(() => {}); // never resolves
+        }
+      })();
+      return Object.assign(gen, { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn() });
+    };
+    const { stdin, lastFrame } = render(
+      <App cwd="/p" providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index} queryFn={neverEndingQueryFn as never} />
+    );
+    await wait();
+    stdin.write("go");
+    await wait();
+    stdin.write("\r");
+    await wait(100);
+    expect(lastFrame()).toContain("Thinking…");
+  });
 });

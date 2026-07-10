@@ -33,3 +33,10 @@ behavior on local providers is a model limitation, not a cloudcode bug.
 
 /help /clear /model /permissions /provider /resume /cost /exit
 Shift+Tab cycles permission modes. Esc interrupts. Ctrl+C twice exits.
+
+## UX
+
+Streaming output renders token by token; assistant replies render as markdown with
+syntax-highlighted code blocks; Edit/Write tools show a colored diff preview.
+Input supports cursor movement (←/→), command history (↑/↓, persisted to
+~/.cloudcode/history.json), and multi-line input (end a line with \ and press Enter).

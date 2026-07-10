@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Box, useApp, useInput } from "ink";
+import { Box, Text, useApp, useInput } from "ink";
 import type { query, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { AgentSession, type PermissionMode, type PermissionRequest } from "../agent/session.js";
 import { History } from "../agent/history.js";
@@ -8,12 +8,13 @@ import { SessionIndex } from "../agent/sessionIndex.js";
 import { buildRegistry, } from "../commands/builtins.js";
 import { parseSlash } from "../commands/registry.js";
 import type { CommandContext } from "../commands/types.js";
-import { toDisplayItems, type DisplayItem } from "./transcript.js";
+import { toDisplayItems, streamDelta, type DisplayItem } from "./transcript.js";
 import { MessageList } from "./MessageList.js";
 import { InputBox } from "./InputBox.js";
 import { PermissionDialog } from "./PermissionDialog.js";
 import { StatusBar } from "./StatusBar.js";
 import { ResumePicker } from "./ResumePicker.js";
+import { WorkingIndicator } from "./WorkingIndicator.js";
 
 export interface AppProps {
   cwd: string;
@@ -39,6 +40,10 @@ export function App(props: AppProps) {
   const [permissionQueue, setPermissionQueue] = useState<PermissionRequest[]>([]);
   const [showResumePicker, setShowResumePicker] = useState(props.openResumeOnStart ?? false);
   const [cost, setCost] = useState(0);
+  const [streamText, setStreamText] = useState("");
+  const streamRef = useRef("");
+  const [activeTool, setActiveTool] = useState<string | undefined>(undefined);
+  const [workStartedAt, setWorkStartedAt] = useState(0);
   const firstMessageRef = useRef<string | undefined>(undefined);
   const sessionRef = useRef<AgentSession | null>(null);
   const lastCtrlCRef = useRef(0);
@@ -46,12 +51,24 @@ export function App(props: AppProps) {
   const registry = useMemo(() => buildRegistry(), []);
 
   const notice = (text: string) => setItems(prev => [...prev, { kind: "notice", text }]);
+  const setStream = (text: string) => { streamRef.current = text; setStreamText(text); };
 
   function handleMessage(msg: SDKMessage): void {
+    const delta = streamDelta(msg);
+    if (delta) { setStream(streamRef.current + delta); return; }
     const mapped = toDisplayItems(msg);
     if (mapped.length > 0) setItems(prev => [...prev, ...mapped]);
+    if (mapped.some(i => i.kind === "assistant")) { setStream(""); setActiveTool(undefined); }
+    const lastTool = [...mapped].reverse().find(i => i.kind === "tool");
+    if (lastTool && lastTool.kind === "tool") setActiveTool(lastTool.label.split(" ")[0]);
     const t = (msg as { type: string }).type;
     if (t === "result") {
+      if (streamRef.current) {
+        const text = streamRef.current;
+        setItems(prev => [...prev, { kind: "assistant", text }]);
+        setStream("");
+      }
+      setActiveTool(undefined);
       const cost = (msg as { total_cost_usd?: number }).total_cost_usd;
       if (typeof cost === "number") setCost(prev => prev + cost);
       setPhase("idle");
@@ -105,7 +122,7 @@ export function App(props: AppProps) {
 
   const ctx: CommandContext = {
     notice,
-    clearSession: async () => { setItems([]); await restartSession(providerName); },
+    clearSession: async () => { setItems([]); setStream(""); setActiveTool(undefined); await restartSession(providerName); },
     setModel: async m => { await sessionRef.current?.setModel(m); setModel(m); },
     setPermissionMode: async m => {
       await sessionRef.current?.setPermissionMode(m as PermissionMode);
@@ -149,6 +166,7 @@ export function App(props: AppProps) {
     }
     setItems(prev => [...prev, { kind: "user", text }]);
     setPhase("streaming");
+    setWorkStartedAt(Date.now());
     sessionRef.current?.send(text);
   }
 
@@ -181,6 +199,8 @@ export function App(props: AppProps) {
   return (
     <Box flexDirection="column">
       <MessageList items={items} />
+      {streamText !== "" && <Text>{streamText}</Text>}
+      {phase === "streaming" && <WorkingIndicator label={activeTool ? `Running ${activeTool}` : "Thinking"} startedAt={workStartedAt} />}
       {showResumePicker && (
         <ResumePicker
           entries={props.sessionIndex.list()}
