@@ -107,6 +107,7 @@ const commands: Command[] = [
     description: "Switch model: /model <model-name>",
     async run(ctx, args) {
       if (!args) { ctx.notice("Usage: /model <model-name>"); return; }
+      saveSetting("model", args);
       await ctx.setModel(args);
       ctx.notice(`Model set to ${args}.`);
     }
@@ -133,6 +134,11 @@ const commands: Command[] = [
     description: "Switch LLM provider: /provider <name>",
     async run(ctx, args) {
       if (!args) { ctx.notice(`Providers: ${ctx.providerNames().join(", ")}`); return; }
+      if (!ctx.providerNames().includes(args)) {
+        ctx.notice(`Unknown provider: ${args}. Providers: ${ctx.providerNames().join(", ")}`);
+        return;
+      }
+      saveSetting("provider", args);
       await ctx.switchProvider(args);
     },
     completeArgs(prefix, ctx) {

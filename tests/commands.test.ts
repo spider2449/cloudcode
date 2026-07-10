@@ -88,10 +88,26 @@ describe("builtins", () => {
     expect(ctx.notice).toHaveBeenCalledWith("Valid modes: default, acceptEdits, bypassPermissions");
   });
 
-  it("/provider switches provider", async () => {
+  it("/provider switches provider and persists it", async () => {
     const ctx = mockCtx();
     await buildRegistry().get("provider")!.run(ctx, "local");
+    expect(saveSetting).toHaveBeenCalledWith("provider", "local");
     expect(ctx.switchProvider).toHaveBeenCalledWith("local");
+  });
+
+  it("/provider rejects an unknown provider without persisting", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("provider")!.run(ctx, "nope");
+    expect(saveSetting).not.toHaveBeenCalled();
+    expect(ctx.switchProvider).not.toHaveBeenCalled();
+    expect(ctx.notice).toHaveBeenCalledWith("Unknown provider: nope. Providers: anthropic, local");
+  });
+
+  it("/model persists the model", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("model")!.run(ctx, "claude-sonnet-5");
+    expect(saveSetting).toHaveBeenCalledWith("model", "claude-sonnet-5");
+    expect(ctx.setModel).toHaveBeenCalledWith("claude-sonnet-5");
   });
 });
 

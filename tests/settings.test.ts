@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadSettings, saveSetting } from "../src/agent/settings.js";
@@ -40,6 +40,14 @@ describe("settings persistence", () => {
     const file = join(dir(), "settings.json");
     writeFileSync(file, JSON.stringify({ permissionMode: "acceptEdits" }));
     expect(loadSettings(file)).toEqual({ permissionMode: "acceptEdits" });
+  });
+
+  it("preserves keys it does not understand when saving", () => {
+    const file = join(dir(), "settings.json");
+    writeFileSync(file, JSON.stringify({ permissionMode: "bypassPermissions", futureKey: "x" }));
+    saveSetting("provider", "local", file);
+    const raw = JSON.parse(readFileSync(file, "utf8"));
+    expect(raw).toEqual({ permissionMode: "bypassPermissions", futureKey: "x", provider: "local" });
   });
 
   it("drops a persisted bypassPermissions (session-only mode)", () => {
