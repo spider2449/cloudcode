@@ -151,4 +151,82 @@ describe("App", () => {
     await wait(100);
     expect(lastFrame()).toContain("Thinking…");
   });
+
+  function permissionProbeQueryFn(filePath: string, outcomes: unknown[]) {
+    return (args: { prompt: AsyncIterable<unknown>; options: { canUseTool: (t: string, i: object) => Promise<unknown> } }) => {
+      const gen = (async function* () {
+        yield { type: "system", subtype: "init", session_id: "sess-1" };
+        for await (const _ of args.prompt) {
+          outcomes.push(await args.options.canUseTool("Write", { file_path: filePath }));
+          yield { type: "result", subtype: "success", total_cost_usd: 0, duration_ms: 1 };
+        }
+      })();
+      return Object.assign(gen, { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn() });
+    };
+  }
+
+  it("auto-allows when a stored rule matches, without showing the dialog", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "cc-app-perm-"));
+    const { PermissionStore } = await import("../src/agent/permissionStore.js");
+    new PermissionStore(cwd).remember("Write", join(cwd, "src", "seed.ts"), "allow");
+    const outcomes: unknown[] = [];
+    const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
+    const { stdin, lastFrame } = render(
+      <App cwd={cwd} providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index}
+           queryFn={permissionProbeQueryFn(join(cwd, "src", "file.ts"), outcomes) as never} />
+    );
+    await wait();
+    stdin.write("go");
+    await wait();
+    stdin.write("\r");
+    await wait(150);
+    expect(outcomes[0]).toMatchObject({ behavior: "allow" });
+    expect(lastFrame()).toContain("auto-allowed: Write");
+    expect(lastFrame()).not.toContain("Permission required");
+  });
+
+  it("choosing 'Always' saves a rule so the next request auto-resolves", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "cc-app-perm-"));
+    const outcomes: unknown[] = [];
+    const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
+    const { stdin, lastFrame } = render(
+      <App cwd={cwd} providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index}
+           queryFn={permissionProbeQueryFn(join(cwd, "src", "file.ts"), outcomes) as never} />
+    );
+    await wait();
+    stdin.write("first");
+    await wait();
+    stdin.write("\r");
+    await wait(150);
+    expect(lastFrame()).toContain("Permission required");
+    stdin.write("a"); // Always for this directory
+    await wait(150);
+    expect(outcomes[0]).toMatchObject({ behavior: "allow" });
+    stdin.write("second");
+    await wait();
+    stdin.write("\r");
+    await wait(150);
+    expect(outcomes[1]).toMatchObject({ behavior: "allow" });
+    expect(lastFrame()).toContain("auto-allowed: Write");
+  });
+
+  it("a deny rule auto-denies without a dialog", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "cc-app-perm-"));
+    const { PermissionStore } = await import("../src/agent/permissionStore.js");
+    new PermissionStore(cwd).remember("Write", join(cwd, "secret", "seed.txt"), "deny");
+    const outcomes: unknown[] = [];
+    const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
+    const { stdin, lastFrame } = render(
+      <App cwd={cwd} providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index}
+           queryFn={permissionProbeQueryFn(join(cwd, "secret", "x.txt"), outcomes) as never} />
+    );
+    await wait();
+    stdin.write("go");
+    await wait();
+    stdin.write("\r");
+    await wait(150);
+    expect(outcomes[0]).toMatchObject({ behavior: "deny" });
+    expect(lastFrame()).toContain("auto-denied: Write");
+    expect(lastFrame()).not.toContain("Permission required");
+  });
 });

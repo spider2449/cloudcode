@@ -67,3 +67,12 @@ Streaming output renders token by token; assistant replies render as markdown wi
 syntax-highlighted code blocks; Edit/Write tools show a colored diff preview.
 Input supports cursor movement (←/→), command history (↑/↓, persisted to
 ~/.cloudcode/history.json), and multi-line input (end a line with \ and press Enter).
+
+## Permission memory
+
+In the permission dialog for file tools (Read/Write/Edit), choose
+"Always for this directory" or "Never for this directory" to remember the decision
+for the file's directory and all subdirectories. Rules are stored per project in
+`.cloudcode/permissions.json` (add `.cloudcode/` to your `.gitignore` if you don't
+want them version-controlled). Deny rules beat allow rules. Manage them with
+`/permissions list` and `/permissions clear`.

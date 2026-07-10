@@ -87,6 +87,18 @@ export function App(props: AppProps) {
       cwd: props.cwd,
       onMessage: handleMessage,
       onPermissionRequest: req => {
+        const filePath = typeof req.input.file_path === "string" ? req.input.file_path : undefined;
+        if (filePath) {
+          const decision = permissionStoreRef.current.check(req.toolName, filePath);
+          if (decision) {
+            req.resolve(decision === "allow");
+            setItems(prev => [...prev, {
+              kind: "notice",
+              text: `auto-${decision === "allow" ? "allowed" : "denied"}: ${req.toolName} ${filePath} (rule)`
+            }]);
+            return;
+          }
+        }
         setPermissionQueue(q => [...q, req]);
         setPhase("permission");
       },
@@ -195,7 +207,17 @@ export function App(props: AppProps) {
 
   const activePermission = permissionQueue[0];
 
-  function decidePermission(allow: boolean): void {
+  function decidePermission(allow: boolean, rememberAs?: "allow" | "deny"): void {
+    if (rememberAs && activePermission && typeof activePermission.input.file_path === "string") {
+      try {
+        permissionStoreRef.current.remember(activePermission.toolName, activePermission.input.file_path, rememberAs);
+      } catch (err) {
+        setItems(prev => [...prev, {
+          kind: "error",
+          text: `Failed to save permission rule: ${err instanceof Error ? err.message : String(err)}`
+        }]);
+      }
+    }
     activePermission?.resolve(allow);
     setPermissionQueue(q => {
       const rest = q.slice(1);
