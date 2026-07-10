@@ -13,6 +13,7 @@ export interface CommandContext {
   exit(): void;
   listPermissionRules(): string;
   clearPermissionRules(): void;
+  mcpStatus(): Promise<string>;
 }
 
 export interface Command {

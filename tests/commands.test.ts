@@ -15,7 +15,8 @@ function mockCtx(): CommandContext {
     providerNames: vi.fn().mockReturnValue(["anthropic", "local"]),
     exit: vi.fn(),
     listPermissionRules: vi.fn().mockReturnValue("✓ Write /p/src"),
-    clearPermissionRules: vi.fn()
+    clearPermissionRules: vi.fn(),
+    mcpStatus: vi.fn().mockResolvedValue("github  connected  tools: get_repo")
   };
 }
 
@@ -31,7 +32,7 @@ describe("parseSlash", () => {
 describe("builtins", () => {
   it("registers all v1 commands", () => {
     const names = [...buildRegistry().keys()].sort();
-    expect(names).toEqual(["clear", "cost", "exit", "help", "model", "permissions", "provider", "resume"]);
+    expect(names).toEqual(["clear", "cost", "exit", "help", "mcp", "model", "permissions", "provider", "resume"]);
   });
 
   it("/model with arg sets model; without arg notices usage", async () => {
@@ -54,6 +55,15 @@ describe("builtins", () => {
     const ctx = mockCtx();
     await buildRegistry().get("provider")!.run(ctx, "local");
     expect(ctx.switchProvider).toHaveBeenCalledWith("local");
+  });
+});
+
+describe("/mcp", () => {
+  it("prints the formatted MCP status", async () => {
+    const ctx = mockCtx();
+    const registry = buildRegistry();
+    await registry.get("mcp")!.run(ctx, "");
+    expect(ctx.notice).toHaveBeenCalledWith("github  connected  tools: get_repo");
   });
 });
 

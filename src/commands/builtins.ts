@@ -65,6 +65,11 @@ const commands: Command[] = [
     async run(ctx) { ctx.notice(ctx.costSummary()); }
   },
   {
+    name: "mcp",
+    description: "Show MCP server status and tools",
+    async run(ctx) { ctx.notice(await ctx.mcpStatus()); }
+  },
+  {
     name: "exit",
     description: "Quit cloudcode",
     async run(ctx) { ctx.exit(); }

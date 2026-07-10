@@ -18,6 +18,7 @@ import { PermissionDialog } from "./PermissionDialog.js";
 import { StatusBar } from "./StatusBar.js";
 import { ResumePicker } from "./ResumePicker.js";
 import { WorkingIndicator } from "./WorkingIndicator.js";
+import { loadMcpServers, formatMcpStatus } from "../agent/mcp.js";
 
 export interface AppProps {
   cwd: string;
@@ -54,6 +55,7 @@ export function App(props: AppProps) {
   const permissionStoreRef = useRef(new PermissionStore(props.cwd));
   const registry = useMemo(() => buildRegistry(), []);
   const fileIndexRef = useRef(new FileIndex(props.cwd));
+  const mcpServersRef = useRef<Record<string, Record<string, unknown>>>({});
   const completionCtx: CompletionContext = {
     registry,
     providerNames: () => Object.keys(props.providers),
@@ -87,6 +89,7 @@ export function App(props: AppProps) {
   }
 
   function createSession(name: string, resume?: string): AgentSession {
+    mcpServersRef.current = loadMcpServers(props.cwd);
     const session = new AgentSession({
       providerName: name,
       provider: props.providers[name],
@@ -94,6 +97,7 @@ export function App(props: AppProps) {
       permissionMode: mode,
       resume,
       cwd: props.cwd,
+      mcpServers: mcpServersRef.current,
       onMessage: handleMessage,
       onPermissionRequest: req => {
         const filePath = typeof req.input.file_path === "string" ? req.input.file_path : undefined;
@@ -177,6 +181,12 @@ export function App(props: AppProps) {
       return rules.map(r => `${r.decision === "allow" ? "✓" : "✗"} ${r.tool} ${r.dir}`).join("\n");
     },
     clearPermissionRules: () => permissionStoreRef.current.clear(),
+    mcpStatus: async () =>
+      formatMcpStatus(
+        Object.keys(mcpServersRef.current),
+        (await sessionRef.current?.mcpStatus()) ?? [],
+        sessionRef.current?.tools ?? []
+      ),
   };
 
   function handleSubmit(text: string): void {
