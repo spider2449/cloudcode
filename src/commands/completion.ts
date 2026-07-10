@@ -17,7 +17,7 @@ export interface CompletionContext {
 }
 
 function commandNameSuggestions(text: string, cursor: number, ctx: CompletionContext): Suggestion[] {
-  const m = /^\/(\w*)$/.exec(text);
+  const m = /^\/([\w-]*)$/.exec(text);
   if (!m || cursor !== text.length) return [];
   return [...ctx.registry.values()]
     .filter(c => c.name.startsWith(m[1]))
@@ -32,7 +32,7 @@ function commandNameSuggestions(text: string, cursor: number, ctx: CompletionCon
 }
 
 function argumentSuggestions(text: string, cursor: number, ctx: CompletionContext): Suggestion[] {
-  const m = /^\/(\w+)\s+/.exec(text);
+  const m = /^\/([\w-]+)\s+/.exec(text);
   if (!m || cursor !== text.length) return [];
   const cmd = ctx.registry.get(m[1]);
   if (!cmd?.completeArgs) return [];

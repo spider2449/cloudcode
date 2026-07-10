@@ -33,6 +33,13 @@ describe("command-name provider", () => {
   it("returns nothing when cursor is not at the end of the slash token", () => {
     expect(getSuggestions("/pe", 1, ctx())).toEqual([]);
   });
+
+  it("suggests hyphenated command names", () => {
+    const registry = buildRegistry();
+    registry.set("commit-helper", { name: "commit-helper", description: "Write a commit", async run() {} });
+    const s = getSuggestions("/commit-h", 9, ctx({ registry }));
+    expect(s.map(x => x.label)).toEqual(["/commit-helper"]);
+  });
 });
 
 describe("applySuggestion", () => {

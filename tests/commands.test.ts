@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { parseSlash } from "../src/commands/registry.js";
 import { buildRegistry } from "../src/commands/builtins.js";
+import { mergeSkillCommands } from "../src/commands/skillCommands.js";
+import type { Skill } from "../src/agent/skills.js";
 import type { CommandContext } from "../src/commands/types.js";
 
 function mockCtx(): CommandContext {
@@ -28,6 +30,20 @@ describe("parseSlash", () => {
   });
   it("returns undefined for plain text", () => {
     expect(parseSlash("hello /world")).toBeUndefined();
+  });
+
+  it("parses hyphenated kebab-case names", () => {
+    expect(parseSlash("/commit-helper fix typo")).toEqual({ name: "commit-helper", args: "fix typo" });
+  });
+
+  it("invokes a hyphenated skill command end-to-end", async () => {
+    const skill: Skill = { name: "commit-helper", description: "Write a commit", content: "Do the thing.", source: "project" };
+    const registry = mergeSkillCommands(buildRegistry(), [skill]);
+    const parsed = parseSlash("/commit-helper fix typo")!;
+    const cmd = registry.get(parsed.name)!;
+    const ctx = { sendPrompt: vi.fn() } as unknown as CommandContext;
+    await cmd.run(ctx, parsed.args);
+    expect(ctx.sendPrompt).toHaveBeenCalledWith("Do the thing.\n\nARGUMENTS: fix typo");
   });
 });
 
