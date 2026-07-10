@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Box, useApp, useInput } from "ink";
 import type { query, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { AgentSession, type PermissionMode, type PermissionRequest } from "../agent/session.js";
+import { History } from "../agent/history.js";
 import type { ProviderConfig } from "../agent/providers.js";
 import { SessionIndex } from "../agent/sessionIndex.js";
 import { buildRegistry, } from "../commands/builtins.js";
@@ -41,6 +42,7 @@ export function App(props: AppProps) {
   const firstMessageRef = useRef<string | undefined>(undefined);
   const sessionRef = useRef<AgentSession | null>(null);
   const lastCtrlCRef = useRef(0);
+  const historyRef = useRef(new History());
   const registry = useMemo(() => buildRegistry(), []);
 
   const notice = (text: string) => setItems(prev => [...prev, { kind: "notice", text }]);
@@ -197,7 +199,7 @@ export function App(props: AppProps) {
         <PermissionDialog request={activePermission} onDecision={decidePermission} />
       )}
       {!showResumePicker && phase !== "permission" && (
-        <InputBox registry={registry} onSubmit={handleSubmit} disabled={phase === "streaming"} />
+        <InputBox registry={registry} onSubmit={handleSubmit} disabled={phase === "streaming"} history={historyRef.current} />
       )}
       <StatusBar provider={providerName} model={model} mode={mode} cwd={props.cwd} costUsd={cost} />
     </Box>
