@@ -88,7 +88,8 @@ docs    failed
 - Config read/parse errors are silently tolerated (consistent with
   `loadProviders`); the file simply contributes no servers.
 - `/mcp` before the session has produced a query, or if `mcpServerStatus()`
-  throws, reports "MCP status unavailable." rather than crashing.
+  is unsupported or throws, treats the status list as empty: configured
+  servers show as `pending` rather than crashing.
 
 ## Testing
 
