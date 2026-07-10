@@ -24,7 +24,9 @@
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "package:npm": "npm run build && npm pack --pack-destination release",
-    "package:bin": "powershell -ExecutionPolicy Bypass -File scripts/build-binaries.ps1"
+    "package:bin": "powershell -ExecutionPolicy Bypass -File scripts/build-binaries.ps1",
+    "package:installer": "C:\\Users\\MOREFU~1\\AppData\\Local\\Programs\\INNOSE~1\\ISCC.exe installer\\cloudcode.iss",
+    "package": "npm run package:npm && npm run package:bin && npm run package:installer"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.206",
