@@ -6,16 +6,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { InputBox } from "../src/ui/InputBox.js";
 import { buildRegistry } from "../src/commands/builtins.js";
+import type { CompletionContext } from "../src/commands/completion.js";
 import { History } from "../src/agent/history.js";
 
 const wait = () => new Promise(r => setTimeout(r, 20));
 
 const tempHistory = () => new History(join(mkdtempSync(join(tmpdir(), "cc-")), "history.json"));
 
+const completionCtx = (): CompletionContext => ({
+  registry: buildRegistry(),
+  providerNames: () => [],
+  listFiles: () => []
+});
+
 describe("InputBox", () => {
   it("submits typed text on Enter", async () => {
     const onSubmit = vi.fn();
-    const { stdin } = render(<InputBox registry={buildRegistry()} onSubmit={onSubmit} disabled={false} history={tempHistory()} />);
+    const { stdin } = render(<InputBox completionCtx={completionCtx()} onSubmit={onSubmit} disabled={false} history={tempHistory()} />);
     await wait();
     stdin.write("hi");
     await wait();
@@ -26,7 +33,7 @@ describe("InputBox", () => {
 
   it("submits a full line pasted as one chunk with trailing newline", async () => {
     const onSubmit = vi.fn();
-    const { stdin } = render(<InputBox registry={buildRegistry()} onSubmit={onSubmit} disabled={false} history={tempHistory()} />);
+    const { stdin } = render(<InputBox completionCtx={completionCtx()} onSubmit={onSubmit} disabled={false} history={tempHistory()} />);
     await wait();
     stdin.write("/model claude-opus-4-8\r");
     await wait();
@@ -36,7 +43,7 @@ describe("InputBox", () => {
 
   it("submits each line of a multi-line paste separately, leaving nothing behind", async () => {
     const onSubmit = vi.fn();
-    const { stdin, lastFrame } = render(<InputBox registry={buildRegistry()} onSubmit={onSubmit} disabled={false} history={tempHistory()} />);
+    const { stdin, lastFrame } = render(<InputBox completionCtx={completionCtx()} onSubmit={onSubmit} disabled={false} history={tempHistory()} />);
     await wait();
     stdin.write("/model a\r/model b\r");
     await wait();
@@ -45,7 +52,7 @@ describe("InputBox", () => {
   });
 
   it("shows slash completions", async () => {
-    const { stdin, lastFrame } = render(<InputBox registry={buildRegistry()} onSubmit={() => {}} disabled={false} history={tempHistory()} />);
+    const { stdin, lastFrame } = render(<InputBox completionCtx={completionCtx()} onSubmit={() => {}} disabled={false} history={tempHistory()} />);
     await wait();
     stdin.write("/pro");
     await wait();
@@ -54,7 +61,7 @@ describe("InputBox", () => {
 
   it("moves the cursor left and inserts at the cursor", async () => {
     const onSubmit = vi.fn();
-    const { stdin } = render(<InputBox registry={buildRegistry()} onSubmit={onSubmit} disabled={false} history={tempHistory()} />);
+    const { stdin } = render(<InputBox completionCtx={completionCtx()} onSubmit={onSubmit} disabled={false} history={tempHistory()} />);
     await wait();
     stdin.write("ac");
     await wait();
@@ -71,7 +78,7 @@ describe("InputBox", () => {
     const onSubmit = vi.fn();
     const history = tempHistory();
     history.add("previous command");
-    const { stdin, lastFrame } = render(<InputBox registry={buildRegistry()} onSubmit={onSubmit} disabled={false} history={history} />);
+    const { stdin, lastFrame } = render(<InputBox completionCtx={completionCtx()} onSubmit={onSubmit} disabled={false} history={history} />);
     await wait();
     stdin.write("draft");
     await wait();
@@ -85,7 +92,7 @@ describe("InputBox", () => {
 
   it("adds submitted text to history", async () => {
     const history = tempHistory();
-    const { stdin } = render(<InputBox registry={buildRegistry()} onSubmit={() => {}} disabled={false} history={history} />);
+    const { stdin } = render(<InputBox completionCtx={completionCtx()} onSubmit={() => {}} disabled={false} history={history} />);
     await wait();
     stdin.write("remember me\r");
     await wait();
@@ -94,7 +101,7 @@ describe("InputBox", () => {
 
   it("continues to a new line when the line ends with backslash", async () => {
     const onSubmit = vi.fn();
-    const { stdin } = render(<InputBox registry={buildRegistry()} onSubmit={onSubmit} disabled={false} history={tempHistory()} />);
+    const { stdin } = render(<InputBox completionCtx={completionCtx()} onSubmit={onSubmit} disabled={false} history={tempHistory()} />);
     await wait();
     stdin.write("line one\\");
     await wait();

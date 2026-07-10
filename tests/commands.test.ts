@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { parseSlash, completions } from "../src/commands/registry.js";
+import { parseSlash } from "../src/commands/registry.js";
 import { buildRegistry } from "../src/commands/builtins.js";
 import type { CommandContext } from "../src/commands/types.js";
 
@@ -75,9 +75,3 @@ describe("/permissions list and clear", () => {
   });
 });
 
-describe("completions", () => {
-  it("matches by prefix", () => {
-    expect(completions(buildRegistry(), "pro")).toEqual(["provider"]);
-    expect(completions(buildRegistry(), "c")).toEqual(["clear", "cost"]);
-  });
-});

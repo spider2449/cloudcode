@@ -9,6 +9,8 @@ import { PermissionStore } from "../agent/permissionStore.js";
 import { buildRegistry, } from "../commands/builtins.js";
 import { parseSlash } from "../commands/registry.js";
 import type { CommandContext } from "../commands/types.js";
+import { FileIndex } from "../commands/fileIndex.js";
+import type { CompletionContext } from "../commands/completion.js";
 import { toDisplayItems, streamDelta, type DisplayItem } from "./transcript.js";
 import { MessageList } from "./MessageList.js";
 import { InputBox } from "./InputBox.js";
@@ -51,6 +53,13 @@ export function App(props: AppProps) {
   const historyRef = useRef(new History());
   const permissionStoreRef = useRef(new PermissionStore(props.cwd));
   const registry = useMemo(() => buildRegistry(), []);
+  const fileIndexRef = useRef(new FileIndex(props.cwd));
+  const completionCtx: CompletionContext = {
+    registry,
+    providerNames: () => Object.keys(props.providers),
+    listFiles: () => fileIndexRef.current.list(),
+    refreshFiles: () => fileIndexRef.current.refresh()
+  };
 
   const notice = (text: string) => setItems(prev => [...prev, { kind: "notice", text }]);
   const setStream = (text: string) => { streamRef.current = text; setStreamText(text); };
@@ -249,7 +258,7 @@ export function App(props: AppProps) {
         <PermissionDialog request={activePermission} onDecision={decidePermission} />
       )}
       {!showResumePicker && phase !== "permission" && (
-        <InputBox registry={registry} onSubmit={handleSubmit} disabled={phase === "streaming"} history={historyRef.current} />
+        <InputBox completionCtx={completionCtx} onSubmit={handleSubmit} disabled={phase === "streaming"} history={historyRef.current} />
       )}
       <StatusBar provider={providerName} model={model} mode={mode} cwd={props.cwd} costUsd={cost} />
     </Box>
