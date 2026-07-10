@@ -1,7 +1,7 @@
 import { marked } from "marked";
 import { markedTerminal } from "marked-terminal";
 
-marked.use(markedTerminal());
+marked.use(markedTerminal() as Parameters<typeof marked.use>[0]);
 
 export function renderMarkdown(text: string): string {
   try {
