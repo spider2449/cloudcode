@@ -27,7 +27,7 @@
 - Consumes: `ProviderConfig` from `src/agent/providers.ts` (`{ baseUrl?: string; apiKey?: string; model?: string }`).
 - Produces: `fetchModels(provider: ProviderConfig, fetchFn: typeof fetch = fetch): Promise<string[]>`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `tests/models.test.ts`:
 
@@ -105,12 +105,12 @@ describe("fetchModels", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npx vitest run tests/models.test.ts`
 Expected: FAIL — module `../src/agent/models.js` does not exist.
 
-- [ ] **Step 3: Implement the module**
+- [x] **Step 3: Implement the module**
 
 Create `src/agent/models.ts`:
 
@@ -156,12 +156,12 @@ export async function fetchModels(
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npx vitest run tests/models.test.ts`
 Expected: PASS (9 tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/agent/models.ts tests/models.test.ts
@@ -182,7 +182,7 @@ git commit -m "feat: fetchModels queries provider model list endpoints"
 - Consumes: `fetchModels(provider, fetchFn?)` from Task 1.
 - Produces: `CommandContext.availableModels(): string[]`, `CommandContext.currentModel(): string | undefined`, `CompletionContext.availableModels(): string[]`. Task 3's builtins rely on exactly these names.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `tests/app.test.tsx` inside `describe("App")`. It stubs the models module, so add at the top of the file (after imports):
 
@@ -206,12 +206,12 @@ Test:
 
 Note: `makeApp()` uses provider `anthropic: {}`, so `fetchModels` receives `{}`. End-to-end completion through the UI is covered by Task 3's test.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/app.test.tsx`
 Expected: FAIL — `fetchModels` not called (App does not import the module yet). Typecheck of the new context methods also fails until implemented.
 
-- [ ] **Step 3: Implement context and App changes**
+- [x] **Step 3: Implement context and App changes**
 
 In `src/commands/types.ts` add to `CommandContext`:
 
@@ -269,12 +269,12 @@ In `tests/commands.test.ts`, extend `mockCtx()` so the type still checks (Task 3
     currentModel: vi.fn().mockReturnValue(undefined),
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `npx vitest run && npx tsc --noEmit`
 Expected: all tests PASS, typecheck clean.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/commands/types.ts src/commands/completion.ts src/ui/App.tsx tests/app.test.tsx tests/commands.test.ts
@@ -293,7 +293,7 @@ git commit -m "feat: fetch provider model list on session creation"
 - Consumes: `ctx.availableModels()`, `ctx.currentModel()` (Task 2); `cctx.availableModels()` in `completeArgs`.
 - Produces: `/model` no-arg listing, `/model` `completeArgs`, `/config` model-value completion.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `tests/app.test.tsx` inside `describe("App")` (end-to-end completion through the UI; `fetchModels` is already mocked to return `["model-a", "model-b"]`):
 
@@ -350,12 +350,12 @@ And in the `/config` describe block, replace the completion test's model line:
   });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npx vitest run tests/commands.test.ts tests/app.test.tsx`
 Expected: FAIL — 5 failures (listing, fallback, /model completion, /config model completion, UI completion).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `src/commands/builtins.ts`, replace the `model` command with:
 
@@ -394,16 +394,16 @@ In the `config` command's `completeArgs`, change the `values` expression to:
         key === "model" ? cctx.availableModels() : [];
 ```
 
-- [ ] **Step 4: Run the full suite and typecheck**
+- [x] **Step 4: Run the full suite and typecheck**
 
 Run: `npx vitest run && npx tsc --noEmit`
 Expected: all tests PASS, typecheck clean.
 
-- [ ] **Step 5: Manual smoke check**
+- [x] **Step 5: Manual smoke check**
 
 With a llama-cpp server running: start cloudcode with `--provider llama-cpp`, type `/model ` and Tab — server models should complete; bare `/model` lists them with `●` on the current one. (Leave for human if no server is running.)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/commands/builtins.ts tests/commands.test.ts tests/app.test.tsx
