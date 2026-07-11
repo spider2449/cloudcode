@@ -4,6 +4,7 @@ import { EngineLoop } from "../engine/loop.js";
 import { makeClient } from "../engine/api.js";
 import { builtinTools } from "../engine/registry.js";
 import { PermissionStore } from "./permissionStore.js";
+import { SessionFile } from "../engine/sessions.js";
 import type { ProviderConfig } from "./providers.js";
 import type { McpServerConfig, McpServerStatusEntry } from "./mcp.js";
 
@@ -33,6 +34,7 @@ export interface AgentSessionOptions {
 export class AgentSession {
   private loop: EngineLoop | undefined;
   private abortController: AbortController | undefined;
+  private sessionFile: SessionFile | undefined;
   sessionId: string | undefined;
   tools: string[] = [];
 
@@ -40,6 +42,7 @@ export class AgentSession {
 
   start(): void {
     this.sessionId = this.opts.resume ?? randomUUID();
+    const resumedMessages = this.opts.resume ? SessionFile.load(this.opts.resume) : [];
     const store = new PermissionStore(this.opts.cwd);
     this.loop = new EngineLoop({
       client: makeClient(this.opts.provider),
@@ -53,6 +56,8 @@ export class AgentSession {
       requestPermission: (toolName, input) =>
         new Promise(resolve => this.opts.onPermissionRequest({ toolName, input, resolve }))
     });
+    if (resumedMessages.length > 0) this.loop.messages = resumedMessages;
+    this.sessionFile = new SessionFile(this.sessionId);
     this.tools = builtinTools().map(t => t.name);
     this.opts.onSessionId(this.sessionId);
     this.opts.onMessage({
@@ -65,7 +70,11 @@ export class AgentSession {
 
   send(text: string): void {
     this.abortController = new AbortController();
-    void this.loop?.runTurn(text, this.abortController.signal);
+    const before = this.loop?.messages.length ?? 0;
+    void this.loop?.runTurn(text, this.abortController.signal).then(() => {
+      const added = this.loop?.messages.slice(before) ?? [];
+      for (const entry of added) this.sessionFile?.append(entry);
+    });
   }
 
   async interrupt(): Promise<void> {
