@@ -80,6 +80,13 @@ Input supports cursor movement (←/→), command history (↑/↓, persisted to
 `package:bin` requires `bun` on PATH (or `~/.bun/bin/bun.exe`); `package:installer`
 requires Inno Setup 6 (ISCC.exe) and is Windows-only. All outputs land in `release/`.
 
+Each compiled binary embeds the Claude Code native CLI for its platform
+(`@anthropic-ai/claude-agent-sdk-<platform>-<arch>`), extracted on first run to
+`~/.cloudcode/bin/`, so the binaries are fully portable. npm only installs the
+native package for the host platform, so cross-platform targets are skipped
+unless you fetch their package into `node_modules` first (e.g.
+`npm pack @anthropic-ai/claude-agent-sdk-linux-x64` and extract it).
+
 ## Permission memory
 
 In the permission dialog for file tools (Read/Write/Edit), choose

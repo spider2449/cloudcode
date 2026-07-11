@@ -1,6 +1,7 @@
 import { query, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { AsyncQueue } from "./asyncQueue.js";
 import { providerEnv, type ProviderConfig } from "./providers.js";
+import { getNativeCliPath } from "./nativeCli.js";
 import type { McpServerConfig, McpServerStatusEntry } from "./mcp.js";
 
 export type PermissionMode = "default" | "acceptEdits" | "bypassPermissions";
@@ -41,6 +42,7 @@ export class AgentSession {
         model: this.opts.model ?? this.opts.provider.model,
         permissionMode: this.opts.permissionMode,
         resume: this.opts.resume,
+        pathToClaudeCodeExecutable: getNativeCliPath(),
         cwd: this.opts.cwd,
         mcpServers: this.opts.mcpServers as never,
         env: { ...process.env, ...providerEnv(this.opts.provider) },
