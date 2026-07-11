@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdirSync, writeFileSync, rmSync, mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { loadSkills, formatSkillList } from "../src/agent/skills.js";
+import { loadSkills, formatSkillList, scanRepoSkills } from "../src/agent/skills.js";
 
 let root: string;
 
@@ -95,6 +95,37 @@ describe("loadSkills", () => {
       content: "Body text",
       source: "project"
     }]);
+  });
+});
+
+describe("repo skills", () => {
+  it("scanRepoSkills finds nested SKILL.md dirs and tags the source", () => {
+    const repo = join(root, "repos", "obra--superpowers");
+    writeSkill(join(repo, "skills"), "brainstorm", "---\nname: brainstorm\ndescription: Ideate\n---\nBody");
+    writeSkill(join(repo, "plugins", "extra", "skills"), "deep", "---\nname: deep\n---\nDeep body");
+    writeSkill(join(repo, ".git"), "ignored", "---\nname: ignored\n---\nno");
+    writeSkill(join(repo, "node_modules", "x"), "ignored2", "---\nname: ignored2\n---\nno");
+    const skills = scanRepoSkills(repo, "obra--superpowers");
+    const names = skills.map(s => s.name).sort();
+    expect(names).toEqual(["brainstorm", "deep"]);
+    expect(skills[0].source).toBe("repo:obra--superpowers");
+  });
+
+  it("loadSkills includes repo skills with lowest precedence", () => {
+    const cwd = join(root, "proj");
+    const reposDir = join(root, "skill-repos");
+    writeSkill(join(reposDir, "obra--superpowers", "skills"), "dup", "---\nname: dup\n---\nrepo version");
+    writeSkill(join(reposDir, "obra--superpowers", "skills"), "solo", "---\nname: solo\n---\nrepo only");
+    writeSkill(join(cwd, ".cloudcode", "skills"), "dup", "---\nname: dup\n---\nproject version");
+    const skills = loadSkills(cwd, join(root, "nouser"), reposDir);
+    const dup = skills.find(s => s.name === "dup")!;
+    const solo = skills.find(s => s.name === "solo")!;
+    expect(dup.content).toBe("project version");
+    expect(solo.source).toBe("repo:obra--superpowers");
+  });
+
+  it("loadSkills tolerates a missing repos dir", () => {
+    expect(loadSkills(join(root, "proj2"), join(root, "nouser"), join(root, "no-repos"))).toEqual([]);
   });
 });
 

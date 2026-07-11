@@ -6,7 +6,7 @@ export interface Skill {
   name: string;
   description: string;
   content: string;
-  source: "user" | "claude" | "project";
+  source: "user" | "claude" | "project" | `repo:${string}`;
 }
 
 interface ParsedSkillFile {
@@ -60,9 +60,48 @@ function scanSkillDir(dir: string, source: Skill["source"]): Skill[] {
   return skills;
 }
 
+const SCAN_SKIP = new Set(["node_modules"]);
+const MAX_REPO_DEPTH = 5;
+
+export function scanRepoSkills(repoDir: string, repoName: string): Skill[] {
+  const skills: Skill[] = [];
+  const walk = (dir: string, depth: number): void => {
+    if (depth > MAX_REPO_DEPTH) return;
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name.startsWith(".") || SCAN_SKIP.has(entry.name)) continue;
+      const sub = join(dir, entry.name);
+      try {
+        const parsed = parseSkillFile(readFileSync(join(sub, "SKILL.md"), "utf8"));
+        if (parsed) {
+          skills.push({
+            name: parsed.name || entry.name,
+            description: parsed.description,
+            content: parsed.content,
+            source: `repo:${repoName}`
+          });
+          continue; // a skill dir is a leaf
+        }
+      } catch {
+        // no SKILL.md here: recurse
+      }
+      walk(sub, depth + 1);
+    }
+  };
+  walk(repoDir, 0);
+  return skills;
+}
+
 export function loadSkills(
   cwd: string,
-  userDir: string = join(configDir(), "skills")
+  userDir: string = join(configDir(), "skills"),
+  reposDir: string = join(configDir(), "skill-repos")
 ): Skill[] {
   const byName = new Map<string, Skill>();
   const scans: Skill[] = [
@@ -71,6 +110,18 @@ export function loadSkills(
     ...scanSkillDir(join(cwd, ".cloudcode", "skills"), "project")
   ];
   for (const skill of scans) byName.set(skill.name, skill);
+  let repoEntries;
+  try {
+    repoEntries = readdirSync(reposDir, { withFileTypes: true });
+  } catch {
+    repoEntries = [];
+  }
+  for (const entry of repoEntries) {
+    if (!entry.isDirectory()) continue;
+    for (const skill of scanRepoSkills(join(reposDir, entry.name), entry.name)) {
+      if (!byName.has(skill.name)) byName.set(skill.name, skill);
+    }
+  }
   return [...byName.values()];
 }
 
