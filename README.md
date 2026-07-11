@@ -58,7 +58,8 @@ must contain a `tool_use` content block and `stop_reason: "tool_use"`.
 
 ## Commands
 
-/help /clear /model /permissions /provider /resume /cost /exit
+/help /clear /compact /config /init /model /permissions /provider /resume /set
+/cost /mcp /skills /skill /theme /exit
 Shift+Tab cycles permission modes. Esc interrupts. Ctrl+C twice exits.
 
 ## UX
@@ -67,6 +68,17 @@ Streaming output renders token by token; assistant replies render as markdown wi
 syntax-highlighted code blocks; Edit/Write tools show a colored diff preview.
 Input supports cursor movement (←/→), command history (↑/↓, persisted to
 ~/.cloudcode/history.json), and multi-line input (end a line with \ and press Enter).
+
+## Release
+
+    npm run package         # npm tarball + binaries + Windows installer
+    npm run package:npm     # build + `npm pack` into release/
+    npm run package:bin     # bun-compiled standalone binaries into release/
+                             #   (win-x64, macos-arm64, macos-x64, linux-x64)
+    npm run package:installer  # Windows installer via Inno Setup (installer/cloudcode.iss)
+
+`package:bin` requires `bun` on PATH (or `~/.bun/bin/bun.exe`); `package:installer`
+requires Inno Setup 6 (ISCC.exe) and is Windows-only. All outputs land in `release/`.
 
 ## Permission memory
 
