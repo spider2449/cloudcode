@@ -432,10 +432,11 @@ describe("bottom-anchored footer", () => {
     await wait();
     const lines = lastFrame()!.split("\n");
     // ink-testing-library has no real TTY, so App falls back to 24 rows.
-    // Welcome banner + filler + input box + status bar should fill the
-    // screen to within the 1-row reserve. Without the filler the frame
-    // is only ~6-10 lines tall.
-    expect(lines.length).toBeGreaterThanOrEqual(20);
+    // Welcome banner + filler + input box + status bar must fill the
+    // screen to exactly the 24-row fallback minus the 1-row reserve.
+    // Without the filler the frame is only 21 lines (the banner alone),
+    // so >= 23 discriminates against a missing filler.
+    expect(lines.length).toBeGreaterThanOrEqual(23);
     // Status bar (provider segment) must be the last line.
     expect(lines[lines.length - 1]).toContain("anthropic");
   });
