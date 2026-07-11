@@ -5,6 +5,7 @@ import { makeClient } from "../engine/api.js";
 import { builtinTools } from "../engine/registry.js";
 import { PermissionStore } from "./permissionStore.js";
 import { SessionFile } from "../engine/sessions.js";
+import { buildSystemPrompt } from "../engine/systemPrompt.js";
 import type { ProviderConfig } from "./providers.js";
 import type { McpServerConfig, McpServerStatusEntry } from "./mcp.js";
 
@@ -47,7 +48,7 @@ export class AgentSession {
     this.loop = new EngineLoop({
       client: makeClient(this.opts.provider),
       model: this.opts.model ?? this.opts.provider.model ?? DEFAULT_MODEL,
-      systemPrompt: "You are cloudcode, an interactive terminal coding agent. Working directory: " + this.opts.cwd,
+      systemPrompt: buildSystemPrompt(this.opts.cwd),
       tools: builtinTools(),
       cwd: this.opts.cwd,
       permissionMode: this.opts.permissionMode,
