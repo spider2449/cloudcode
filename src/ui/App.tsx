@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Box, Text, useApp, useInput, useStdout } from "ink";
+import { Box, Text, measureElement, useApp, useInput, useStdout, type DOMElement } from "ink";
 import type { EngineMessage } from "../engine/messages.js";
 import { AgentSession, type PermissionMode, type PermissionRequest } from "../agent/session.js";
 import { History } from "../agent/history.js";
@@ -31,6 +31,7 @@ import { tailForHeight } from "./streamTail.js";
 import { VERSION } from "../version.js";
 import { ProjectPicker } from "./ProjectPicker.js";
 import { recentProjects, resolveProjectPath } from "../commands/projectPath.js";
+import { staticRows, fillerHeight } from "./bottomFill.js";
 
 export interface AppProps {
   cwd: string;
@@ -100,6 +101,9 @@ export function App(props: AppProps) {
   const [elapsedMs, setElapsedMs] = useState(0);
   const streamRef = useRef("");
   const [workStartedAt, setWorkStartedAt] = useState(0);
+  const liveRegionRef = useRef<DOMElement>(null);
+  const [dynamicRows, setDynamicRows] = useState(0);
+  const [termSize, setTermSize] = useState({ rows: stdout?.rows ?? 24, columns: stdout?.columns ?? 80 });
   const firstMessageRef = useRef<string | undefined>(undefined);
   const sessionRef = useRef<AgentSession | null>(null);
   const lastCtrlCRef = useRef(0);
@@ -234,6 +238,21 @@ export function App(props: AppProps) {
     const timer = setInterval(() => setElapsedMs(Date.now() - startedAtRef.current), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!stdout) return;
+    const onResize = () => setTermSize({ rows: stdout.rows ?? 24, columns: stdout.columns ?? 80 });
+    stdout.on("resize", onResize);
+    return () => { stdout.off("resize", onResize); };
+  }, [stdout]);
+
+  // Re-measure the live region after every render; only write state when the
+  // height actually changed so this cannot loop.
+  useEffect(() => {
+    if (!liveRegionRef.current) return;
+    const { height } = measureElement(liveRegionRef.current);
+    setDynamicRows(prev => (prev === height ? prev : height));
+  });
 
   const git = useGitStatus(props.cwd, turnCount);
 
@@ -373,64 +392,76 @@ export function App(props: AppProps) {
     });
   }
 
+  const transcriptRows = staticRows(items, termSize.columns, termSize.rows);
+  const filler = fillerHeight(termSize.rows, transcriptRows, dynamicRows);
+
   return (
     <ThemeProvider theme={THEMES[themeName] ?? THEMES.dark}>
       <Box flexDirection="column">
         <MessageList items={items} staticKey={transcriptKey} />
-        {/* Show only a tail of the streaming text: if the dynamic region
-            reaches the terminal height, Ink clears and rewrites the whole
-            screen on every delta, which breaks scrolling mid-response. The
-            full text is committed to the Static transcript on "result". */}
-        {streamText !== "" && (
-          <Text>
-            {/* Reserve rows for everything else in the live region below this
-                text: InputBox border+line (3) + disabled hint (1) +
-                SuggestionMenu's own MAX_ROWS (8) + WorkingIndicator/ProgressBar
-                (1) + StatusBar (1). Falling short here reintroduces the
-                clear-and-repaint jitter this cap exists to avoid. */}
-            {tailForHeight(streamText, Math.max(3, (stdout?.rows ?? 24) - 14), stdout?.columns ?? 80)}
-          </Text>
-        )}
-        {phase === "streaming" && <WorkingIndicator label={activeTool ? `Running ${activeTool}` : "Thinking"} startedAt={workStartedAt} />}
-        {compactPct !== undefined && <ProgressBar label="Compacting" pct={compactPct} />}
-        {showResumePicker && (
-          <ResumePicker
-            entries={props.sessionIndex.list()}
-            onPick={e => {
-              setShowResumePicker(false);
-              resetItems();
-              const provider = props.providers[e.provider] ? e.provider : providerName;
-              setProviderName(provider);
-              setModel(props.providers[provider]?.model);
-              void restartSession(provider, e.id);
-            }}
-            onCancel={() => setShowResumePicker(false)}
+        {/* Blank space pushing the footer to the terminal's bottom edge while
+            the transcript is shorter than the screen (Claude Code-style).
+            Sized from estimated transcript rows (Static scrollback cannot be
+            measured) plus the measured live region below; goes to 0 once
+            output exceeds one screen. Kept outside liveRegionRef so the
+            measurement does not include the filler itself. */}
+        {filler > 0 && <Box height={filler} flexShrink={0} />}
+        <Box flexDirection="column" ref={liveRegionRef}>
+          {/* Show only a tail of the streaming text: if the dynamic region
+              reaches the terminal height, Ink clears and rewrites the whole
+              screen on every delta, which breaks scrolling mid-response. The
+              full text is committed to the Static transcript on "result". */}
+          {streamText !== "" && (
+            <Text>
+              {/* Reserve rows for everything else in the live region below this
+                  text: InputBox border+line (3) + disabled hint (1) +
+                  SuggestionMenu's own MAX_ROWS (8) + WorkingIndicator/ProgressBar
+                  (1) + StatusBar (1). Falling short here reintroduces the
+                  clear-and-repaint jitter this cap exists to avoid. */}
+              {tailForHeight(streamText, Math.max(3, termSize.rows - 14), termSize.columns)}
+            </Text>
+          )}
+          {phase === "streaming" && <WorkingIndicator label={activeTool ? `Running ${activeTool}` : "Thinking"} startedAt={workStartedAt} />}
+          {compactPct !== undefined && <ProgressBar label="Compacting" pct={compactPct} />}
+          {showResumePicker && (
+            <ResumePicker
+              entries={props.sessionIndex.list()}
+              onPick={e => {
+                setShowResumePicker(false);
+                resetItems();
+                const provider = props.providers[e.provider] ? e.provider : providerName;
+                setProviderName(provider);
+                setModel(props.providers[provider]?.model);
+                void restartSession(provider, e.id);
+              }}
+              onCancel={() => setShowResumePicker(false)}
+            />
+          )}
+          {showProjectPicker && (
+            <ProjectPicker
+              projects={recentProjects(props.sessionIndex.list(), props.cwd)}
+              currentCwd={props.cwd}
+              onPick={p => {
+                setShowProjectPicker(false);
+                const result = resolveProjectPath(p, props.cwd);
+                if (!result.ok) { notice(result.error); return; }
+                ctx.switchProject(result.path);
+              }}
+              onCancel={() => setShowProjectPicker(false)}
+            />
+          )}
+          {phase === "permission" && activePermission && (
+            <PermissionDialog request={activePermission} onDecision={decidePermission} />
+          )}
+          {!showResumePicker && !showProjectPicker && phase !== "permission" && (
+            <InputBox completionCtx={completionCtx} onSubmit={handleSubmit} disabled={phase === "streaming"} history={historyRef.current} />
+          )}
+          <StatusBar
+            provider={providerName} model={model} servedModel={servedModel} mode={mode} cwd={props.cwd} costUsd={cost}
+            gitBranch={git.branch} gitDirty={git.dirty}
+            tokens={tokens} contextPct={contextPct} elapsedMs={elapsedMs}
           />
-        )}
-        {showProjectPicker && (
-          <ProjectPicker
-            projects={recentProjects(props.sessionIndex.list(), props.cwd)}
-            currentCwd={props.cwd}
-            onPick={p => {
-              setShowProjectPicker(false);
-              const result = resolveProjectPath(p, props.cwd);
-              if (!result.ok) { notice(result.error); return; }
-              ctx.switchProject(result.path);
-            }}
-            onCancel={() => setShowProjectPicker(false)}
-          />
-        )}
-        {phase === "permission" && activePermission && (
-          <PermissionDialog request={activePermission} onDecision={decidePermission} />
-        )}
-        {!showResumePicker && !showProjectPicker && phase !== "permission" && (
-          <InputBox completionCtx={completionCtx} onSubmit={handleSubmit} disabled={phase === "streaming"} history={historyRef.current} />
-        )}
-        <StatusBar
-          provider={providerName} model={model} servedModel={servedModel} mode={mode} cwd={props.cwd} costUsd={cost}
-          gitBranch={git.branch} gitDirty={git.dirty}
-          tokens={tokens} contextPct={contextPct} elapsedMs={elapsedMs}
-        />
+        </Box>
       </Box>
     </ThemeProvider>
   );

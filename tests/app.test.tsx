@@ -425,3 +425,18 @@ describe("App", () => {
     expect(lastFrame()).toContain("done");
   });
 });
+
+describe("bottom-anchored footer", () => {
+  it("pads a short transcript so the status bar sits near the terminal bottom", async () => {
+    const { lastFrame } = makeApp();
+    await wait();
+    const lines = lastFrame()!.split("\n");
+    // ink-testing-library has no real TTY, so App falls back to 24 rows.
+    // Welcome banner + filler + input box + status bar should fill the
+    // screen to within the 1-row reserve. Without the filler the frame
+    // is only ~6-10 lines tall.
+    expect(lines.length).toBeGreaterThanOrEqual(20);
+    // Status bar (provider segment) must be the last line.
+    expect(lines[lines.length - 1]).toContain("anthropic");
+  });
+});
