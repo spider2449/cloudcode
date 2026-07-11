@@ -5,6 +5,7 @@ import { makeClient } from "../engine/api.js";
 import { builtinTools } from "../engine/registry.js";
 import { PermissionStore } from "./permissionStore.js";
 import { SessionFile } from "../engine/sessions.js";
+import { McpManager } from "../engine/mcpClient.js";
 import { buildSystemPrompt } from "../engine/systemPrompt.js";
 import type { ProviderConfig } from "./providers.js";
 import type { McpServerConfig, McpServerStatusEntry } from "./mcp.js";
@@ -38,6 +39,8 @@ export class AgentSession {
   private sessionFile: SessionFile | undefined;
   sessionId: string | undefined;
   tools: string[] = [];
+  private mcp = new McpManager();
+  private mcpReady: Promise<void> | undefined;
 
   constructor(private opts: AgentSessionOptions) {}
 
@@ -67,6 +70,13 @@ export class AgentSession {
       session_id: this.sessionId,
       tools: this.tools
     });
+    this.mcpReady = this.mcp.connect(this.opts.mcpServers ?? {}).then(() => {
+      const mcpTools = this.mcp.tools();
+      if (mcpTools.length > 0 && this.loop) {
+        this.loop.tools.push(...mcpTools);
+        this.tools = [...this.tools, ...mcpTools.map(t => t.name)];
+      }
+    });
   }
 
   send(text: string): void {
@@ -91,10 +101,11 @@ export class AgentSession {
   }
 
   async mcpStatus(): Promise<McpServerStatusEntry[]> {
-    return [];
+    return this.mcp.status();
   }
 
   async dispose(): Promise<void> {
     this.abortController?.abort();
+    await this.mcp.dispose();
   }
 }

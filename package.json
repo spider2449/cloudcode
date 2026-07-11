@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "ink": "^5.2.1",
     "ink-spinner": "^5.0.0",
     "marked": "^15.0.12",

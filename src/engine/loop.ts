@@ -29,12 +29,14 @@ interface StreamedTurn {
 
 export class EngineLoop {
   messages: unknown[] = [];
+  tools: ToolDef[];
   private model: string;
   private mode: PermissionMode;
 
   constructor(private opts: EngineOptions) {
     this.model = opts.model;
     this.mode = opts.permissionMode;
+    this.tools = opts.tools;
   }
 
   setModel(model: string): void {
@@ -82,7 +84,7 @@ export class EngineLoop {
       model: this.model,
       system: this.opts.systemPrompt,
       messages: this.messages,
-      tools: this.opts.tools.map(t => ({ name: t.name, description: t.description, input_schema: t.input_schema })),
+      tools: this.tools.map(t => ({ name: t.name, description: t.description, input_schema: t.input_schema })),
       max_tokens: MAX_TOKENS
     };
     for await (const event of this.opts.client.create(req, signal)) {
@@ -129,7 +131,7 @@ export class EngineLoop {
       content: msg,
       is_error: true
     });
-    const tool = this.opts.tools.find(t => t.name === block.name);
+    const tool = this.tools.find(t => t.name === block.name);
     if (!tool) return deniedResult(`Unknown tool: ${block.name}`);
     let decision = decidePermission(block.name, block.input, this.mode, this.opts.store);
     if (decision === "ask") {
