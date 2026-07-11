@@ -6,6 +6,11 @@ import { readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, basename, join, resolve } from "node:path";
 import { resolveProjectPath } from "./projectPath.js";
+import {
+  installRepo, updateRepos, removeRepo, listRepoNames,
+  skillReposDir, defaultGitRunner
+} from "../agent/skillRepos.js";
+import { scanRepoSkills } from "../agent/skills.js";
 
 const MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
 
@@ -218,6 +223,66 @@ const commands: Command[] = [
     name: "skills",
     description: "List discovered skills",
     async run(ctx) { ctx.notice(ctx.listSkills()); }
+  },
+  {
+    name: "skill",
+    description: "Manage skill repos: /skill install <github-url> | update [name] | remove <name> --yes | list",
+    async run(ctx, args) {
+      const [sub, ...rest] = args.split(/\s+/).filter(Boolean);
+      const usage = "Usage: /skill install <github-url> | update [name] | remove <name> --yes | list";
+      const reposDir = skillReposDir();
+      switch (sub) {
+        case "install": {
+          if (!rest[0]) { ctx.notice(usage); return; }
+          ctx.notice(await installRepo(rest[0], reposDir, defaultGitRunner));
+          ctx.reloadSkills();
+          return;
+        }
+        case "update": {
+          ctx.notice(await updateRepos(rest[0], reposDir, defaultGitRunner));
+          ctx.reloadSkills();
+          return;
+        }
+        case "remove": {
+          if (!rest[0]) { ctx.notice(usage); return; }
+          if (rest[1] !== "--yes") {
+            ctx.notice(`This deletes ${join(reposDir, rest[0])}. Re-run: /skill remove ${rest[0]} --yes`);
+            return;
+          }
+          ctx.notice(removeRepo(rest[0], reposDir));
+          ctx.reloadSkills();
+          return;
+        }
+        case "list": {
+          const names = listRepoNames(reposDir);
+          if (names.length === 0) {
+            ctx.notice("No skill repos installed. Use /skill install <github-url>.\n\n" + ctx.listSkills());
+            return;
+          }
+          const repoLines = names.map(name => {
+            const skills = scanRepoSkills(join(reposDir, name), name);
+            const skillNames = skills.map(s => `/${s.name}`).join(", ") || "(no skills)";
+            return `${name}: ${skillNames}`;
+          });
+          ctx.notice(repoLines.join("\n") + "\n\nAll skills:\n" + ctx.listSkills());
+          return;
+        }
+        default:
+          ctx.notice(usage);
+      }
+    },
+    completeArgs(prefix) {
+      const parts = prefix.split(/\s+/);
+      const subs = ["install", "update", "remove", "list"];
+      if (parts.length <= 1) return subs.filter(s => s.startsWith(parts[0] ?? ""));
+      const [sub, frag = ""] = parts;
+      if (sub === "update" || sub === "remove") {
+        return listRepoNames(skillReposDir())
+          .filter(n => n.startsWith(frag))
+          .map(n => `${sub} ${n}`);
+      }
+      return [];
+    }
   },
   {
     name: "theme",

@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, type Dirent } from "node:fs";
 import { join } from "node:path";
 import { configDir } from "./providers.js";
 
@@ -110,7 +110,7 @@ export function loadSkills(
     ...scanSkillDir(join(cwd, ".cloudcode", "skills"), "project")
   ];
   for (const skill of scans) byName.set(skill.name, skill);
-  let repoEntries;
+  let repoEntries: Dirent[];
   try {
     repoEntries = readdirSync(reposDir, { withFileTypes: true });
   } catch {

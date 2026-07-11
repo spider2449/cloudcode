@@ -136,14 +136,18 @@ export function App(props: AppProps) {
     }
   }
 
+  function refreshSkills(): void {
+    skillsRef.current = loadSkills(props.cwd);
+    setRegistry(mergeSkillCommands(buildRegistry(), skillsRef.current));
+  }
+
   function createSession(name: string, resume?: string, modeOverride?: PermissionMode): AgentSession {
     availableModelsRef.current = [];
     void fetchModels(props.providers[name] ?? {}).then(models => {
       availableModelsRef.current = models;
     });
     mcpServersRef.current = loadMcpServers(props.cwd);
-    skillsRef.current = loadSkills(props.cwd);
-    setRegistry(mergeSkillCommands(buildRegistry(), skillsRef.current));
+    refreshSkills();
     const session = new AgentSession({
       providerName: name,
       provider: props.providers[name],
@@ -262,6 +266,7 @@ export function App(props: AppProps) {
       ),
     sendPrompt: text => sendUserMessage(text),
     listSkills: () => formatSkillList(skillsRef.current),
+    reloadSkills: () => refreshSkills(),
     setTheme: name => { setThemeName(name); saveThemeName(name); },
     listThemes: () => Object.keys(THEMES).map(n => `${n === themeName ? "●" : " "} ${n}`).join("\n"),
     // Do not dispose the session here: the remount's unmount cleanup
