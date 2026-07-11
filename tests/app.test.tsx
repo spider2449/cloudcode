@@ -62,6 +62,27 @@ describe("App", () => {
     expect(lastFrame()).toContain("model-b");
   });
 
+  it("/set project <path> calls onSwitchProject with the resolved path", async () => {
+    const onSwitchProject = vi.fn();
+    const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
+    const { stdin } = render(
+      <App
+        cwd={process.cwd()}
+        providers={{ anthropic: {}, local: { baseUrl: "http://x", apiKey: "k" } }}
+        initialProvider="anthropic"
+        sessionIndex={index}
+        queryFn={fakeQueryFn() as never}
+        onSwitchProject={onSwitchProject}
+      />
+    );
+    await wait();
+    stdin.write(`/set project ${process.cwd()}`);
+    await wait();
+    stdin.write("\r");
+    await wait();
+    expect(onSwitchProject).toHaveBeenCalledWith(process.cwd());
+  });
+
   it("seeds session model and permission mode from initial props", async () => {
     const captured: Record<string, unknown>[] = [];
     const capturingQueryFn = (args: { prompt: AsyncIterable<unknown>; options: Record<string, unknown> }) => {

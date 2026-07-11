@@ -27,6 +27,8 @@ import { THEMES, loadThemeName, saveThemeName } from "./theme.js";
 import { ThemeProvider } from "./ThemeContext.js";
 import { loadWelcome } from "./welcome.js";
 import { VERSION } from "../version.js";
+import { ProjectPicker } from "./ProjectPicker.js";
+import { recentProjects } from "../commands/projectPath.js";
 
 export interface AppProps {
   cwd: string;
@@ -38,6 +40,8 @@ export interface AppProps {
   sessionIndex: SessionIndex;
   queryFn?: typeof query;
   openResumeOnStart?: boolean;
+  onSwitchProject?: (path: string) => void;
+  switchedFrom?: string;
 }
 
 type Phase = "idle" | "streaming" | "permission";
@@ -56,7 +60,9 @@ export function App(props: AppProps) {
       provider: props.initialProvider,
       model: modelFor(props.initialProvider)
     });
-    return welcome ? [{ kind: "notice", text: welcome }] : [];
+    const initial: DisplayItem[] = welcome ? [{ kind: "notice", text: welcome }] : [];
+    if (props.switchedFrom) initial.push({ kind: "notice", text: `Switched project to ${props.cwd}` });
+    return initial;
   });
   const [phase, setPhase] = useState<Phase>("idle");
   const [providerName, setProviderName] = useState(props.initialProvider);
@@ -65,6 +71,7 @@ export function App(props: AppProps) {
   const [servedModel, setServedModel] = useState<string | undefined>(undefined);
   const [permissionQueue, setPermissionQueue] = useState<PermissionRequest[]>([]);
   const [showResumePicker, setShowResumePicker] = useState(props.openResumeOnStart ?? false);
+  const [showProjectPicker, setShowProjectPicker] = useState(false);
   const [cost, setCost] = useState(0);
   const [tokens, setTokens] = useState(0);
   const [contextPct, setContextPct] = useState<number | undefined>(undefined);
@@ -257,8 +264,14 @@ export function App(props: AppProps) {
     listSkills: () => formatSkillList(skillsRef.current),
     setTheme: name => { setThemeName(name); saveThemeName(name); },
     listThemes: () => Object.keys(THEMES).map(n => `${n === themeName ? "●" : " "} ${n}`).join("\n"),
-    switchProject: () => {},
-    openProjectPicker: () => {},
+    // Do not dispose the session here: the remount's unmount cleanup
+    // (useEffect return) disposes it, and if the switch fails in Root
+    // (chdir error) the current session must stay alive.
+    switchProject: path => {
+      if (!props.onSwitchProject) { notice("Project switching is not available."); return; }
+      props.onSwitchProject(path);
+    },
+    openProjectPicker: () => setShowProjectPicker(true),
     currentCwd: () => props.cwd,
   };
 
@@ -342,10 +355,18 @@ export function App(props: AppProps) {
             onCancel={() => setShowResumePicker(false)}
           />
         )}
+        {showProjectPicker && (
+          <ProjectPicker
+            projects={recentProjects(props.sessionIndex.list(), props.cwd)}
+            currentCwd={props.cwd}
+            onPick={p => { setShowProjectPicker(false); ctx.switchProject(p); }}
+            onCancel={() => setShowProjectPicker(false)}
+          />
+        )}
         {phase === "permission" && activePermission && (
           <PermissionDialog request={activePermission} onDecision={decidePermission} />
         )}
-        {!showResumePicker && phase !== "permission" && (
+        {!showResumePicker && !showProjectPicker && phase !== "permission" && (
           <InputBox completionCtx={completionCtx} onSubmit={handleSubmit} disabled={phase === "streaming"} history={historyRef.current} />
         )}
         <StatusBar

@@ -35,22 +35,41 @@ if (!providers[providerName]) {
 }
 
 const sessionIndex = new SessionIndex();
-const cwd = process.cwd();
+const initialCwd = process.cwd();
 let resume: string | undefined;
 if (values.continue) {
-  resume = sessionIndex.latestForCwd(cwd)?.id;
+  resume = sessionIndex.latestForCwd(initialCwd)?.id;
   if (!resume) console.error("No previous session for this directory; starting fresh.");
 }
 
-render(
-  <App
-    cwd={cwd}
-    providers={providers}
-    initialProvider={providerName}
-    initialModel={settings.model}
-    initialMode={settings.permissionMode}
-    resume={resume}
-    sessionIndex={sessionIndex}
-    openResumeOnStart={values.resume}
-  />
-);
+function Root() {
+  const [cwd, setCwd] = React.useState(initialCwd);
+  const [prevCwd, setPrevCwd] = React.useState<string | undefined>(undefined);
+  const switchProject = (path: string) => {
+    try {
+      process.chdir(path);
+    } catch (err) {
+      console.error(`Failed to switch project: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    setPrevCwd(cwd);
+    setCwd(path);
+  };
+  return (
+    <App
+      key={cwd}
+      cwd={cwd}
+      providers={providers}
+      initialProvider={providerName}
+      initialModel={settings.model}
+      initialMode={settings.permissionMode}
+      resume={cwd === initialCwd ? resume : undefined}
+      sessionIndex={sessionIndex}
+      openResumeOnStart={cwd === initialCwd ? values.resume : false}
+      onSwitchProject={switchProject}
+      switchedFrom={prevCwd}
+    />
+  );
+}
+
+render(<Root />);
