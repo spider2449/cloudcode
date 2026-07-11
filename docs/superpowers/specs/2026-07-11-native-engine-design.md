@@ -1,7 +1,7 @@
 # Native Agent Engine: Direct Messages API
 
 Date: 2026-07-11
-Status: Approved
+Status: Implemented
 
 ## Goal
 
