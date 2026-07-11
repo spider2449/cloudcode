@@ -40,6 +40,7 @@ function mockCtx(): CommandContext {
     mcpStatus: vi.fn().mockResolvedValue("github  connected  tools: get_repo"),
     sendPrompt: vi.fn(),
     compact: vi.fn().mockResolvedValue(undefined),
+    setCompactProgress: vi.fn(),
     listSkills: vi.fn().mockReturnValue("/a  does a  (project)"),
     setTheme: vi.fn(),
     listThemes: vi.fn().mockReturnValue("● dark\n  light\n  mono"),

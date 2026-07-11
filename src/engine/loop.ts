@@ -6,7 +6,7 @@ import type { PermissionMode } from "../agent/session.js";
 import type { PermissionStore } from "../agent/permissionStore.js";
 import { decidePermission } from "./permissions.js";
 import { costUsd } from "./pricing.js";
-import { compactHistory } from "./compact.js";
+import { compactHistory, estimateTokens } from "./compact.js";
 
 const MAX_TOKENS = 8192;
 const MAX_LOOP_TURNS = 100;
@@ -119,8 +119,9 @@ export class EngineLoop {
     }
   }
 
-  async compact(client: MessagesClient, model: string): Promise<void> {
-    this.messages = await compactHistory(client, model, this.messages);
+  async compact(client: MessagesClient, model: string, onProgress?: (pct: number) => void): Promise<number> {
+    this.messages = await compactHistory(client, model, this.messages, onProgress);
+    return estimateTokens(this.messages);
   }
 
   private async streamOnce(signal: AbortSignal): Promise<StreamedTurn> {
@@ -128,6 +129,22 @@ export class EngineLoop {
     let pendingJson = "";
     let stopReason: string | undefined;
     let usage: Usage | undefined;
+    // Commits any JSON accumulated for the current tool_use block into its
+    // `input`. Normally content_block_stop does this, but some non-Anthropic
+    // providers drop or reorder that event; without this safety net, the next
+    // content_block_start (or the end of the stream) would silently discard
+    // the pending JSON and leave `input: {}` on the block permanently.
+    const finalizePendingToolInput = () => {
+      const last = blocks[blocks.length - 1];
+      if (last?.type === "tool_use" && pendingJson.trim() !== "") {
+        try {
+          last.input = JSON.parse(pendingJson);
+        } catch {
+          last.input = {};
+        }
+      }
+      pendingJson = "";
+    };
     const req = {
       model: this.model,
       system: [{ type: "text" as const, text: this.opts.systemPrompt, cache_control: { type: "ephemeral" as const } }],
@@ -139,10 +156,10 @@ export class EngineLoop {
       const type = event.type as string;
       if (type === "content_block_start") {
         const cb = event.content_block as { type: string; text?: string; id?: string; name?: string };
+        finalizePendingToolInput();
         if (cb.type === "text") blocks.push({ type: "text", text: cb.text ?? "" });
         else if (cb.type === "tool_use") {
           blocks.push({ type: "tool_use", id: cb.id ?? "", name: cb.name ?? "", input: {} });
-          pendingJson = "";
         }
       } else if (type === "content_block_delta") {
         const delta = event.delta as { type: string; text?: string; partial_json?: string };
@@ -154,15 +171,7 @@ export class EngineLoop {
           pendingJson += delta.partial_json ?? "";
         }
       } else if (type === "content_block_stop") {
-        const last = blocks[blocks.length - 1];
-        if (last?.type === "tool_use" && pendingJson.trim() !== "") {
-          try {
-            last.input = JSON.parse(pendingJson);
-          } catch {
-            last.input = {};
-          }
-          pendingJson = "";
-        }
+        finalizePendingToolInput();
       } else if (type === "message_start") {
         const msg = event.message as { usage?: Usage };
         if (msg.usage) usage = { ...usage, ...msg.usage };
@@ -172,6 +181,7 @@ export class EngineLoop {
         if (event.usage) usage = { ...(usage as Usage), ...(event.usage as Partial<Usage>) } as Usage;
       }
     }
+    finalizePendingToolInput();
     return { blocks, stopReason, usage };
   }
 

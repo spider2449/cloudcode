@@ -19,6 +19,7 @@ import { StatusBar } from "./StatusBar.js";
 import { fetchModels } from "../agent/models.js";
 import { ResumePicker } from "./ResumePicker.js";
 import { WorkingIndicator } from "./WorkingIndicator.js";
+import { ProgressBar } from "./ProgressBar.js";
 import { useGitStatus } from "./useGitStatus.js";
 import { loadMcpServers, formatMcpStatus } from "../agent/mcp.js";
 import { loadSkills, formatSkillList, type Skill } from "../agent/skills.js";
@@ -48,6 +49,7 @@ type Phase = "idle" | "streaming" | "permission";
 
 const MODE_CYCLE: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
 const CONTEXT_WINDOW = 200_000;
+const AUTO_COMPACT_THRESHOLD_PCT = 80;
 
 export function App(props: AppProps) {
   const { exit } = useApp();
@@ -65,7 +67,20 @@ export function App(props: AppProps) {
     if (props.switchedFrom) initial.push({ kind: "notice", text: `Switched project to ${props.cwd}` });
     return initial;
   });
-  const [phase, setPhase] = useState<Phase>("idle");
+  // phase/streamText/activeTool are grouped into one state object and patched
+  // via a single setState call per event: Ink's root runs in legacy React
+  // mode (see ink/build/instance.js), so state updates from async callbacks
+  // (like handleMessage below, driven by the agent session rather than an
+  // Ink input event) are NOT auto-batched - each separate setState call
+  // forces its own synchronous re-render of the live region. When a turn
+  // finishes, these three fields all shrink the live region's height at
+  // once; rendering that as several separate frames (rather than one) is
+  // what produces the transient ghost/misplaced frames right as a response
+  // completes.
+  type LiveState = { phase: Phase; streamText: string; activeTool?: string };
+  const [live, setLive] = useState<LiveState>({ phase: "idle", streamText: "", activeTool: undefined });
+  const { phase, streamText, activeTool } = live;
+  const patchLive = (patch: Partial<LiveState>) => setLive(prev => ({ ...prev, ...patch }));
   // Remount key for the <Static> transcript; bump whenever items are reset.
   const [transcriptKey, setTranscriptKey] = useState(0);
   const resetItems = () => { setItems([]); setTranscriptKey(k => k + 1); };
@@ -79,12 +94,11 @@ export function App(props: AppProps) {
   const [cost, setCost] = useState(0);
   const [tokens, setTokens] = useState(0);
   const [contextPct, setContextPct] = useState<number | undefined>(undefined);
+  const [compactPct, setCompactPct] = useState<number | undefined>(undefined);
   const [turnCount, setTurnCount] = useState(0);
   const startedAtRef = useRef(Date.now());
   const [elapsedMs, setElapsedMs] = useState(0);
-  const [streamText, setStreamText] = useState("");
   const streamRef = useRef("");
-  const [activeTool, setActiveTool] = useState<string | undefined>(undefined);
   const [workStartedAt, setWorkStartedAt] = useState(0);
   const firstMessageRef = useRef<string | undefined>(undefined);
   const sessionRef = useRef<AgentSession | null>(null);
@@ -106,7 +120,29 @@ export function App(props: AppProps) {
   };
 
   const notice = (text: string) => setItems(prev => [...prev, { kind: "notice", text }]);
-  const setStream = (text: string) => { streamRef.current = text; setStreamText(text); };
+  const setStream = (text: string) => { streamRef.current = text; patchLive({ streamText: text }); };
+  const autoCompactingRef = useRef(false);
+
+  async function runAutoCompact(): Promise<void> {
+    if (autoCompactingRef.current) return;
+    autoCompactingRef.current = true;
+    setCompactPct(0);
+    try {
+      const estimatedTokens = await sessionRef.current?.compact(pct => setCompactPct(pct));
+      if (typeof estimatedTokens === "number") {
+        setContextPct(Math.min(100, Math.round((estimatedTokens / CONTEXT_WINDOW) * 100)));
+      }
+      notice("Context was getting full — compacted automatically.");
+    } catch (err) {
+      setItems(prev => [...prev, {
+        kind: "error",
+        text: `Auto-compact failed: ${err instanceof Error ? err.message : String(err)}`
+      }]);
+    } finally {
+      setCompactPct(undefined);
+      autoCompactingRef.current = false;
+    }
+  }
 
   function handleMessage(msg: EngineMessage): void {
     const served = (msg as { message?: { model?: string } }).message?.model;
@@ -115,17 +151,20 @@ export function App(props: AppProps) {
     if (delta) { setStream(streamRef.current + delta); return; }
     const mapped = toDisplayItems(msg);
     if (mapped.length > 0) setItems(prev => [...prev, ...mapped]);
-    if (mapped.some(i => i.kind === "assistant")) { setStream(""); setActiveTool(undefined); }
+    const patch: Partial<LiveState> = {};
+    if (mapped.some(i => i.kind === "assistant")) { streamRef.current = ""; patch.streamText = ""; patch.activeTool = undefined; }
     const lastTool = [...mapped].reverse().find(i => i.kind === "tool");
-    if (lastTool && lastTool.kind === "tool") setActiveTool(lastTool.label.split(" ")[0]);
+    if (lastTool && lastTool.kind === "tool") patch.activeTool = lastTool.label.split(" ")[0];
     const t = (msg as { type: string }).type;
     if (t === "result") {
       if (streamRef.current) {
         const text = streamRef.current;
         setItems(prev => [...prev, { kind: "assistant", text }]);
-        setStream("");
+        streamRef.current = "";
       }
-      setActiveTool(undefined);
+      patch.streamText = "";
+      patch.activeTool = undefined;
+      patch.phase = "idle";
       const cost = (msg as { total_cost_usd?: number }).total_cost_usd;
       if (typeof cost === "number") setCost(prev => prev + cost);
       const usage = (msg as { usage?: Record<string, number> }).usage;
@@ -133,11 +172,13 @@ export function App(props: AppProps) {
         const input = (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
         const output = usage.output_tokens ?? 0;
         setTokens(prev => prev + input + output);
-        setContextPct(Math.min(100, Math.round((input / CONTEXT_WINDOW) * 100)));
+        const pct = Math.min(100, Math.round((input / CONTEXT_WINDOW) * 100));
+        setContextPct(pct);
+        if (pct >= AUTO_COMPACT_THRESHOLD_PCT) void runAutoCompact();
       }
       setTurnCount(prev => prev + 1);
-      setPhase("idle");
     }
+    if (Object.keys(patch).length > 0) patchLive(patch);
   }
 
   function refreshSkills(): void {
@@ -163,7 +204,7 @@ export function App(props: AppProps) {
       onMessage: handleMessage,
       onPermissionRequest: req => {
         setPermissionQueue(q => [...q, req]);
-        setPhase("permission");
+        patchLive({ phase: "permission" });
       },
       onSessionId: id => {
         if (firstMessageRef.current) recordSession(id, name);
@@ -206,7 +247,7 @@ export function App(props: AppProps) {
 
   const ctx: CommandContext = {
     notice,
-    clearSession: async () => { resetItems(); setStream(""); setActiveTool(undefined); await restartSession(providerName); },
+    clearSession: async () => { resetItems(); streamRef.current = ""; patchLive({ streamText: "", activeTool: undefined }); await restartSession(providerName); },
     setModel: async m => { await sessionRef.current?.setModel(m); setModel(m); setServedModel(undefined); },
     availableModels: () => availableModelsRef.current,
     currentModel: () => model,
@@ -231,7 +272,14 @@ export function App(props: AppProps) {
         await restartSession(previous);
       }
     },
-    compact: async () => { await sessionRef.current?.compact(); },
+    compact: async (onProgress?: (pct: number) => void) => {
+      const estimatedTokens = await sessionRef.current?.compact(onProgress);
+      if (typeof estimatedTokens === "number") {
+        setContextPct(Math.min(100, Math.round((estimatedTokens / CONTEXT_WINDOW) * 100)));
+      }
+      return estimatedTokens;
+    },
+    setCompactProgress: pct => setCompactPct(pct),
     openResumePicker: () => setShowResumePicker(true),
     costSummary: () => `Session cost: $${cost.toFixed(4)}`,
     providerNames: () => Object.keys(props.providers),
@@ -271,7 +319,7 @@ export function App(props: AppProps) {
       if (sessionRef.current?.sessionId) recordSession(sessionRef.current.sessionId, providerName);
     }
     setItems(prev => [...prev, { kind: "user", text }]);
-    setPhase("streaming");
+    patchLive({ phase: "streaming" });
     setWorkStartedAt(Date.now());
     sessionRef.current?.send(text);
   }
@@ -320,7 +368,7 @@ export function App(props: AppProps) {
     activePermission?.resolve(allow);
     setPermissionQueue(q => {
       const rest = q.slice(1);
-      if (rest.length === 0) setPhase("streaming");
+      if (rest.length === 0) patchLive({ phase: "streaming" });
       return rest;
     });
   }
@@ -335,10 +383,16 @@ export function App(props: AppProps) {
             full text is committed to the Static transcript on "result". */}
         {streamText !== "" && (
           <Text>
-            {tailForHeight(streamText, Math.max(3, (stdout?.rows ?? 24) - 10), stdout?.columns ?? 80)}
+            {/* Reserve rows for everything else in the live region below this
+                text: InputBox border+line (3) + disabled hint (1) +
+                SuggestionMenu's own MAX_ROWS (8) + WorkingIndicator/ProgressBar
+                (1) + StatusBar (1). Falling short here reintroduces the
+                clear-and-repaint jitter this cap exists to avoid. */}
+            {tailForHeight(streamText, Math.max(3, (stdout?.rows ?? 24) - 14), stdout?.columns ?? 80)}
           </Text>
         )}
         {phase === "streaming" && <WorkingIndicator label={activeTool ? `Running ${activeTool}` : "Thinking"} startedAt={workStartedAt} />}
+        {compactPct !== undefined && <ProgressBar label="Compacting" pct={compactPct} />}
         {showResumePicker && (
           <ResumePicker
             entries={props.sessionIndex.list()}

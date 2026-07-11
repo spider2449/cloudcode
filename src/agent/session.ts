@@ -104,9 +104,9 @@ export class AgentSession {
     return this.mcp.status();
   }
 
-  async compact(): Promise<void> {
-    if (!this.loop) return;
-    await this.loop.compact(makeClient(this.opts.provider), this.opts.model ?? this.opts.provider.model ?? DEFAULT_MODEL);
+  async compact(onProgress?: (pct: number) => void): Promise<number | undefined> {
+    if (!this.loop) return undefined;
+    return this.loop.compact(makeClient(this.opts.provider), this.opts.model ?? this.opts.provider.model ?? DEFAULT_MODEL, onProgress);
   }
 
   async dispose(): Promise<void> {

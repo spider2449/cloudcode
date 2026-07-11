@@ -54,6 +54,30 @@ const toolUseTurn = () => [
   { type: "message_stop" }
 ];
 
+// Some non-Anthropic providers drop or reorder content_block_stop events.
+// Two tool_use blocks back to back where the first's stop event never
+// arrives - the loop must still recover the first block's input instead of
+// silently discarding it when the second block starts.
+const parallelToolUseTurnMissingFirstStop = () => [
+  { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "tu_1", name: "EchoTool", input: {} } },
+  { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "{\"x\":1}" } },
+  // no content_block_stop for index 0
+  { type: "content_block_start", index: 1, content_block: { type: "tool_use", id: "tu_2", name: "EchoTool", input: {} } },
+  { type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: "{\"y\":2}" } },
+  { type: "content_block_stop", index: 1 },
+  { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { input_tokens: 10, output_tokens: 5 } },
+  { type: "message_stop" }
+];
+
+// A tool_use block that is the last content block in the stream, whose
+// content_block_stop is missing entirely (stream ends right after the delta).
+const toolUseTurnMissingTrailingStop = () => [
+  { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "tu_1", name: "EchoTool", input: {} } },
+  { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "{\"x\":1}" } },
+  { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { input_tokens: 10, output_tokens: 5 } },
+  { type: "message_stop" }
+];
+
 function makeLoop(turns: object[][], received: unknown[]) {
   return new EngineLoop({
     client: fakeClient(turns),
@@ -104,6 +128,40 @@ describe("EngineLoop", () => {
     // Note: content is `echo:${JSON.stringify(input)}` and gets JSON.stringify'd again
     // when serializing loop.messages, so inner quotes are escaped in the flattened string.
     expect(flat).toContain("echo:{\\\"x\\\":1}");
+  });
+
+  it("recovers a tool_use block's input when its content_block_stop is dropped by the provider", async () => {
+    const received: unknown[] = [];
+    const loop = makeLoop([parallelToolUseTurnMissingFirstStop(), textTurn("done")], received);
+    await loop.runTurn("go", new AbortController().signal);
+    const flat = JSON.stringify(loop.messages);
+    // Both tool calls' real input must have been executed, not the {} placeholder.
+    expect(flat).toContain("echo:{\\\"x\\\":1}");
+    expect(flat).toContain("echo:{\\\"y\\\":2}");
+  });
+
+  it("recovers the final tool_use block's input when the stream ends without a trailing content_block_stop", async () => {
+    const received: unknown[] = [];
+    const loop = makeLoop([toolUseTurnMissingTrailingStop(), textTurn("done")], received);
+    await loop.runTurn("go", new AbortController().signal);
+    const flat = JSON.stringify(loop.messages);
+    expect(flat).toContain("echo:{\\\"x\\\":1}");
+  });
+
+  it("compact() returns an estimated token count reflecting the shrunk history", async () => {
+    const received: unknown[] = [];
+    const loop = makeLoop([textTurn("a fairly long assistant reply about several topics".repeat(10))], received);
+    await loop.runTurn("go", new AbortController().signal);
+    const beforeEstimate = JSON.stringify(loop.messages).length / 4;
+    const compactClient = {
+      async *create() {
+        yield { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } };
+        yield { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "short recap" } };
+        yield { type: "message_stop" };
+      }
+    };
+    const estimate = await loop.compact(compactClient as never, "m");
+    expect(estimate).toBeLessThan(beforeEstimate);
   });
 
   it("denied permission produces an error tool_result and still continues", async () => {

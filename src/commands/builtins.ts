@@ -40,7 +40,12 @@ const commands: Command[] = [
     name: "compact",
     description: "Summarize the conversation to free context",
     async run(ctx) {
-      await ctx.compact();
+      ctx.setCompactProgress(0);
+      try {
+        await ctx.compact(pct => ctx.setCompactProgress(pct));
+      } finally {
+        ctx.setCompactProgress(undefined);
+      }
       ctx.notice("Conversation compacted.");
     }
   },

@@ -239,6 +239,36 @@ describe("App", () => {
     expect(lastFrame()).toContain("(6%)");
   });
 
+  it("auto-compacts when a result pushes context usage to 80% or above", async () => {
+    const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
+    vi.mocked(makeClient).mockReturnValue(
+      fakeClient([
+        textTurn("hello from model", {
+          input_tokens: 170_000,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+          output_tokens: 100
+        }),
+        [
+          { type: "content_block_start", content_block: { type: "text" } },
+          { type: "content_block_delta", delta: { type: "text_delta", text: "short recap" } },
+          { type: "content_block_stop" },
+          { type: "message_stop" }
+        ]
+      ])
+    );
+    const { stdin, lastFrame } = render(
+      <App cwd="/p" providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index} />
+    );
+    await wait();
+    stdin.write("hi");
+    await wait();
+    stdin.write("\r");
+    await wait(300);
+    expect(lastFrame()).toContain("compacted automatically");
+    expect(lastFrame()).not.toContain("(85%)");
+  });
+
   it("shows an error notice instead of crashing when a slash command rejects", async () => {
     const setModelSpy = vi.spyOn(AgentSession.prototype, "setModel").mockRejectedValue(new Error("not a recognized model id"));
     const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));

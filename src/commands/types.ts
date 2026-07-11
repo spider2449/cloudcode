@@ -17,7 +17,8 @@ export interface CommandContext {
   clearPermissionRules(): void;
   mcpStatus(): Promise<string>;
   sendPrompt(text: string): void;
-  compact(): Promise<void>;
+  compact(onProgress?: (pct: number) => void): Promise<number | undefined>;
+  setCompactProgress(pct: number | undefined): void;
   listSkills(): string;
   reloadSkills(): void;
   setTheme(name: string): void;
