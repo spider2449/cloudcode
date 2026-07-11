@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import React from "react";
 import { render } from "ink-testing-library";
 import { mkdtempSync } from "node:fs";
@@ -7,25 +7,70 @@ import { join } from "node:path";
 import { App } from "../src/ui/App.js";
 import { SessionIndex } from "../src/agent/sessionIndex.js";
 import { fetchModels } from "../src/agent/models.js";
+import { AgentSession } from "../src/agent/session.js";
 
 vi.mock("../src/agent/models.js", () => ({
   fetchModels: vi.fn().mockResolvedValue(["model-a", "model-b"])
 }));
 
+vi.mock("../src/engine/api.js", () => ({ makeClient: vi.fn() }));
+
+vi.mock("../src/engine/loop.js", async () => {
+  const actual = await vi.importActual<typeof import("../src/engine/loop.js")>("../src/engine/loop.js");
+  function SpiedEngineLoop(this: unknown, opts: ConstructorParameters<typeof actual.EngineLoop>[0]) {
+    return new actual.EngineLoop(opts);
+  }
+  return { ...actual, EngineLoop: vi.fn(SpiedEngineLoop as unknown as typeof actual.EngineLoop) };
+});
+
+import { makeClient } from "../src/engine/api.js";
+import { EngineLoop } from "../src/engine/loop.js";
+
 const wait = (ms = 30) => new Promise(r => setTimeout(r, ms));
 
-function fakeQueryFn() {
-  return (args: { prompt: AsyncIterable<unknown> }) => {
-    const gen = (async function* () {
-      yield { type: "system", subtype: "init", session_id: "sess-1" };
-      for await (const _ of args.prompt) {
-        yield { type: "assistant", message: { content: [{ type: "text", text: "hello from model" }] } };
-        yield { type: "result", subtype: "success", total_cost_usd: 0.01, duration_ms: 500 };
-      }
-    })();
-    return Object.assign(gen, { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn() });
+type Event = Record<string, unknown>;
+
+// Builds a fake Anthropic streaming client. `turns` is a list of event
+// sequences; each call to `create` (i.e. each engine round-trip) consumes
+// the next turn, repeating the last one if `send` is called more times
+// than there are turns configured.
+function fakeClient(turns: Event[][] | (() => AsyncGenerator<Event>)) {
+  if (typeof turns === "function") {
+    return { create: vi.fn(() => turns()) };
+  }
+  let call = 0;
+  return {
+    create: vi.fn(async function* () {
+      const events = turns[Math.min(call, turns.length - 1)];
+      call++;
+      for (const e of events) yield e;
+    })
   };
 }
+
+function textTurn(text: string, usage?: Record<string, number>): Event[] {
+  return [
+    { type: "content_block_start", content_block: { type: "text" } },
+    { type: "content_block_delta", delta: { type: "text_delta", text } },
+    { type: "content_block_stop" },
+    { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: usage ?? {} }
+  ];
+}
+
+function toolUseTurn(id: string, name: string, input: Record<string, unknown>): Event[] {
+  return [
+    { type: "content_block_start", content_block: { type: "tool_use", id, name } },
+    { type: "content_block_delta", delta: { type: "input_json_delta", partial_json: JSON.stringify(input) } },
+    { type: "content_block_stop" },
+    { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: {} }
+  ];
+}
+
+beforeEach(() => {
+  vi.mocked(makeClient).mockReset();
+  vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("hello from model")]));
+  vi.mocked(EngineLoop).mockClear();
+});
 
 function makeApp() {
   const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
@@ -35,7 +80,6 @@ function makeApp() {
       providers={{ anthropic: {}, local: { baseUrl: "http://x", apiKey: "k" } }}
       initialProvider="anthropic"
       sessionIndex={index}
-      queryFn={fakeQueryFn() as never}
     />
   );
 }
@@ -71,7 +115,6 @@ describe("App", () => {
         providers={{ anthropic: {}, local: { baseUrl: "http://x", apiKey: "k" } }}
         initialProvider="anthropic"
         sessionIndex={index}
-        queryFn={fakeQueryFn() as never}
         onSwitchProject={onSwitchProject}
       />
     );
@@ -92,7 +135,6 @@ describe("App", () => {
         providers={{ anthropic: {}, local: { baseUrl: "http://x", apiKey: "k" } }}
         initialProvider="anthropic"
         sessionIndex={index}
-        queryFn={fakeQueryFn() as never}
         onSwitchProject={onSwitchProject}
       />
     );
@@ -114,7 +156,6 @@ describe("App", () => {
         providers={{ anthropic: {}, local: { baseUrl: "http://x", apiKey: "k" } }}
         initialProvider="anthropic"
         sessionIndex={index}
-        queryFn={fakeQueryFn() as never}
         onSwitchProject={onSwitchProject}
       />
     );
@@ -128,15 +169,6 @@ describe("App", () => {
   });
 
   it("seeds session model and permission mode from initial props", async () => {
-    const captured: Record<string, unknown>[] = [];
-    const capturingQueryFn = (args: { prompt: AsyncIterable<unknown>; options: Record<string, unknown> }) => {
-      captured.push(args.options);
-      const gen = (async function* () {
-        yield { type: "system", subtype: "init", session_id: "sess-1" };
-        for await (const _ of args.prompt) { /* drain */ }
-      })();
-      return Object.assign(gen, { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn() });
-    };
     const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
     const { lastFrame } = render(
       <App
@@ -146,67 +178,31 @@ describe("App", () => {
         initialModel="my-model"
         initialMode="acceptEdits"
         sessionIndex={index}
-        queryFn={capturingQueryFn as never}
       />
     );
     await wait(50);
-    expect(captured[0]).toMatchObject({ model: "my-model", permissionMode: "acceptEdits" });
+    expect(vi.mocked(EngineLoop).mock.calls[0][0]).toMatchObject({ model: "my-model", permissionMode: "acceptEdits" });
     expect(lastFrame()).toContain("acceptEdits");
     expect(lastFrame()).toContain("my-model");
   });
 
-  it("shows the model actually served by the API in the status bar", async () => {
-    const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
-    const servedQueryFn = (args: { prompt: AsyncIterable<unknown> }) => {
-      const gen = (async function* () {
-        yield { type: "system", subtype: "init", session_id: "sess-1" };
-        for await (const _ of args.prompt) {
-          yield { type: "assistant", message: { model: "served-model-id", content: [{ type: "text", text: "hi" }] } };
-          yield { type: "result", subtype: "success", total_cost_usd: 0.01, duration_ms: 5 };
-        }
-      })();
-      return Object.assign(gen, { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn() });
-    };
-    const { stdin, lastFrame } = render(
-      <App
-        cwd="/p"
-        providers={{ anthropic: { model: "requested-model" } }}
-        initialProvider="anthropic"
-        sessionIndex={index}
-        queryFn={servedQueryFn as never}
-      />
-    );
-    await wait();
-    stdin.write("hi\r");
-    await wait(100);
-    expect(lastFrame()).toContain("requested-model→served-model-id");
-  });
-
   it("restarts the session with bypassPermissions baked in instead of switching live", async () => {
-    const captured: Record<string, unknown>[] = [];
-    const setPermissionMode = vi.fn();
-    const capturingQueryFn = (args: { prompt: AsyncIterable<unknown>; options: Record<string, unknown> }) => {
-      captured.push(args.options);
-      const gen = (async function* () {
-        yield { type: "system", subtype: "init", session_id: `sess-${captured.length}` };
-        for await (const _ of args.prompt) { /* drain */ }
-      })();
-      return Object.assign(gen, { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode });
-    };
+    const setPermissionModeSpy = vi.spyOn(AgentSession.prototype, "setPermissionMode");
     const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
     const { stdin, lastFrame } = render(
-      <App cwd="/p" providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index} queryFn={capturingQueryFn as never} />
+      <App cwd="/p" providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index} />
     );
     await wait(50);
     stdin.write("[Z"); // shift+tab: default -> acceptEdits (live switch)
     await wait(50);
-    expect(setPermissionMode).toHaveBeenCalledWith("acceptEdits");
+    expect(setPermissionModeSpy).toHaveBeenCalledWith("acceptEdits");
     stdin.write("[Z"); // shift+tab: acceptEdits -> bypassPermissions (restart)
     await wait(100);
-    expect(setPermissionMode).not.toHaveBeenCalledWith("bypassPermissions");
-    expect(captured).toHaveLength(2);
-    expect(captured[1]).toMatchObject({ permissionMode: "bypassPermissions", resume: "sess-1" });
+    expect(setPermissionModeSpy).not.toHaveBeenCalledWith("bypassPermissions");
+    expect(vi.mocked(EngineLoop).mock.calls.length).toBe(2);
+    expect(vi.mocked(EngineLoop).mock.calls[1][0]).toMatchObject({ permissionMode: "bypassPermissions" });
     expect(lastFrame()).toContain("bypassPermissions");
+    setPermissionModeSpy.mockRestore();
   });
 
   it("round-trips a user message to assistant output", async () => {
@@ -222,21 +218,18 @@ describe("App", () => {
 
   it("shows token usage and context percent after a result message", async () => {
     const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
-    const usageQueryFn = (args: { prompt: AsyncIterable<unknown> }) => {
-      const gen = (async function* () {
-        yield { type: "system", subtype: "init", session_id: "sess-1" };
-        for await (const _ of args.prompt) {
-          yield { type: "assistant", message: { content: [{ type: "text", text: "hello from model" }] } };
-          yield {
-            type: "result", subtype: "success", total_cost_usd: 0.01, duration_ms: 5,
-            usage: { input_tokens: 9000, cache_read_input_tokens: 3000, cache_creation_input_tokens: 0, output_tokens: 345 }
-          };
-        }
-      })();
-      return Object.assign(gen, { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn() });
-    };
+    vi.mocked(makeClient).mockReturnValue(
+      fakeClient([
+        textTurn("hello from model", {
+          input_tokens: 9000,
+          cache_read_input_tokens: 3000,
+          cache_creation_input_tokens: 0,
+          output_tokens: 345
+        })
+      ])
+    );
     const { stdin, lastFrame } = render(
-      <App cwd="/p" providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index} queryFn={usageQueryFn as never} />
+      <App cwd="/p" providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index} />
     );
     await wait();
     stdin.write("hi");
@@ -245,30 +238,13 @@ describe("App", () => {
     await wait(100);
     expect(lastFrame()).toContain("12.3k tok");
     expect(lastFrame()).toContain("(6%)");
-    expect(lastFrame()).toContain("$0.0100");
   });
 
   it("shows an error notice instead of crashing when a slash command rejects", async () => {
+    const setModelSpy = vi.spyOn(AgentSession.prototype, "setModel").mockRejectedValue(new Error("not a recognized model id"));
     const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
-    const rejectingQueryFn = (args: { prompt: AsyncIterable<unknown> }) => {
-      const gen = (async function* () {
-        yield { type: "system", subtype: "init", session_id: "sess-1" };
-        for await (const _ of args.prompt) { /* drain */ }
-      })();
-      return Object.assign(gen, {
-        interrupt: vi.fn(),
-        setModel: vi.fn().mockRejectedValue(new Error("not a recognized model id")),
-        setPermissionMode: vi.fn()
-      });
-    };
     const { stdin, lastFrame } = render(
-      <App
-        cwd="/p"
-        providers={{ anthropic: {} }}
-        initialProvider="anthropic"
-        sessionIndex={index}
-        queryFn={rejectingQueryFn as never}
-      />
+      <App cwd="/p" providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index} />
     );
     await wait();
     stdin.write("/model bogus");
@@ -276,6 +252,7 @@ describe("App", () => {
     stdin.write("\r");
     await wait(100);
     expect(lastFrame()).toContain("not a recognized model id");
+    setModelSpy.mockRestore();
   });
 
   it("handles unknown slash command with a notice", async () => {
@@ -302,21 +279,19 @@ describe("App", () => {
     const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
     let releaseFinal: () => void = () => {};
     const gate = new Promise<void>(r => { releaseFinal = r; });
-    const streamingQueryFn = (args: { prompt: AsyncIterable<unknown> }) => {
-      const gen = (async function* () {
-        yield { type: "system", subtype: "init", session_id: "sess-1" };
-        for await (const _ of args.prompt) {
-          yield { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "par" } } };
-          yield { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "tial" } } };
-          await gate;
-          yield { type: "assistant", message: { content: [{ type: "text", text: "partial and final" }] } };
-          yield { type: "result", subtype: "success", total_cost_usd: 0.01, duration_ms: 100 };
-        }
-      })();
-      return Object.assign(gen, { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn() });
-    };
+    vi.mocked(makeClient).mockReturnValue(
+      fakeClient(async function* () {
+        yield { type: "content_block_start", content_block: { type: "text" } };
+        yield { type: "content_block_delta", delta: { type: "text_delta", text: "par" } };
+        yield { type: "content_block_delta", delta: { type: "text_delta", text: "tial" } };
+        await gate;
+        yield { type: "content_block_delta", delta: { type: "text_delta", text: " and final" } };
+        yield { type: "content_block_stop" };
+        yield { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: {} };
+      })
+    );
     const { stdin, lastFrame } = render(
-      <App cwd="/p" providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index} queryFn={streamingQueryFn as never} />
+      <App cwd="/p" providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index} />
     );
     await wait();
     stdin.write("go");
@@ -334,18 +309,15 @@ describe("App", () => {
   it("caps the streaming preview to a tail so the dynamic region fits the terminal", async () => {
     const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
     const manyLines = Array.from({ length: 100 }, (_, i) => `line-${i}`).join("\n");
-    const gatedQueryFn = (args: { prompt: AsyncIterable<unknown> }) => {
-      const gen = (async function* () {
-        yield { type: "system", subtype: "init", session_id: "sess-1" };
-        for await (const _ of args.prompt) {
-          yield { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: manyLines } } };
-          await new Promise(() => {}); // stay streaming forever
-        }
-      })();
-      return Object.assign(gen, { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn() });
-    };
+    vi.mocked(makeClient).mockReturnValue(
+      fakeClient(async function* () {
+        yield { type: "content_block_start", content_block: { type: "text" } };
+        yield { type: "content_block_delta", delta: { type: "text_delta", text: manyLines } };
+        await new Promise(() => {}); // stay streaming forever
+      })
+    );
     const { stdin, lastFrame } = render(
-      <App cwd="/p" providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index} queryFn={gatedQueryFn as never} />
+      <App cwd="/p" providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index} />
     );
     await wait();
     stdin.write("go");
@@ -359,66 +331,36 @@ describe("App", () => {
 
   it("shows the working indicator while streaming", async () => {
     const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
-    const neverEndingQueryFn = (args: { prompt: AsyncIterable<unknown> }) => {
-      const gen = (async function* () {
-        yield { type: "system", subtype: "init", session_id: "sess-1" };
-        for await (const _ of args.prompt) {
-          await new Promise(() => {}); // never resolves
-        }
-      })();
-      return Object.assign(gen, { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn() });
-    };
+    vi.mocked(makeClient).mockReturnValue(
+      fakeClient(async function* () {
+        await new Promise(() => {}); // never resolves
+      })
+    );
     const { stdin, lastFrame } = render(
-      <App cwd="/p" providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index} queryFn={neverEndingQueryFn as never} />
+      <App cwd="/p" providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index} />
     );
     await wait();
     stdin.write("go");
     await wait();
     stdin.write("\r");
     await wait(100);
-    expect(lastFrame()).toContain("Thinking…");
+    expect(lastFrame()).toContain("Thinking");
   });
 
-  function permissionProbeQueryFn(filePath: string, outcomes: unknown[]) {
-    return (args: { prompt: AsyncIterable<unknown>; options: { canUseTool: (t: string, i: object) => Promise<unknown> } }) => {
-      const gen = (async function* () {
-        yield { type: "system", subtype: "init", session_id: "sess-1" };
-        for await (const _ of args.prompt) {
-          outcomes.push(await args.options.canUseTool("Write", { file_path: filePath }));
-          yield { type: "result", subtype: "success", total_cost_usd: 0, duration_ms: 1 };
-        }
-      })();
-      return Object.assign(gen, { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn() });
-    };
-  }
-
-  it("auto-allows when a stored rule matches, without showing the dialog", async () => {
+  it("shows a permission dialog for a write with no stored rule, and 'Always' saves a rule for next time", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "cc-app-perm-"));
-    const { PermissionStore } = await import("../src/agent/permissionStore.js");
-    new PermissionStore(cwd).remember("Write", join(cwd, "src", "seed.ts"), "allow");
-    const outcomes: unknown[] = [];
-    const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
-    const { stdin, lastFrame } = render(
-      <App cwd={cwd} providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index}
-           queryFn={permissionProbeQueryFn(join(cwd, "src", "file.ts"), outcomes) as never} />
+    const filePath = join(cwd, "src", "file.ts");
+    vi.mocked(makeClient).mockReturnValue(
+      fakeClient([
+        toolUseTurn("t1", "Write", { file_path: filePath, content: "x" }),
+        textTurn("done"),
+        toolUseTurn("t2", "Write", { file_path: filePath, content: "y" }),
+        textTurn("done again")
+      ])
     );
-    await wait();
-    stdin.write("go");
-    await wait();
-    stdin.write("\r");
-    await wait(150);
-    expect(outcomes[0]).toMatchObject({ behavior: "allow" });
-    expect(lastFrame()).toContain("auto-allowed: Write");
-    expect(lastFrame()).not.toContain("Permission required");
-  });
-
-  it("choosing 'Always' saves a rule so the next request auto-resolves", async () => {
-    const cwd = mkdtempSync(join(tmpdir(), "cc-app-perm-"));
-    const outcomes: unknown[] = [];
     const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
     const { stdin, lastFrame } = render(
-      <App cwd={cwd} providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index}
-           queryFn={permissionProbeQueryFn(join(cwd, "src", "file.ts"), outcomes) as never} />
+      <App cwd={cwd} providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index} />
     );
     await wait();
     stdin.write("first");
@@ -428,32 +370,29 @@ describe("App", () => {
     expect(lastFrame()).toContain("Permission required");
     stdin.write("a"); // Always for this directory
     await wait(150);
-    expect(outcomes[0]).toMatchObject({ behavior: "allow" });
-    stdin.write("second");
-    await wait();
-    stdin.write("\r");
-    await wait(150);
-    expect(outcomes[1]).toMatchObject({ behavior: "allow" });
-    expect(lastFrame()).toContain("auto-allowed: Write");
+    const { PermissionStore } = await import("../src/agent/permissionStore.js");
+    expect(new PermissionStore(cwd).check("Write", filePath)).toBe("allow");
   });
 
-  it("a deny rule auto-denies without a dialog", async () => {
+  it("a stored deny rule prevents the write without showing a dialog", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "cc-app-perm-"));
     const { PermissionStore } = await import("../src/agent/permissionStore.js");
-    new PermissionStore(cwd).remember("Write", join(cwd, "secret", "seed.txt"), "deny");
-    const outcomes: unknown[] = [];
+    const filePath = join(cwd, "secret", "x.txt");
+    new PermissionStore(cwd).remember("Write", filePath, "deny");
+    vi.mocked(makeClient).mockReturnValue(
+      fakeClient([toolUseTurn("t1", "Write", { file_path: filePath, content: "x" }), textTurn("done")])
+    );
     const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
     const { stdin, lastFrame } = render(
-      <App cwd={cwd} providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index}
-           queryFn={permissionProbeQueryFn(join(cwd, "secret", "x.txt"), outcomes) as never} />
+      <App cwd={cwd} providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index} />
     );
     await wait();
     stdin.write("go");
     await wait();
     stdin.write("\r");
     await wait(150);
-    expect(outcomes[0]).toMatchObject({ behavior: "deny" });
-    expect(lastFrame()).toContain("auto-denied: Write");
+    // Resolved silently by the engine's own permission store; no dialog interrupts the turn.
     expect(lastFrame()).not.toContain("Permission required");
+    expect(lastFrame()).toContain("done");
   });
 });

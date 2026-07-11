@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
-import type { query, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { EngineMessage } from "../engine/messages.js";
 import { AgentSession, type PermissionMode, type PermissionRequest } from "../agent/session.js";
 import { History } from "../agent/history.js";
 import type { ProviderConfig } from "../agent/providers.js";
@@ -39,7 +39,6 @@ export interface AppProps {
   initialMode?: PermissionMode;
   resume?: string;
   sessionIndex: SessionIndex;
-  queryFn?: typeof query;
   openResumeOnStart?: boolean;
   onSwitchProject?: (path: string) => string | undefined;
   switchedFrom?: string;
@@ -109,7 +108,7 @@ export function App(props: AppProps) {
   const notice = (text: string) => setItems(prev => [...prev, { kind: "notice", text }]);
   const setStream = (text: string) => { streamRef.current = text; setStreamText(text); };
 
-  function handleMessage(msg: SDKMessage): void {
+  function handleMessage(msg: EngineMessage): void {
     const served = (msg as { message?: { model?: string } }).message?.model;
     if (served) setServedModel(served);
     const delta = streamDelta(msg);
@@ -180,8 +179,7 @@ export function App(props: AppProps) {
       },
       onSessionId: id => {
         if (firstMessageRef.current) recordSession(id, name);
-      },
-      queryFn: props.queryFn
+      }
     });
     session.start();
     return session;

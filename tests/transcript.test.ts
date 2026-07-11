@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { toDisplayItems, toolLabel } from "../src/ui/transcript.js";
-import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { EngineMessage } from "../src/engine/messages.js";
 
 describe("toolLabel", () => {
   it("shows file path for file tools", () => {
@@ -21,7 +21,7 @@ describe("toDisplayItems", () => {
         { type: "text", text: "Let me look." },
         { type: "tool_use", name: "Read", input: { file_path: "/x.ts" } }
       ] }
-    } as unknown as SDKMessage;
+    } as unknown as EngineMessage;
     expect(toDisplayItems(msg)).toEqual([
       { kind: "assistant", text: "Let me look." },
       { kind: "tool", label: "Read /x.ts" }
@@ -31,19 +31,19 @@ describe("toDisplayItems", () => {
   it("maps success result to result item", () => {
     const msg = {
       type: "result", subtype: "success", total_cost_usd: 0.02, duration_ms: 1200
-    } as unknown as SDKMessage;
+    } as unknown as EngineMessage;
     expect(toDisplayItems(msg)).toEqual([{ kind: "result", costUsd: 0.02, durationMs: 1200 }]);
   });
 
   it("maps error result to error item", () => {
     const msg = {
       type: "result", subtype: "error_during_execution", result: "boom"
-    } as unknown as SDKMessage;
+    } as unknown as EngineMessage;
     expect(toDisplayItems(msg)).toEqual([{ kind: "error", text: "boom" }]);
   });
 
   it("ignores system messages", () => {
-    expect(toDisplayItems({ type: "system", subtype: "init" } as unknown as SDKMessage)).toEqual([]);
+    expect(toDisplayItems({ type: "system", subtype: "init" } as unknown as EngineMessage)).toEqual([]);
   });
 });
 
@@ -54,16 +54,16 @@ describe("streamDelta", () => {
     const msg = {
       type: "stream_event",
       event: { type: "content_block_delta", delta: { type: "text_delta", text: "hel" } }
-    } as unknown as SDKMessage;
+    } as unknown as EngineMessage;
     expect(streamDelta(msg)).toBe("hel");
   });
 
   it("returns undefined for other messages and non-text deltas", () => {
-    expect(streamDelta({ type: "assistant", message: { content: [] } } as unknown as SDKMessage)).toBeUndefined();
+    expect(streamDelta({ type: "assistant", message: { content: [] } } as unknown as EngineMessage)).toBeUndefined();
     expect(streamDelta({
       type: "stream_event",
       event: { type: "content_block_delta", delta: { type: "input_json_delta", partial_json: "{" } }
-    } as unknown as SDKMessage)).toBeUndefined();
+    } as unknown as EngineMessage)).toBeUndefined();
   });
 });
 
@@ -95,7 +95,7 @@ describe("toDisplayItems diff emission", () => {
       message: { content: [
         { type: "tool_use", name: "Edit", input: { file_path: "/x.ts", old_string: "a", new_string: "b" } }
       ] }
-    } as unknown as SDKMessage;
+    } as unknown as EngineMessage;
     const items = toDisplayItems(msg);
     expect(items[0].kind).toBe("tool");
     expect(items[1]).toEqual({

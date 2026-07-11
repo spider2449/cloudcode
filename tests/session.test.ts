@@ -1,27 +1,48 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+vi.mock("../src/engine/api.js", () => ({ makeClient: vi.fn() }));
+
+import { makeClient } from "../src/engine/api.js";
 import { AgentSession } from "../src/agent/session.js";
 
-function fakeQuery(received: unknown[]) {
-  // Mimics the SDK: consumes the prompt stream, echoes canned messages.
-  return (args: { prompt: AsyncIterable<unknown>; options: Record<string, unknown> }) => {
-    const gen = (async function* () {
-      yield { type: "system", subtype: "init", session_id: "sess-1" };
-      for await (const m of args.prompt) {
-        received.push(m);
-        yield { type: "assistant", message: { content: [{ type: "text", text: "ok" }] } };
-      }
-    })();
-    return Object.assign(gen, {
-      interrupt: vi.fn(),
-      setModel: vi.fn(),
-      setPermissionMode: vi.fn()
-    });
+type Event = Record<string, unknown>;
+
+function fakeClient(turns: Event[][]) {
+  let call = 0;
+  return {
+    create: vi.fn(async function* () {
+      const events = turns[Math.min(call, turns.length - 1)];
+      call++;
+      for (const e of events) yield e;
+    })
   };
 }
 
+function textTurn(text: string): Event[] {
+  return [
+    { type: "content_block_start", content_block: { type: "text" } },
+    { type: "content_block_delta", delta: { type: "text_delta", text } },
+    { type: "content_block_stop" },
+    { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: {} }
+  ];
+}
+
+function toolUseTurn(id: string, name: string, input: Record<string, unknown>): Event[] {
+  return [
+    { type: "content_block_start", content_block: { type: "tool_use", id, name } },
+    { type: "content_block_delta", delta: { type: "input_json_delta", partial_json: JSON.stringify(input) } },
+    { type: "content_block_stop" },
+    { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: {} }
+  ];
+}
+
+beforeEach(() => {
+  vi.mocked(makeClient).mockReset();
+});
+
 describe("AgentSession", () => {
   it("emits session id and forwards messages for sent text", async () => {
-    const received: unknown[] = [];
+    vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("ok")]));
     const messages: unknown[] = [];
     let sessionId = "";
     const session = new AgentSession({
@@ -31,49 +52,52 @@ describe("AgentSession", () => {
       cwd: "/p",
       onMessage: m => messages.push(m),
       onPermissionRequest: () => {},
-      onSessionId: id => { sessionId = id; },
-      queryFn: fakeQuery(received) as never
+      onSessionId: id => { sessionId = id; }
     });
     session.start();
+    expect(sessionId).not.toBe("");
     session.send("hello");
     await vi.waitFor(() => expect(messages.length).toBeGreaterThanOrEqual(2));
-    expect(sessionId).toBe("sess-1");
-    expect((received[0] as { message: { content: string } }).message.content).toBe("hello");
+    expect(session.sessionId).toBe(sessionId);
+    const assistantMsg = messages.find(m => (m as { type: string }).type === "assistant") as
+      | { message: { content: Array<{ type: string; text?: string }> } }
+      | undefined;
+    expect(assistantMsg?.message.content[0]).toMatchObject({ type: "text", text: "ok" });
     await session.dispose();
   });
 
-  it("resolves canUseTool through onPermissionRequest", async () => {
-    let captured: ((toolName: string, input: object) => Promise<unknown>) | undefined;
-    const queryFn = (args: { options: { canUseTool: typeof captured } }) => {
-      captured = args.options.canUseTool;
-      const gen = (async function* () {})();
-      return Object.assign(gen, { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn() });
-    };
+  it("resolves tool calls through onPermissionRequest", async () => {
+    vi.mocked(makeClient).mockReturnValue(
+      fakeClient([toolUseTurn("t1", "Bash", { command: "echo hi" }), textTurn("done")])
+    );
+    const requests: { toolName: string; input: Record<string, unknown> }[] = [];
     const session = new AgentSession({
       providerName: "anthropic",
       provider: {},
       permissionMode: "default",
       cwd: "/p",
       onMessage: () => {},
-      onPermissionRequest: req => req.resolve(true),
-      onSessionId: () => {},
-      queryFn: queryFn as never
+      onPermissionRequest: req => {
+        requests.push({ toolName: req.toolName, input: req.input });
+        req.resolve(true);
+      },
+      onSessionId: () => {}
     });
     session.start();
-    const result = await captured!("Bash", { command: "ls" });
-    expect(result).toMatchObject({ behavior: "allow" });
+    session.send("run it");
+    await vi.waitFor(() => expect(requests.length).toBeGreaterThanOrEqual(1));
+    expect(requests[0]).toMatchObject({ toolName: "Bash", input: { command: "echo hi" } });
     await session.dispose();
   });
 
-  it("interrupt() resolves even when the underlying query's interrupt rejects", async () => {
-    const queryFn = () => {
-      const gen = (async function* () {})();
-      return Object.assign(gen, {
-        interrupt: vi.fn().mockRejectedValue(new Error("boom")),
-        setModel: vi.fn(),
-        setPermissionMode: vi.fn()
-      });
-    };
+  it("interrupt() aborts the in-flight turn without throwing", async () => {
+    vi.mocked(makeClient).mockReturnValue({
+      create: vi.fn(async function* (_req: unknown, signal: AbortSignal) {
+        await new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(new Error("aborted")));
+        });
+      })
+    });
     const session = new AgentSession({
       providerName: "anthropic",
       provider: {},
@@ -81,70 +105,26 @@ describe("AgentSession", () => {
       cwd: "/p",
       onMessage: () => {},
       onPermissionRequest: () => {},
-      onSessionId: () => {},
-      queryFn: queryFn as never
+      onSessionId: () => {}
     });
     session.start();
+    session.send("go");
     await expect(session.interrupt()).resolves.toBeUndefined();
   });
-});
 
-describe("AgentSession MCP", () => {
-  it("passes mcpServers into query options and captures init tools", async () => {
-    let seenOptions: Record<string, unknown> = {};
-    const queryFn = (args: { prompt: AsyncIterable<unknown>; options: Record<string, unknown> }) => {
-      seenOptions = args.options;
-      const gen = (async function* () {
-        yield { type: "system", subtype: "init", session_id: "sess-1", tools: ["Bash", "mcp__github__get_repo"] };
-      })();
-      return Object.assign(gen, { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn() });
-    };
+  it("mcpStatus returns [] (MCP wiring lands in a later task)", async () => {
+    vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("ok")]));
     const session = new AgentSession({
       providerName: "anthropic",
       provider: {},
       permissionMode: "default",
       cwd: "/p",
-      mcpServers: { github: { command: "npx" } },
       onMessage: () => {},
       onPermissionRequest: () => {},
-      onSessionId: () => {},
-      queryFn: queryFn as never
+      onSessionId: () => {}
     });
     session.start();
-    await vi.waitFor(() => expect(session.tools).toEqual(["Bash", "mcp__github__get_repo"]));
-    expect(seenOptions.mcpServers).toEqual({ github: { command: "npx" } });
+    expect(await session.mcpStatus()).toEqual([]);
     await session.dispose();
-  });
-
-  it("mcpStatus returns SDK statuses, and [] when unsupported", async () => {
-    const statuses = [{ name: "github", status: "connected" }];
-    const withStatus = () => {
-      const gen = (async function* () {})();
-      return Object.assign(gen, {
-        interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn(),
-        mcpServerStatus: vi.fn().mockResolvedValue(statuses)
-      });
-    };
-    const s1 = new AgentSession({
-      providerName: "anthropic", provider: {}, permissionMode: "default", cwd: "/p",
-      onMessage: () => {}, onPermissionRequest: () => {}, onSessionId: () => {},
-      queryFn: withStatus as never
-    });
-    s1.start();
-    expect(await s1.mcpStatus()).toEqual(statuses);
-    await s1.dispose();
-
-    const without = () => {
-      const gen = (async function* () {})();
-      return Object.assign(gen, { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn() });
-    };
-    const s2 = new AgentSession({
-      providerName: "anthropic", provider: {}, permissionMode: "default", cwd: "/p",
-      onMessage: () => {}, onPermissionRequest: () => {}, onSessionId: () => {},
-      queryFn: without as never
-    });
-    s2.start();
-    expect(await s2.mcpStatus()).toEqual([]);
-    await s2.dispose();
   });
 });
