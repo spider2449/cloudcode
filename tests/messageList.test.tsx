@@ -28,6 +28,26 @@ describe("MessageList", () => {
     expect(lastFrame()).toContain("+ new line");
   });
 
+  it("renders items via Static so completed messages stay in terminal scrollback", () => {
+    const { lastFrame, rerender } = render(
+      <MessageList items={[{ kind: "user", text: "hello" }]} />
+    );
+    expect(lastFrame()).toContain("> hello");
+    // Static output is written once to the terminal; removing items from the
+    // array must not erase what was already printed.
+    rerender(<MessageList items={[]} />);
+    expect(lastFrame()).toContain("> hello");
+  });
+
+  it("renders new items after a transcript reset when staticKey changes", () => {
+    const { lastFrame, rerender } = render(
+      <MessageList items={[{ kind: "user", text: "one" }, { kind: "user", text: "two" }]} staticKey={0} />
+    );
+    rerender(<MessageList items={[]} staticKey={1} />);
+    rerender(<MessageList items={[{ kind: "user", text: "after clear" }]} staticKey={1} />);
+    expect(lastFrame()).toContain("> after clear");
+  });
+
   it("renders assistant markdown (bold survives as text)", () => {
     const { lastFrame } = render(
       <MessageList items={[{ kind: "assistant", text: "**hello** world" }]} />

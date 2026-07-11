@@ -65,6 +65,9 @@ export function App(props: AppProps) {
     return initial;
   });
   const [phase, setPhase] = useState<Phase>("idle");
+  // Remount key for the <Static> transcript; bump whenever items are reset.
+  const [transcriptKey, setTranscriptKey] = useState(0);
+  const resetItems = () => { setItems([]); setTranscriptKey(k => k + 1); };
   const [providerName, setProviderName] = useState(props.initialProvider);
   const [model, setModel] = useState<string | undefined>(modelFor(props.initialProvider));
   const [mode, setMode] = useState<PermissionMode>(props.initialMode ?? "default");
@@ -215,7 +218,7 @@ export function App(props: AppProps) {
 
   const ctx: CommandContext = {
     notice,
-    clearSession: async () => { setItems([]); setStream(""); setActiveTool(undefined); await restartSession(providerName); },
+    clearSession: async () => { resetItems(); setStream(""); setActiveTool(undefined); await restartSession(providerName); },
     setModel: async m => { await sessionRef.current?.setModel(m); setModel(m); setServedModel(undefined); },
     availableModels: () => availableModelsRef.current,
     currentModel: () => model,
@@ -344,7 +347,7 @@ export function App(props: AppProps) {
   return (
     <ThemeProvider theme={THEMES[themeName] ?? THEMES.dark}>
       <Box flexDirection="column">
-        <MessageList items={items} />
+        <MessageList items={items} staticKey={transcriptKey} />
         {streamText !== "" && <Text>{streamText}</Text>}
         {phase === "streaming" && <WorkingIndicator label={activeTool ? `Running ${activeTool}` : "Thinking"} startedAt={workStartedAt} />}
         {showResumePicker && (
@@ -352,7 +355,7 @@ export function App(props: AppProps) {
             entries={props.sessionIndex.list()}
             onPick={e => {
               setShowResumePicker(false);
-              setItems([]);
+              resetItems();
               const provider = props.providers[e.provider] ? e.provider : providerName;
               setProviderName(provider);
               setModel(props.providers[provider]?.model);
