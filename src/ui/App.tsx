@@ -162,18 +162,6 @@ export function App(props: AppProps) {
       mcpServers: mcpServersRef.current,
       onMessage: handleMessage,
       onPermissionRequest: req => {
-        const filePath = typeof req.input.file_path === "string" ? req.input.file_path : undefined;
-        if (filePath) {
-          const decision = permissionStoreRef.current.check(req.toolName, filePath);
-          if (decision) {
-            req.resolve(decision === "allow");
-            setItems(prev => [...prev, {
-              kind: "notice",
-              text: `auto-${decision === "allow" ? "allowed" : "denied"}: ${req.toolName} ${filePath} (rule)`
-            }]);
-            return;
-          }
-        }
         setPermissionQueue(q => [...q, req]);
         setPhase("permission");
       },
@@ -224,14 +212,6 @@ export function App(props: AppProps) {
     currentModel: () => model,
     setPermissionMode: async m => {
       const pm = m as PermissionMode;
-      if (pm === "bypassPermissions") {
-        // The SDK rejects a live switch to bypass unless the CLI was launched
-        // with it; restart the session with the mode baked in, resuming the
-        // conversation.
-        setMode(pm);
-        await restartSession(providerName, sessionRef.current?.sessionId, pm);
-        return;
-      }
       await sessionRef.current?.setPermissionMode(pm);
       setMode(pm);
     },

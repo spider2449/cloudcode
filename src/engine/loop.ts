@@ -163,10 +163,13 @@ export class EngineLoop {
           }
           pendingJson = "";
         }
+      } else if (type === "message_start") {
+        const msg = event.message as { usage?: Usage };
+        if (msg.usage) usage = { ...usage, ...msg.usage };
       } else if (type === "message_delta") {
         const delta = event.delta as { stop_reason?: string };
         stopReason = delta.stop_reason ?? stopReason;
-        if (event.usage) usage = event.usage as Usage;
+        if (event.usage) usage = { ...(usage as Usage), ...(event.usage as Partial<Usage>) } as Usage;
       }
     }
     return { blocks, stopReason, usage };

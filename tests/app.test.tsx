@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+﻿import { describe, it, expect, vi, beforeEach } from "vitest";
 import React from "react";
 import { render } from "ink-testing-library";
 import { mkdtempSync } from "node:fs";
@@ -186,7 +186,7 @@ describe("App", () => {
     expect(lastFrame()).toContain("my-model");
   });
 
-  it("restarts the session with bypassPermissions baked in instead of switching live", async () => {
+  it("switches live to bypassPermissions without restarting the session", async () => {
     const setPermissionModeSpy = vi.spyOn(AgentSession.prototype, "setPermissionMode");
     const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
     const { stdin, lastFrame } = render(
@@ -196,11 +196,10 @@ describe("App", () => {
     stdin.write("[Z"); // shift+tab: default -> acceptEdits (live switch)
     await wait(50);
     expect(setPermissionModeSpy).toHaveBeenCalledWith("acceptEdits");
-    stdin.write("[Z"); // shift+tab: acceptEdits -> bypassPermissions (restart)
+    stdin.write("[Z"); // shift+tab: acceptEdits -> bypassPermissions (live switch)
     await wait(100);
-    expect(setPermissionModeSpy).not.toHaveBeenCalledWith("bypassPermissions");
-    expect(vi.mocked(EngineLoop).mock.calls.length).toBe(2);
-    expect(vi.mocked(EngineLoop).mock.calls[1][0]).toMatchObject({ permissionMode: "bypassPermissions" });
+    expect(setPermissionModeSpy).toHaveBeenCalledWith("bypassPermissions");
+    expect(vi.mocked(EngineLoop).mock.calls.length).toBe(1);
     expect(lastFrame()).toContain("bypassPermissions");
     setPermissionModeSpy.mockRestore();
   });

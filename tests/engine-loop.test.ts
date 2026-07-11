@@ -34,6 +34,18 @@ const textTurn = (text: string) => [
   { type: "message_stop" }
 ];
 
+// Mirrors the real Anthropic streaming protocol: input_tokens (and cache
+// fields) arrive on message_start, while message_delta only ever carries
+// output_tokens.
+const textTurnWithMessageStart = (text: string, inputTokens: number) => [
+  { type: "message_start", message: { usage: { input_tokens: inputTokens, output_tokens: 0 } } },
+  { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+  { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } },
+  { type: "content_block_stop", index: 0 },
+  { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 5 } },
+  { type: "message_stop" }
+];
+
 const toolUseTurn = () => [
   { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "tu_1", name: "EchoTool", input: {} } },
   { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "{\"x\":1}" } },
@@ -66,6 +78,18 @@ describe("EngineLoop", () => {
     expect(types).toContain("assistant");
     const result = received.find(m => (m as { type: string }).type === "result") as { subtype: string };
     expect(result.subtype).toBe("success");
+  });
+
+  it("captures input_tokens from message_start and merges with message_delta output_tokens", async () => {
+    const received: unknown[] = [];
+    const loop = makeLoop([textTurnWithMessageStart("hi", 42)], received);
+    await loop.runTurn("hi", new AbortController().signal);
+    const result = received.find(m => (m as { type: string }).type === "result") as {
+      usage?: { input_tokens?: number; output_tokens?: number };
+      total_cost_usd?: number;
+    };
+    expect(result.usage?.input_tokens).toBe(42);
+    expect(result.usage?.output_tokens).toBe(5);
   });
 
   it("executes a tool call and continues to the next API turn", async () => {
