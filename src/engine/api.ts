@@ -3,7 +3,7 @@ import type { ProviderConfig } from "../agent/providers.js";
 
 export interface StreamRequest {
   model: string;
-  system: string;
+  system: string | Array<{ type: "text"; text: string; cache_control?: { type: "ephemeral" } }>;
   messages: unknown[];
   tools: unknown[];
   max_tokens: number;

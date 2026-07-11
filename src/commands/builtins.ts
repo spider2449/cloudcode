@@ -39,7 +39,10 @@ const commands: Command[] = [
   {
     name: "compact",
     description: "Summarize the conversation to free context",
-    async run(ctx) { ctx.sendPrompt("/compact"); }
+    async run(ctx) {
+      await ctx.compact();
+      ctx.notice("Conversation compacted.");
+    }
   },
   {
     name: "config",

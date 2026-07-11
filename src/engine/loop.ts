@@ -5,6 +5,8 @@ import type { MessagesClient } from "./api.js";
 import type { PermissionMode } from "../agent/session.js";
 import type { PermissionStore } from "../agent/permissionStore.js";
 import { decidePermission } from "./permissions.js";
+import { costUsd } from "./pricing.js";
+import { compactHistory } from "./compact.js";
 
 const MAX_TOKENS = 8192;
 const MAX_LOOP_TURNS = 100;
@@ -19,6 +21,26 @@ export interface EngineOptions {
   store: PermissionStore;
   onMessage(msg: EngineMessage): void;
   requestPermission(toolName: string, input: Record<string, unknown>): Promise<boolean>;
+}
+
+// Returns a copy of `messages` where the last content block of the final
+// message carries an ephemeral cache_control marker, without mutating the
+// original array/objects (so the marker never accumulates across turns).
+function withCacheControlOnLastBlock(messages: unknown[]): unknown[] {
+  if (messages.length === 0) return messages;
+  const lastIndex = messages.length - 1;
+  const last = messages[lastIndex] as { role: string; content: unknown };
+  const blocks: unknown[] =
+    typeof last.content === "string"
+      ? [{ type: "text", text: last.content }]
+      : [...(last.content as unknown[])];
+  if (blocks.length === 0) return messages;
+  const lastBlockIndex = blocks.length - 1;
+  const lastBlock = blocks[lastBlockIndex] as Record<string, unknown>;
+  blocks[lastBlockIndex] = { ...lastBlock, cache_control: { type: "ephemeral" } };
+  const copy = messages.slice(0, lastIndex);
+  copy.push({ ...last, content: blocks });
+  return copy;
 }
 
 interface StreamedTurn {
@@ -51,10 +73,20 @@ export class EngineLoop {
     const started = Date.now();
     this.messages.push({ role: "user", content: userText });
     let usage: Usage | undefined;
+    let totalCost: number | undefined;
+    let costKnown = false;
+    const addCost = (u: Usage | undefined) => {
+      if (!u) return;
+      const c = costUsd(this.model, u);
+      if (c === undefined) return;
+      costKnown = true;
+      totalCost = (totalCost ?? 0) + c;
+    };
     try {
       for (let i = 0; i < MAX_LOOP_TURNS; i++) {
         const turn = await this.streamOnce(signal);
         usage = turn.usage ?? usage;
+        addCost(turn.usage);
         this.messages.push({ role: "assistant", content: turn.blocks });
         this.opts.onMessage(assistantMessage(turn.blocks));
         if (turn.stopReason !== "tool_use") break;
@@ -65,14 +97,30 @@ export class EngineLoop {
         }
         this.messages.push({ role: "user", content: results });
       }
-      this.opts.onMessage({ type: "result", subtype: "success", duration_ms: Date.now() - started, usage });
+      this.opts.onMessage({
+        type: "result",
+        subtype: "success",
+        duration_ms: Date.now() - started,
+        usage,
+        total_cost_usd: costKnown ? totalCost : undefined
+      });
     } catch (err) {
       if (signal.aborted) {
-        this.opts.onMessage({ type: "result", subtype: "success", duration_ms: Date.now() - started, usage });
+        this.opts.onMessage({
+          type: "result",
+          subtype: "success",
+          duration_ms: Date.now() - started,
+          usage,
+          total_cost_usd: costKnown ? totalCost : undefined
+        });
       } else {
         this.opts.onMessage(errorResult(err instanceof Error ? err.message : String(err)));
       }
     }
+  }
+
+  async compact(client: MessagesClient, model: string): Promise<void> {
+    this.messages = await compactHistory(client, model, this.messages);
   }
 
   private async streamOnce(signal: AbortSignal): Promise<StreamedTurn> {
@@ -82,8 +130,8 @@ export class EngineLoop {
     let usage: Usage | undefined;
     const req = {
       model: this.model,
-      system: this.opts.systemPrompt,
-      messages: this.messages,
+      system: [{ type: "text" as const, text: this.opts.systemPrompt, cache_control: { type: "ephemeral" as const } }],
+      messages: withCacheControlOnLastBlock(this.messages),
       tools: this.tools.map(t => ({ name: t.name, description: t.description, input_schema: t.input_schema })),
       max_tokens: MAX_TOKENS
     };

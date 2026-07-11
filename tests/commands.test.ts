@@ -39,6 +39,7 @@ function mockCtx(): CommandContext {
     clearPermissionRules: vi.fn(),
     mcpStatus: vi.fn().mockResolvedValue("github  connected  tools: get_repo"),
     sendPrompt: vi.fn(),
+    compact: vi.fn().mockResolvedValue(undefined),
     listSkills: vi.fn().mockReturnValue("/a  does a  (project)"),
     setTheme: vi.fn(),
     listThemes: vi.fn().mockReturnValue("● dark\n  light\n  mono"),
@@ -133,10 +134,11 @@ describe("builtins", () => {
 });
 
 describe("/compact and /init", () => {
-  it("/compact forwards to the SDK", async () => {
+  it("/compact calls the engine's compact and notifies", async () => {
     const ctx = mockCtx();
     await buildRegistry().get("compact")!.run(ctx, "");
-    expect(ctx.sendPrompt).toHaveBeenCalledWith("/compact");
+    expect(ctx.compact).toHaveBeenCalled();
+    expect(ctx.notice).toHaveBeenCalledWith("Conversation compacted.");
   });
 
   it("/init forwards to the SDK", async () => {

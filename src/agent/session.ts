@@ -104,6 +104,11 @@ export class AgentSession {
     return this.mcp.status();
   }
 
+  async compact(): Promise<void> {
+    if (!this.loop) return;
+    await this.loop.compact(makeClient(this.opts.provider), this.opts.model ?? this.opts.provider.model ?? DEFAULT_MODEL);
+  }
+
   async dispose(): Promise<void> {
     this.abortController?.abort();
     await this.mcp.dispose();

@@ -17,6 +17,7 @@ export interface CommandContext {
   clearPermissionRules(): void;
   mcpStatus(): Promise<string>;
   sendPrompt(text: string): void;
+  compact(): Promise<void>;
   listSkills(): string;
   reloadSkills(): void;
   setTheme(name: string): void;

@@ -251,6 +251,7 @@ export function App(props: AppProps) {
         await restartSession(previous);
       }
     },
+    compact: async () => { await sessionRef.current?.compact(); },
     openResumePicker: () => setShowResumePicker(true),
     costSummary: () => `Session cost: $${cost.toFixed(4)}`,
     providerNames: () => Object.keys(props.providers),
