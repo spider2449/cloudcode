@@ -31,7 +31,7 @@ import { tailForHeight } from "./streamTail.js";
 import { VERSION } from "../version.js";
 import { ProjectPicker } from "./ProjectPicker.js";
 import { recentProjects, resolveProjectPath } from "../commands/projectPath.js";
-import { staticRows, fillerHeight, liveRegionFloor, textRows } from "./bottomFill.js";
+import { staticRows, resizeSafeFillerHeight, liveRegionFloor, textRows } from "./bottomFill.js";
 
 export interface AppProps {
   cwd: string;
@@ -115,6 +115,13 @@ export function App(props: AppProps) {
   // window before InputBox's first report where this is wrong.
   const [inputRows, setInputRows] = useState(3);
   const [termSize, setTermSize] = useState({ rows: stdout?.rows ?? 24, columns: stdout?.columns ?? 80 });
+  // Set alongside termSize whenever a resize fires; read-and-cleared once at
+  // the filler computation site below. See resizeSafeFillerHeight's doc
+  // comment in bottomFill.ts: for one render right after a resize, the
+  // measured/floor values feeding the filler calc still lag the OLD
+  // terminal width, so that one frame forces filler=0 instead of trusting
+  // the stale values.
+  const justResizedRef = useRef(false);
   const firstMessageRef = useRef<string | undefined>(undefined);
   const sessionRef = useRef<AgentSession | null>(null);
   const lastCtrlCRef = useRef(0);
@@ -252,7 +259,12 @@ export function App(props: AppProps) {
 
   useEffect(() => {
     if (!stdout) return;
-    const onResize = () => setTermSize({ rows: stdout.rows ?? 24, columns: stdout.columns ?? 80 });
+    const onResize = () => {
+      setTermSize({ rows: stdout.rows ?? 24, columns: stdout.columns ?? 80 });
+      // See resize-transition safety net comment at justResizedRef's
+      // declaration and at the filler computation site below.
+      justResizedRef.current = true;
+    };
     stdout.on("resize", onResize);
     return () => { stdout.off("resize", onResize); };
   }, [stdout]);
@@ -443,7 +455,15 @@ export function App(props: AppProps) {
   // bottom edge whenever the user could type — see bottomFill.ts history).
   if (inputVisible && !inputDisabled) liveFloor += menuRows;
 
-  const filler = fillerHeight(termSize.rows, transcriptRows, Math.max(dynamicRows, liveFloor));
+  // Resize-transition safety net: read-and-clear so only the ONE render
+  // right after a resize event uses filler=0 (measured/floor values lag one
+  // render behind the resize); every later render (including ones caused by
+  // the effects that catch those values up) goes through the normal
+  // fillerHeight calculation again. See resizeSafeFillerHeight in
+  // bottomFill.ts for why this is safe.
+  const justResized = justResizedRef.current;
+  justResizedRef.current = false;
+  const filler = resizeSafeFillerHeight(termSize.rows, transcriptRows, Math.max(dynamicRows, liveFloor), justResized);
 
   return (
     <ThemeProvider theme={THEMES[themeName] ?? THEMES.dark}>

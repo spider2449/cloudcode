@@ -5,6 +5,7 @@ import {
   fillerHeight,
   liveRegionFloor,
   inputBoxRows,
+  resizeSafeFillerHeight,
   type LiveRegionState
 } from "../src/ui/bottomFill.js";
 import { MAX_ROWS as SUGGESTION_MENU_MAX_ROWS } from "../src/ui/SuggestionMenu.js";
@@ -242,6 +243,68 @@ describe("growth-transition invariant: no single frame may reach the row budget"
     });
     const filler = fillerHeight(terminalRows, 0, Math.max(0, floor));
     expect(filler + floor).toBeLessThan(terminalRows);
+  });
+});
+
+describe("resizeSafeFillerHeight (Change 1: resize-transition safety net)", () => {
+  it("demonstrates the bug: computing filler from a stale post-resize floor can overflow", () => {
+    // Scenario: post-/clear (staticRows=0), the input box already contains a
+    // long line. Terminal resizes from a wide, tall size down to a narrower,
+    // shorter one. For one frame, InputBox's onInputRowsChange effect and
+    // App.tsx's measureElement pass haven't re-run yet, so both dynamicRows
+    // and the live-region floor's inputRows still reflect the OLD (wide)
+    // width's wrap of that line (3 rows), while termSize.rows already
+    // reflects the NEW (shorter) terminal.
+    const newTerminalRows = 10;
+    const staleInputRows = 3;
+    const staleFloor = liveRegionFloor({
+      streamRows: 0, streaming: false, compacting: false,
+      inputRows: staleInputRows, overlayRows: 0
+    });
+    const staleMeasuredDynamicRows = 3;
+
+    const unsafeFiller = fillerHeight(newTerminalRows, 0, Math.max(staleMeasuredDynamicRows, staleFloor));
+
+    // Once the effects catch up (next frame), the input box's REAL wrapped
+    // height at the new, narrower width is bigger.
+    const realPostResizeInputRows = 6;
+    const realHeight = liveRegionFloor({
+      streamRows: 0, streaming: false, compacting: false,
+      inputRows: realPostResizeInputRows, overlayRows: 0
+    });
+
+    // The bug: filler sized against the stale floor, plus the real height
+    // once it catches up, reaches/exceeds the new terminal height -> Ink
+    // clears scrollback.
+    expect(unsafeFiller + realHeight).toBeGreaterThanOrEqual(newTerminalRows);
+  });
+
+  it("suppresses filler to 0 for the resize-transition frame, avoiding the overflow above", () => {
+    const newTerminalRows = 10;
+    const staleInputRows = 3;
+    const staleFloor = liveRegionFloor({
+      streamRows: 0, streaming: false, compacting: false,
+      inputRows: staleInputRows, overlayRows: 0
+    });
+    const staleMeasuredDynamicRows = 3;
+    const realPostResizeInputRows = 6;
+    const realHeight = liveRegionFloor({
+      streamRows: 0, streaming: false, compacting: false,
+      inputRows: realPostResizeInputRows, overlayRows: 0
+    });
+
+    const safeFiller = resizeSafeFillerHeight(
+      newTerminalRows,
+      0,
+      Math.max(staleMeasuredDynamicRows, staleFloor),
+      true // justResized
+    );
+    expect(safeFiller).toBe(0);
+    expect(safeFiller + realHeight).toBeLessThan(newTerminalRows);
+  });
+
+  it("falls back to normal fillerHeight once the resize-transition frame has passed", () => {
+    expect(resizeSafeFillerHeight(24, 5, 6, false)).toBe(fillerHeight(24, 5, 6));
   });
 });
 

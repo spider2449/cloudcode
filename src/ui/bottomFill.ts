@@ -62,6 +62,28 @@ export function fillerHeight(terminalRows: number, staticRows: number, dynamicRo
   return Math.max(0, terminalRows - staticRows - dynamicRows - 1);
 }
 
+// Resize-transition safety net. React effects (InputBox's onInputRowsChange
+// re-sync on `[columns, disabled]`, and App.tsx's measureElement pass for
+// dynamicRows) run one Ink render cycle AFTER commit, so for the single
+// frame right after a terminal resize, both the measured dynamicRows and the
+// live-region floor's inputRows still reflect the PRE-resize width while
+// termSize already reflects the NEW width. If the transcript is short
+// (post-/clear) and the input box already contains a long line that wraps
+// differently at the new width, that stale floor can combine with the new
+// (possibly smaller) terminalRows such that filler + actual height reaches
+// terminalRows and triggers Ink's scrollback-erasing clearTerminal. Forcing
+// filler to 0 for that one frame sidesteps the stale measurement entirely
+// instead of trying to keep it in sync; the frame is visually a no-op (the
+// footer just sits wherever content ends for a single frame).
+export function resizeSafeFillerHeight(
+  terminalRows: number,
+  staticRows: number,
+  dynamicRows: number,
+  justResized: boolean
+): number {
+  return justResized ? 0 : fillerHeight(terminalRows, staticRows, dynamicRows);
+}
+
 // The live region (stream tail, WorkingIndicator/ProgressBar, pickers,
 // permission dialog, InputBox, StatusBar) is measured with measureElement
 // AFTER render, so the frame in which it grows still renders with the

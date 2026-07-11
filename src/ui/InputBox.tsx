@@ -45,6 +45,13 @@ export function InputBox({ completionCtx, onSubmit, disabled, history, columns =
   // App.tsx's live-region floor on a frame where no input event ran (e.g.
   // App's elapsed-timer re-render, or an async update to availableModels()/
   // registry) — the same overflow failure mode as unmodeled input growth.
+  //
+  // Accepted trade-off (reviewed, not an oversight): if the menu is opened
+  // before FileIndex/fetchModels finish loading, it shows 0 rows and only
+  // picks up the newly-arrived data on the user's NEXT keystroke, not the
+  // instant it arrives — there is no completion callback wired from those
+  // async sources into sync(). Do not "fix" this by recomputing suggestions
+  // at render time; that reintroduces the overflow this closes.
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   // Terminals can deliver many keypresses in one stdin chunk (paste, fast
   // typing), so the handler may fire several times before React re-renders;
