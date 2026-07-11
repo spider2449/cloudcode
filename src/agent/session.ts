@@ -1,10 +1,18 @@
-import { query, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import { AsyncQueue } from "./asyncQueue.js";
-import { providerEnv, type ProviderConfig } from "./providers.js";
-import { getNativeCliPath } from "./nativeCli.js";
+import { randomUUID } from "node:crypto";
+import type { EngineMessage } from "../engine/messages.js";
+import { EngineLoop } from "../engine/loop.js";
+import { makeClient } from "../engine/api.js";
+import { builtinTools } from "../engine/registry.js";
+import { PermissionStore } from "./permissionStore.js";
+import { SessionFile } from "../engine/sessions.js";
+import { McpManager } from "../engine/mcpClient.js";
+import { buildSystemPrompt } from "../engine/systemPrompt.js";
+import type { ProviderConfig } from "./providers.js";
 import type { McpServerConfig, McpServerStatusEntry } from "./mcp.js";
 
 export type PermissionMode = "default" | "acceptEdits" | "bypassPermissions";
+
+const DEFAULT_MODEL = "claude-sonnet-5";
 
 export interface PermissionRequest {
   toolName: string;
@@ -20,110 +28,89 @@ export interface AgentSessionOptions {
   resume?: string;
   cwd: string;
   mcpServers?: Record<string, McpServerConfig>;
-  onMessage(msg: SDKMessage): void;
+  onMessage(msg: EngineMessage): void;
   onPermissionRequest(req: PermissionRequest): void;
   onSessionId(id: string): void;
-  queryFn?: typeof query;
 }
 
 export class AgentSession {
-  private input = new AsyncQueue<SDKUserMessage>();
-  private q: Query | undefined;
+  private loop: EngineLoop | undefined;
+  private abortController: AbortController | undefined;
+  private sessionFile: SessionFile | undefined;
   sessionId: string | undefined;
   tools: string[] = [];
+  private mcp = new McpManager();
+  private mcpReady: Promise<void> | undefined;
 
   constructor(private opts: AgentSessionOptions) {}
 
   start(): void {
-    const queryFn = this.opts.queryFn ?? query;
-    this.q = queryFn({
-      prompt: this.input as AsyncIterable<SDKUserMessage>,
-      options: {
-        model: this.opts.model ?? this.opts.provider.model,
-        permissionMode: this.opts.permissionMode,
-        resume: this.opts.resume,
-        pathToClaudeCodeExecutable: getNativeCliPath(),
-        cwd: this.opts.cwd,
-        mcpServers: this.opts.mcpServers as never,
-        env: { ...process.env, ...providerEnv(this.opts.provider) },
-        includePartialMessages: true,
-        canUseTool: (toolName, input) =>
-          new Promise(resolvePermission => {
-            this.opts.onPermissionRequest({
-              toolName,
-              input: input as Record<string, unknown>,
-              resolve: allow =>
-                resolvePermission(
-                  allow
-                    ? { behavior: "allow", updatedInput: input }
-                    : { behavior: "deny", message: "User denied this tool use" }
-                )
-            });
-          })
+    this.sessionId = this.opts.resume ?? randomUUID();
+    const resumedMessages = this.opts.resume ? SessionFile.load(this.opts.resume) : [];
+    const store = new PermissionStore(this.opts.cwd);
+    this.loop = new EngineLoop({
+      client: makeClient(this.opts.provider),
+      model: this.opts.model ?? this.opts.provider.model ?? DEFAULT_MODEL,
+      systemPrompt: buildSystemPrompt(this.opts.cwd),
+      tools: builtinTools(),
+      cwd: this.opts.cwd,
+      permissionMode: this.opts.permissionMode,
+      store,
+      onMessage: this.opts.onMessage,
+      requestPermission: (toolName, input) =>
+        new Promise(resolve => this.opts.onPermissionRequest({ toolName, input, resolve }))
+    });
+    if (resumedMessages.length > 0) this.loop.messages = resumedMessages;
+    this.sessionFile = new SessionFile(this.sessionId);
+    this.tools = builtinTools().map(t => t.name);
+    this.opts.onSessionId(this.sessionId);
+    this.opts.onMessage({
+      type: "system",
+      subtype: "init",
+      session_id: this.sessionId,
+      tools: this.tools
+    });
+    this.mcpReady = this.mcp.connect(this.opts.mcpServers ?? {}).then(() => {
+      const mcpTools = this.mcp.tools();
+      if (mcpTools.length > 0 && this.loop) {
+        this.loop.tools.push(...mcpTools);
+        this.tools = [...this.tools, ...mcpTools.map(t => t.name)];
       }
     });
-    void this.pump();
-  }
-
-  private async pump(): Promise<void> {
-    try {
-      for await (const msg of this.q!) {
-        if (msg.type === "system" && "subtype" in msg && msg.subtype === "init") {
-          this.sessionId = (msg as { session_id: string }).session_id;
-          this.opts.onSessionId(this.sessionId);
-          this.tools = (msg as { tools?: string[] }).tools ?? [];
-        }
-        this.opts.onMessage(msg);
-      }
-    } catch (err) {
-      this.opts.onMessage({
-        type: "result",
-        subtype: "error_during_execution",
-        result: String(err)
-      } as unknown as SDKMessage);
-    }
   }
 
   send(text: string): void {
-    this.input.push({
-      type: "user",
-      message: { role: "user", content: text },
-      parent_tool_use_id: null,
-      session_id: this.sessionId ?? ""
-    } as SDKUserMessage);
+    this.abortController = new AbortController();
+    const before = this.loop?.messages.length ?? 0;
+    void this.loop?.runTurn(text, this.abortController.signal).then(() => {
+      const added = this.loop?.messages.slice(before) ?? [];
+      for (const entry of added) this.sessionFile?.append(entry);
+    });
   }
 
   async interrupt(): Promise<void> {
-    try {
-      await this.q?.interrupt();
-    } catch {
-      // ignore errors during interrupt
-    }
+    this.abortController?.abort();
   }
 
   async setModel(model: string): Promise<void> {
-    await this.q?.setModel(model);
+    this.loop?.setModel(model);
   }
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {
-    await this.q?.setPermissionMode(mode);
+    this.loop?.setPermissionMode(mode);
   }
 
   async mcpStatus(): Promise<McpServerStatusEntry[]> {
-    try {
-      const q = this.q as unknown as { mcpServerStatus?: () => Promise<McpServerStatusEntry[]> } | undefined;
-      return q?.mcpServerStatus ? await q.mcpServerStatus() : [];
-    } catch {
-      return [];
-    }
+    return this.mcp.status();
+  }
+
+  async compact(): Promise<void> {
+    if (!this.loop) return;
+    await this.loop.compact(makeClient(this.opts.provider), this.opts.model ?? this.opts.provider.model ?? DEFAULT_MODEL);
   }
 
   async dispose(): Promise<void> {
-    this.input.close();
-    try {
-      await this.q?.interrupt();
-    } catch {
-      // ignore errors during teardown
-    }
+    this.abortController?.abort();
+    await this.mcp.dispose();
   }
 }

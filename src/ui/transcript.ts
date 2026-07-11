@@ -1,4 +1,4 @@
-import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { EngineMessage } from "../engine/messages.js";
 
 export type DiffLine = { sign: "+" | "-" | " "; text: string };
 
@@ -15,7 +15,7 @@ function truncate(s: string, max = 80): string {
   return s.length > max ? s.slice(0, max - 1) + "…" : s;
 }
 
-export function streamDelta(msg: SDKMessage): string | undefined {
+export function streamDelta(msg: EngineMessage): string | undefined {
   const m = msg as Record<string, unknown>;
   if (m.type !== "stream_event") return undefined;
   const event = m.event as { type?: string; delta?: { type?: string; text?: string } } | undefined;
@@ -54,7 +54,7 @@ export function toolLabel(name: string, input: Record<string, unknown>): string 
   return `${name} ${detail}`;
 }
 
-export function toDisplayItems(msg: SDKMessage): DisplayItem[] {
+export function toDisplayItems(msg: EngineMessage): DisplayItem[] {
   const m = msg as Record<string, unknown>;
   if (m.type === "assistant") {
     const content = (m.message as { content: Array<Record<string, unknown>> }).content ?? [];

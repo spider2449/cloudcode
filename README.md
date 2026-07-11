@@ -1,15 +1,19 @@
 # cloudcode
 
-A Claude Code-style terminal coding agent built on the Claude Agent SDK, with an Ink
-TUI, slash commands, session resume, permission modes, and switchable providers
-including local llama.cpp.
+A Claude Code-style terminal coding agent with its own native agent engine (no
+subprocess, no bundled CLI) talking directly to the Anthropic Messages API, with
+an Ink TUI, slash commands, session resume, permission modes, and switchable
+providers including local llama.cpp.
 
 ## Setup
 
     npm install
     npm run dev
 
-Auth: set `ANTHROPIC_API_KEY`, or rely on an existing Claude Code login.
+Auth: set `ANTHROPIC_API_KEY`. Reusing an existing Claude Code CLI login is not
+supported — cloudcode talks to `/v1/messages` directly rather than spawning the
+Claude Code CLI, so it needs its own API key (or a compatible local endpoint,
+see below).
 
 ## Local models (llama.cpp)
 
@@ -80,12 +84,14 @@ Input supports cursor movement (←/→), command history (↑/↓, persisted to
 `package:bin` requires `bun` on PATH (or `~/.bun/bin/bun.exe`); `package:installer`
 requires Inno Setup 6 (ISCC.exe) and is Windows-only. All outputs land in `release/`.
 
-Each compiled binary embeds the Claude Code native CLI for its platform
-(`@anthropic-ai/claude-agent-sdk-<platform>-<arch>`), extracted on first run to
-`~/.cloudcode/bin/`, so the binaries are fully portable. npm only installs the
-native package for the host platform, so cross-platform targets are skipped
-unless you fetch their package into `node_modules` first (e.g.
-`npm pack @anthropic-ai/claude-agent-sdk-linux-x64` and extract it).
+Each compiled binary is fully self-contained: the agent loop, tools, and
+permission engine are cloudcode's own code, so there is no bundled native CLI
+and nothing extracted to disk at runtime. Binaries run standalone from any
+directory.
+
+Sessions are stored as JSONL under `~/.cloudcode/sessions/`. This is a new
+format introduced with the native engine; sessions created before that change
+are not resumable.
 
 ## Permission memory
 

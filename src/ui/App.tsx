@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
-import type { query, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { EngineMessage } from "../engine/messages.js";
 import { AgentSession, type PermissionMode, type PermissionRequest } from "../agent/session.js";
 import { History } from "../agent/history.js";
 import type { ProviderConfig } from "../agent/providers.js";
@@ -39,7 +39,6 @@ export interface AppProps {
   initialMode?: PermissionMode;
   resume?: string;
   sessionIndex: SessionIndex;
-  queryFn?: typeof query;
   openResumeOnStart?: boolean;
   onSwitchProject?: (path: string) => string | undefined;
   switchedFrom?: string;
@@ -109,7 +108,7 @@ export function App(props: AppProps) {
   const notice = (text: string) => setItems(prev => [...prev, { kind: "notice", text }]);
   const setStream = (text: string) => { streamRef.current = text; setStreamText(text); };
 
-  function handleMessage(msg: SDKMessage): void {
+  function handleMessage(msg: EngineMessage): void {
     const served = (msg as { message?: { model?: string } }).message?.model;
     if (served) setServedModel(served);
     const delta = streamDelta(msg);
@@ -163,25 +162,12 @@ export function App(props: AppProps) {
       mcpServers: mcpServersRef.current,
       onMessage: handleMessage,
       onPermissionRequest: req => {
-        const filePath = typeof req.input.file_path === "string" ? req.input.file_path : undefined;
-        if (filePath) {
-          const decision = permissionStoreRef.current.check(req.toolName, filePath);
-          if (decision) {
-            req.resolve(decision === "allow");
-            setItems(prev => [...prev, {
-              kind: "notice",
-              text: `auto-${decision === "allow" ? "allowed" : "denied"}: ${req.toolName} ${filePath} (rule)`
-            }]);
-            return;
-          }
-        }
         setPermissionQueue(q => [...q, req]);
         setPhase("permission");
       },
       onSessionId: id => {
         if (firstMessageRef.current) recordSession(id, name);
-      },
-      queryFn: props.queryFn
+      }
     });
     session.start();
     return session;
@@ -226,14 +212,6 @@ export function App(props: AppProps) {
     currentModel: () => model,
     setPermissionMode: async m => {
       const pm = m as PermissionMode;
-      if (pm === "bypassPermissions") {
-        // The SDK rejects a live switch to bypass unless the CLI was launched
-        // with it; restart the session with the mode baked in, resuming the
-        // conversation.
-        setMode(pm);
-        await restartSession(providerName, sessionRef.current?.sessionId, pm);
-        return;
-      }
       await sessionRef.current?.setPermissionMode(pm);
       setMode(pm);
     },
@@ -253,6 +231,7 @@ export function App(props: AppProps) {
         await restartSession(previous);
       }
     },
+    compact: async () => { await sessionRef.current?.compact(); },
     openResumePicker: () => setShowResumePicker(true),
     costSummary: () => `Session cost: $${cost.toFixed(4)}`,
     providerNames: () => Object.keys(props.providers),

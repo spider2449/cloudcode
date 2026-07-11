@@ -1,7 +1,7 @@
 {
   "name": "cloudcode",
   "version": "0.1.0",
-  "description": "Terminal AI coding agent built on the Claude Agent SDK",
+  "description": "Terminal AI coding agent with its own native agent engine talking directly to the Anthropic Messages API",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -29,7 +29,8 @@
     "package": "npm run package:npm && npm run package:bin && npm run package:installer"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.206",
+    "@anthropic-ai/sdk": "^0.111.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "ink": "^5.2.1",
     "ink-spinner": "^5.0.0",
     "marked": "^15.0.12",
