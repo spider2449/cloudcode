@@ -7,7 +7,7 @@ export type ResolveResult = { ok: true; path: string } | { ok: false; error: str
 
 export function resolveProjectPath(input: string, cwd: string): ResolveResult {
   const trimmed = input.trim();
-  if (!trimmed) return { ok: false, error: "Usage: /set project <path>" };
+  if (!trimmed) return { ok: false, error: "Path is required" };
   const expanded =
     trimmed === "~" ? homedir() :
     trimmed.startsWith("~/") || trimmed.startsWith("~\\") ? resolve(homedir(), trimmed.slice(2)) :
