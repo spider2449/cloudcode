@@ -54,9 +54,9 @@ Tab completion:
      `useRef` initializer (PermissionStore, FileIndex), MCP load, skills scan,
      and git status hook re-runs against the new cwd, and a fresh agent session
      starts.
-   - Session resume: the remounted App follows the same behavior as a fresh
-     launch in that directory — `cli.tsx`'s existing "resume latest session for
-     cwd" lookup applies (the wrapper recomputes the resume id per cwd).
+   - Session resume: switching always starts a fresh session in the new
+     directory — `--continue`/`--resume` only apply to the initial mount before
+     any switch has happened, never on a remount caused by switching.
    - Show a notice in the new session: `Switched project to <path>`.
 4. The old session simply ends (same as `/clear` semantics); nothing carries
    over.

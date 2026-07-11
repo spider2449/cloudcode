@@ -28,7 +28,7 @@ import { ThemeProvider } from "./ThemeContext.js";
 import { loadWelcome } from "./welcome.js";
 import { VERSION } from "../version.js";
 import { ProjectPicker } from "./ProjectPicker.js";
-import { recentProjects } from "../commands/projectPath.js";
+import { recentProjects, resolveProjectPath } from "../commands/projectPath.js";
 
 export interface AppProps {
   cwd: string;
@@ -40,7 +40,7 @@ export interface AppProps {
   sessionIndex: SessionIndex;
   queryFn?: typeof query;
   openResumeOnStart?: boolean;
-  onSwitchProject?: (path: string) => void;
+  onSwitchProject?: (path: string) => string | undefined;
   switchedFrom?: string;
 }
 
@@ -269,7 +269,8 @@ export function App(props: AppProps) {
     // (chdir error) the current session must stay alive.
     switchProject: path => {
       if (!props.onSwitchProject) { notice("Project switching is not available."); return; }
-      props.onSwitchProject(path);
+      const err = props.onSwitchProject(path);
+      if (err) notice(err);
     },
     openProjectPicker: () => setShowProjectPicker(true),
     currentCwd: () => props.cwd,
@@ -359,7 +360,12 @@ export function App(props: AppProps) {
           <ProjectPicker
             projects={recentProjects(props.sessionIndex.list(), props.cwd)}
             currentCwd={props.cwd}
-            onPick={p => { setShowProjectPicker(false); ctx.switchProject(p); }}
+            onPick={p => {
+              setShowProjectPicker(false);
+              const result = resolveProjectPath(p, props.cwd);
+              if (!result.ok) { notice(result.error); return; }
+              ctx.switchProject(result.path);
+            }}
             onCancel={() => setShowProjectPicker(false)}
           />
         )}

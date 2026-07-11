@@ -45,15 +45,15 @@ if (values.continue) {
 function Root() {
   const [cwd, setCwd] = React.useState(initialCwd);
   const [prevCwd, setPrevCwd] = React.useState<string | undefined>(undefined);
-  const switchProject = (path: string) => {
+  const switchProject = (path: string): string | undefined => {
     try {
       process.chdir(path);
     } catch (err) {
-      console.error(`Failed to switch project: ${err instanceof Error ? err.message : String(err)}`);
-      return;
+      return `Failed to switch project: ${err instanceof Error ? err.message : String(err)}`;
     }
     setPrevCwd(cwd);
     setCwd(path);
+    return undefined;
   };
   return (
     <App
@@ -63,9 +63,9 @@ function Root() {
       initialProvider={providerName}
       initialModel={settings.model}
       initialMode={settings.permissionMode}
-      resume={cwd === initialCwd ? resume : undefined}
+      resume={prevCwd === undefined ? resume : undefined}
       sessionIndex={sessionIndex}
-      openResumeOnStart={cwd === initialCwd ? values.resume : false}
+      openResumeOnStart={prevCwd === undefined ? values.resume : false}
       onSwitchProject={switchProject}
       switchedFrom={prevCwd}
     />

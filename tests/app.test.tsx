@@ -83,6 +83,50 @@ describe("App", () => {
     expect(onSwitchProject).toHaveBeenCalledWith(process.cwd());
   });
 
+  it("/set project <bad path> shows a notice and does not call onSwitchProject", async () => {
+    const onSwitchProject = vi.fn();
+    const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
+    const { stdin, lastFrame } = render(
+      <App
+        cwd={process.cwd()}
+        providers={{ anthropic: {}, local: { baseUrl: "http://x", apiKey: "k" } }}
+        initialProvider="anthropic"
+        sessionIndex={index}
+        queryFn={fakeQueryFn() as never}
+        onSwitchProject={onSwitchProject}
+      />
+    );
+    await wait();
+    stdin.write("/set project /definitely/does/not/exist");
+    await wait();
+    stdin.write("\r");
+    await wait();
+    expect(lastFrame()).toContain("Not a directory");
+    expect(onSwitchProject).not.toHaveBeenCalled();
+  });
+
+  it("onSwitchProject returning an error string shows a notice instead of switching silently", async () => {
+    const onSwitchProject = vi.fn().mockReturnValue("Failed to switch project: EACCES");
+    const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
+    const { stdin, lastFrame } = render(
+      <App
+        cwd={process.cwd()}
+        providers={{ anthropic: {}, local: { baseUrl: "http://x", apiKey: "k" } }}
+        initialProvider="anthropic"
+        sessionIndex={index}
+        queryFn={fakeQueryFn() as never}
+        onSwitchProject={onSwitchProject}
+      />
+    );
+    await wait();
+    stdin.write(`/set project ${process.cwd()}`);
+    await wait();
+    stdin.write("\r");
+    await wait();
+    expect(onSwitchProject).toHaveBeenCalledWith(process.cwd());
+    expect(lastFrame()).toContain("Failed to switch project: EACCES");
+  });
+
   it("seeds session model and permission mode from initial props", async () => {
     const captured: Record<string, unknown>[] = [];
     const capturingQueryFn = (args: { prompt: AsyncIterable<unknown>; options: Record<string, unknown> }) => {

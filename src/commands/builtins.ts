@@ -3,6 +3,7 @@ import type { PermissionMode } from "../agent/session.js";
 import { THEMES, loadThemeName } from "../ui/theme.js";
 import { loadSettings, saveSetting, type Settings } from "../agent/settings.js";
 import { readdirSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, basename, join, resolve } from "node:path";
 import { resolveProjectPath } from "./projectPath.js";
 
@@ -184,7 +185,11 @@ const commands: Command[] = [
       if (parts.length <= 1) return ["project"].filter(k => k.startsWith(parts[0] ?? ""));
       if (parts[0] !== "project") return [];
       const typed = parts.slice(1).join(" ");
-      const base = resolve(process.cwd(), typed || ".");
+      const expanded =
+        typed === "~" ? homedir() :
+        typed.startsWith("~/") || typed.startsWith("~\\") ? resolve(homedir(), typed.slice(2)) :
+        typed;
+      const base = resolve(process.cwd(), expanded || ".");
       // If the typed text doesn't end with a separator, complete within its parent.
       const endsWithSep = typed.endsWith("/") || typed.endsWith("\\") || typed === "";
       const dir = endsWithSep ? base : dirname(base);
