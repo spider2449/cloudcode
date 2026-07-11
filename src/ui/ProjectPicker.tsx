@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { useTheme } from "./ThemeContext.js";
+import { visibleWindow, MAX_ROWS } from "./SuggestionMenu.js";
 
 interface Props {
   projects: string[];
@@ -26,14 +27,20 @@ export function ProjectPicker({ projects, currentCwd, onPick, onCancel }: Props)
   if (projects.length === 0) {
     return <Text color={theme.muted}>No recent projects. Press Esc to close.</Text>;
   }
+  // Cap visible rows to MAX_ROWS regardless of entry count — see
+  // ResumePicker.tsx for why (mirrors SuggestionMenu.tsx's windowing).
+  const { start, end } = visibleWindow(projects.length, index, MAX_ROWS);
   return (
     <Box flexDirection="column" borderStyle="round" paddingX={1}>
       <Text color={theme.warning}>Switch project (↑/↓, Enter, Esc)</Text>
-      {projects.map((p, i) => (
-        <Text key={p} inverse={i === index}>
-          {p === currentCwd ? "● " : "  "}{p}
-        </Text>
-      ))}
+      {projects.slice(start, end).map((p, i) => {
+        const idx = start + i;
+        return (
+          <Text key={p} inverse={idx === index}>
+            {p === currentCwd ? "● " : "  "}{p}
+          </Text>
+        );
+      })}
     </Box>
   );
 }

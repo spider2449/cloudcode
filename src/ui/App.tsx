@@ -108,6 +108,12 @@ export function App(props: AppProps) {
   // InputBox's own state (see InputBox's onMenuRowsChange doc comment) so
   // the live-region floor never has to guess/reserve a fixed worst case.
   const [menuRows, setMenuRows] = useState(0);
+  // Exact rendered row count of InputBox's own bordered box (border +
+  // wrapped value), reported same-batch via InputBox's onInputRowsChange —
+  // see bottomFill.ts's inputBoxRows doc comment. Defaults to 3 (2 border +
+  // 1 line), the correct value for an empty input, so there is no
+  // window before InputBox's first report where this is wrong.
+  const [inputRows, setInputRows] = useState(3);
   const [termSize, setTermSize] = useState({ rows: stdout?.rows ?? 24, columns: stdout?.columns ?? 80 });
   const firstMessageRef = useRef<string | undefined>(undefined);
   const sessionRef = useRef<AgentSession | null>(null);
@@ -413,11 +419,17 @@ export function App(props: AppProps) {
     streamRows: streamRowsFloor,
     streaming: phase === "streaming",
     compacting: compactPct !== undefined,
-    inputVisible,
-    // ResumePicker/ProjectPicker/PermissionDialog row counts vary with entry
-    // counts and wrapping; 12 is a conservative overestimate (overestimating
-    // is safe here, underestimating is not) rather than measuring their
-    // exact structure.
+    // InputBox's exact reported row count while visible (see onInputRowsChange
+    // wiring below), 0 when hidden.
+    inputRows: inputVisible ? inputRows : 0,
+    // ResumePicker/ProjectPicker/PermissionDialog: now a TRUE upper bound
+    // rather than a guess. ResumePicker/ProjectPicker are windowed to at
+    // most SuggestionMenu's MAX_ROWS=8 visible entries (see visibleWindow
+    // reuse in those components), so their worst case is
+    // border(2) + header(1) + 8 entries = 11 rows regardless of how many
+    // sessions/projects exist. PermissionDialog's toolLabel line is
+    // truncated (see transcript.ts's truncate, now exported) so it can't
+    // grow unboundedly either. 12 leaves one spare row of margin.
     overlayRows: overlayActive ? 12 : 0
   });
   // InputBox renders a 4th row ("working… (Esc to interrupt)") when disabled
@@ -497,7 +509,9 @@ export function App(props: AppProps) {
               onSubmit={handleSubmit}
               disabled={phase === "streaming"}
               history={historyRef.current}
+              columns={termSize.columns}
               onMenuRowsChange={rows => setMenuRows(prev => (prev === rows ? prev : rows))}
+              onInputRowsChange={rows => setInputRows(prev => (prev === rows ? prev : rows))}
             />
           )}
           <StatusBar

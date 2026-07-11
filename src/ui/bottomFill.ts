@@ -77,19 +77,34 @@ export interface LiveRegionState {
   streamRows: number;        // rows the stream tail occupies (0 if empty)
   streaming: boolean;        // WorkingIndicator visible
   compacting: boolean;       // ProgressBar visible
-  inputVisible: boolean;     // InputBox visible (hidden when pickers/dialog shown)
+  inputRows: number;         // InputBox's exact rendered row count, 0 when hidden (see inputBoxRows)
   overlayRows: number;       // rows for ResumePicker/ProjectPicker/PermissionDialog when shown, else 0
 }
 
 export function liveRegionFloor(s: LiveRegionState): number {
-  // InputBox: bordered box = 3 rows; StatusBar: 1 row (may wrap, but floor is fine)
+  // StatusBar: 1 row (may wrap, but floor is fine)
   let rows = 1; // StatusBar
-  if (s.inputVisible) rows += 3;
+  rows += s.inputRows;
   if (s.streaming) rows += 1;
   if (s.compacting) rows += 1;
   rows += s.streamRows;
   rows += s.overlayRows;
   return rows;
+}
+
+// Exact row count of InputBox's own bordered box: 2 border rows
+// (borderStyle="round", top+bottom) + wrapped rows of its rendered content,
+// where the available width is `columns` minus the border's 2 side
+// characters and its paddingX={1} on both sides (2 more columns) = columns
+// - 4. `content` should be the exact string InputBox renders inside the
+// Text child ("> " + before-cursor + cursor-glyph + after-cursor), so a
+// literal newline from backtick-continuation or a line that word-wraps past
+// the box width is counted precisely instead of assuming a flat 3 rows.
+// Exported so InputBox can report this exact value to App.tsx via the same
+// same-render-batch callback pattern used for the suggestion menu (see
+// onMenuRowsChange doc comment below) instead of App.tsx guessing.
+export function inputBoxRows(content: string, columns: number): number {
+  return 2 + textRows(content, Math.max(1, columns - 4));
 }
 
 // A note on the InputBox suggestion menu (SuggestionMenu.tsx, up to

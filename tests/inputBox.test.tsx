@@ -122,6 +122,63 @@ describe("InputBox", () => {
     expect(onSubmit).toHaveBeenCalledWith("/config permissionMode bypassPermissions");
   });
 
+  // Finding 1b (re-review): the suggestion menu's rendered row count must
+  // never diverge from what was last reported via onMenuRowsChange, even on
+  // a render that isn't triggered by a keystroke (e.g. App.tsx's 1s
+  // elapsed-timer re-render). Before the fix, InputBox recomputed
+  // `suggestions` fresh at render time from the live, mutable
+  // completionCtx on EVERY render (including ones with no input event), so
+  // if the underlying data (e.g. availableModels()/registry) grew between
+  // renders, the menu could render more rows than App.tsx's floor knew
+  // about. The fix stores `suggestions` in state, written only inside
+  // sync() (called from update()/the Escape branch/the mount effect), so a
+  // re-render with unchanged props/state can never show more suggestions
+  // than the last onMenuRowsChange report.
+  it("re-rendering with a growing completion source does not grow the menu without a matching onMenuRowsChange call", async () => {
+    const onMenuRowsChange = vi.fn();
+    let models: string[] = [];
+    const ctx: CompletionContext = {
+      registry: buildRegistry(),
+      providerNames: () => [],
+      availableModels: () => models,
+      listFiles: () => []
+    };
+    const { stdin, lastFrame, rerender } = render(
+      <InputBox
+        completionCtx={ctx}
+        onSubmit={() => {}}
+        disabled={false}
+        history={tempHistory()}
+        onMenuRowsChange={onMenuRowsChange}
+      />
+    );
+    await wait();
+    stdin.write("/model ");
+    await wait();
+    const reportedAfterTyping = onMenuRowsChange.mock.calls.at(-1)?.[0];
+    expect(reportedAfterTyping).toBe(0); // no models available yet
+
+    // Simulate the completion source growing (e.g. fetchModels() resolving)
+    // with NO stdin event — just a re-render, like App's elapsed-timer tick.
+    models = ["model-a", "model-b", "model-c"];
+    onMenuRowsChange.mockClear();
+    rerender(
+      <InputBox
+        completionCtx={ctx}
+        onSubmit={() => {}}
+        disabled={false}
+        history={tempHistory()}
+        onMenuRowsChange={onMenuRowsChange}
+      />
+    );
+    await wait();
+
+    // The render must not show more suggestion rows than were reported.
+    const shownRows = (lastFrame() ?? "").split("\n").filter(l => l.includes("model-")).length;
+    const lastReported = onMenuRowsChange.mock.calls.at(-1)?.[0] ?? reportedAfterTyping;
+    expect(shownRows).toBeLessThanOrEqual(lastReported);
+  });
+
   it("continues to a new line when the line ends with backslash", async () => {
     const onSubmit = vi.fn();
     const { stdin } = render(<InputBox completionCtx={completionCtx()} onSubmit={onSubmit} disabled={false} history={tempHistory()} />);

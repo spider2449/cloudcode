@@ -11,7 +11,7 @@ export type DisplayItem =
   | { kind: "result"; costUsd?: number; durationMs?: number }
   | { kind: "diff"; lines: DiffLine[] };
 
-function truncate(s: string, max = 80): string {
+export function truncate(s: string, max = 80): string {
   return s.length > max ? s.slice(0, max - 1) + "…" : s;
 }
 
@@ -48,7 +48,10 @@ export function diffLines(name: string, input: Record<string, unknown>, cap = 20
 
 export function toolLabel(name: string, input: Record<string, unknown>): string {
   let detail: string;
-  if (typeof input.file_path === "string") detail = input.file_path;
+  // Every branch is truncated: an untruncated file_path (e.g. a long
+  // generated path) would let PermissionDialog's single Text line wrap to
+  // an unbounded number of rows, breaking App.tsx's fixed overlayRows cap.
+  if (typeof input.file_path === "string") detail = truncate(input.file_path);
   else if (typeof input.command === "string") detail = truncate(input.command);
   else detail = truncate(JSON.stringify(input));
   return `${name} ${detail}`;

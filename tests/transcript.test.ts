@@ -11,6 +11,14 @@ describe("toolLabel", () => {
     expect(label.startsWith("Bash ")).toBe(true);
     expect(label.length).toBeLessThanOrEqual(85);
   });
+  // Finding 1c (re-review): a long file_path used to be embedded
+  // untruncated, so PermissionDialog's single Text line could wrap to an
+  // unbounded number of rows, breaking App.tsx's fixed overlayRows cap.
+  it("truncates long file paths too", () => {
+    const label = toolLabel("Write", { file_path: "/deeply/nested/" + "x".repeat(200) + ".ts" });
+    expect(label.startsWith("Write ")).toBe(true);
+    expect(label.length).toBeLessThanOrEqual(90);
+  });
 });
 
 describe("toDisplayItems", () => {

@@ -4,6 +4,7 @@ import { render } from "ink-testing-library";
 import { ProjectPicker } from "../src/ui/ProjectPicker.js";
 import { ThemeProvider } from "../src/ui/ThemeContext.js";
 import { THEMES } from "../src/ui/theme.js";
+import { MAX_ROWS } from "../src/ui/SuggestionMenu.js";
 
 const wait = () => new Promise(r => setTimeout(r, 20));
 
@@ -48,5 +49,18 @@ describe("ProjectPicker", () => {
     stdin.write("\x1b");
     await wait();
     expect(onCancel).toHaveBeenCalled();
+  });
+
+  // Finding 1c (re-review): ProjectPicker used to .map() over every project
+  // with no cap, so N recent projects meant N+3 rendered rows — unbounded
+  // against App.tsx's overlayRows: 12 assumption. Must cap visible rows to
+  // SuggestionMenu's MAX_ROWS regardless of entry count.
+  it("caps visible entry rows to MAX_ROWS even with hundreds of recent projects", async () => {
+    const projects = Array.from({ length: 200 }, (_, i) => `/proj-${i}`);
+    const { lastFrame } = renderPicker(projects);
+    await wait();
+    const frame = lastFrame() ?? "";
+    const entryLines = frame.split("\n").filter(l => l.includes("/proj-"));
+    expect(entryLines.length).toBeLessThanOrEqual(MAX_ROWS);
   });
 });
