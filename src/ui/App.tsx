@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Box, Text, useApp, useInput } from "ink";
+import { Box, Text, useApp, useInput, useStdout } from "ink";
 import type { query, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { AgentSession, type PermissionMode, type PermissionRequest } from "../agent/session.js";
 import { History } from "../agent/history.js";
@@ -26,6 +26,7 @@ import { mergeSkillCommands } from "../commands/skillCommands.js";
 import { THEMES, loadThemeName, saveThemeName } from "./theme.js";
 import { ThemeProvider } from "./ThemeContext.js";
 import { loadWelcome } from "./welcome.js";
+import { tailForHeight } from "./streamTail.js";
 import { VERSION } from "../version.js";
 import { ProjectPicker } from "./ProjectPicker.js";
 import { recentProjects, resolveProjectPath } from "../commands/projectPath.js";
@@ -51,6 +52,7 @@ const CONTEXT_WINDOW = 200_000;
 
 export function App(props: AppProps) {
   const { exit } = useApp();
+  const { stdout } = useStdout();
   function modelFor(name: string): string | undefined {
     return (name === props.initialProvider ? props.initialModel : undefined) ?? props.providers[name]?.model;
   }
@@ -348,7 +350,15 @@ export function App(props: AppProps) {
     <ThemeProvider theme={THEMES[themeName] ?? THEMES.dark}>
       <Box flexDirection="column">
         <MessageList items={items} staticKey={transcriptKey} />
-        {streamText !== "" && <Text>{streamText}</Text>}
+        {/* Show only a tail of the streaming text: if the dynamic region
+            reaches the terminal height, Ink clears and rewrites the whole
+            screen on every delta, which breaks scrolling mid-response. The
+            full text is committed to the Static transcript on "result". */}
+        {streamText !== "" && (
+          <Text>
+            {tailForHeight(streamText, Math.max(3, (stdout?.rows ?? 24) - 10), stdout?.columns ?? 80)}
+          </Text>
+        )}
         {phase === "streaming" && <WorkingIndicator label={activeTool ? `Running ${activeTool}` : "Thinking"} startedAt={workStartedAt} />}
         {showResumePicker && (
           <ResumePicker

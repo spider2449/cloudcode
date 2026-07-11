@@ -331,6 +331,32 @@ describe("App", () => {
     expect(finalFrame.match(/partial/g)!.length).toBe(1); // no duplicate partial+final
   });
 
+  it("caps the streaming preview to a tail so the dynamic region fits the terminal", async () => {
+    const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
+    const manyLines = Array.from({ length: 100 }, (_, i) => `line-${i}`).join("\n");
+    const gatedQueryFn = (args: { prompt: AsyncIterable<unknown> }) => {
+      const gen = (async function* () {
+        yield { type: "system", subtype: "init", session_id: "sess-1" };
+        for await (const _ of args.prompt) {
+          yield { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: manyLines } } };
+          await new Promise(() => {}); // stay streaming forever
+        }
+      })();
+      return Object.assign(gen, { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn() });
+    };
+    const { stdin, lastFrame } = render(
+      <App cwd="/p" providers={{ anthropic: {} }} initialProvider="anthropic" sessionIndex={index} queryFn={gatedQueryFn as never} />
+    );
+    await wait();
+    stdin.write("go");
+    await wait();
+    stdin.write("\r");
+    await wait(100);
+    const frame = lastFrame()!;
+    expect(frame).toContain("line-99");     // tail is visible
+    expect(frame).not.toContain("line-0\n"); // head is trimmed
+  });
+
   it("shows the working indicator while streaming", async () => {
     const index = new SessionIndex(join(mkdtempSync(join(tmpdir(), "cc-")), "sessions.json"));
     const neverEndingQueryFn = (args: { prompt: AsyncIterable<unknown> }) => {
