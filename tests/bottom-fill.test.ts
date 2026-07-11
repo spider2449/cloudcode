@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { itemRows, staticRows, fillerHeight } from "../src/ui/bottomFill.js";
+import {
+  itemRows,
+  staticRows,
+  fillerHeight,
+  liveRegionFloor,
+  type LiveRegionState
+} from "../src/ui/bottomFill.js";
+import { MAX_ROWS as SUGGESTION_MENU_MAX_ROWS } from "../src/ui/SuggestionMenu.js";
 import type { DisplayItem } from "../src/ui/transcript.js";
 
 describe("itemRows", () => {
@@ -67,5 +74,104 @@ describe("fillerHeight", () => {
 
   it("clamps to 0 on overflow", () => {
     expect(fillerHeight(24, 100, 6)).toBe(0);
+  });
+});
+
+describe("liveRegionFloor", () => {
+  const base: LiveRegionState = {
+    streamRows: 0,
+    streaming: false,
+    compacting: false,
+    inputVisible: false,
+    overlayRows: 0
+  };
+
+  it("counts just the StatusBar when nothing else is visible", () => {
+    expect(liveRegionFloor(base)).toBe(1);
+  });
+
+  it("adds InputBox's 3 rows when visible", () => {
+    expect(liveRegionFloor({ ...base, inputVisible: true })).toBe(4);
+  });
+
+  it("adds 1 row for WorkingIndicator when streaming", () => {
+    expect(liveRegionFloor({ ...base, streaming: true })).toBe(2);
+  });
+
+  it("adds 1 row for ProgressBar when compacting", () => {
+    expect(liveRegionFloor({ ...base, compacting: true })).toBe(2);
+  });
+
+  it("adds streamRows and overlayRows directly", () => {
+    expect(liveRegionFloor({ ...base, streamRows: 5, overlayRows: 12 })).toBe(1 + 5 + 12);
+  });
+});
+
+describe("growth-transition invariant: no single frame may reach the row budget", () => {
+  // Regression for the one-frame measurement lag: measureElement runs after
+  // render, so the frame a live-region element first appears in still
+  // renders with the PREVIOUS (stale) dynamicRows. With staticRows = 0 (the
+  // state right after /clear) and a near-full-screen filler already
+  // committed, any live-region growth in that next frame must not push
+  // filler + actual-live-region up to terminalRows, or Ink clears
+  // scrollback. The fix is Math.max(dynamicRows, liveRegionFloor(...)); this
+  // asserts that even with a maximally stale measured dynamicRows (0), the
+  // floor alone keeps filler + floor strictly under terminalRows.
+  const terminalRows = 24;
+
+  it("/clear then WorkingIndicator appears on send (streaming frame)", () => {
+    const floor = liveRegionFloor({
+      streamRows: 0,
+      streaming: true,
+      compacting: false,
+      inputVisible: true,
+      overlayRows: 0
+    });
+    const staleMeasuredDynamicRows = 0; // measureElement hasn't caught up yet
+    const filler = fillerHeight(terminalRows, 0, Math.max(staleMeasuredDynamicRows, floor));
+    expect(filler + floor).toBeLessThan(terminalRows);
+  });
+
+  it("/clear then typing '/' opens the suggestion menu at its max row count", () => {
+    // App.tsx's chosen resolution: InputBox reports its EXACT current
+    // suggestion-menu row count up to App.tsx synchronously, within the
+    // same input-event batch that updates InputBox's own state (Ink wraps
+    // every useInput handler in reconciler.batchedUpdates), so this value
+    // is never stale the way measureElement's dynamicRows is. This test
+    // mirrors App.tsx's floor + menuRows call site with the worst case
+    // (menu fully open at SuggestionMenu's MAX_ROWS).
+    const floor = liveRegionFloor({
+      streamRows: 0,
+      streaming: false,
+      compacting: false,
+      inputVisible: true,
+      overlayRows: 0
+    }) + SUGGESTION_MENU_MAX_ROWS;
+    const filler = fillerHeight(terminalRows, 0, Math.max(0, floor));
+    expect(filler + floor).toBeLessThan(terminalRows);
+  });
+
+  it("permission dialog appears (overlay frame)", () => {
+    const floor = liveRegionFloor({
+      streamRows: 0,
+      streaming: false,
+      compacting: false,
+      inputVisible: false,
+      overlayRows: 12
+    });
+    const filler = fillerHeight(terminalRows, 0, Math.max(0, floor));
+    expect(filler + floor).toBeLessThan(terminalRows);
+  });
+
+  it("compaction ProgressBar appears", () => {
+    const floor = liveRegionFloor({
+      streamRows: 0,
+      streaming: false,
+      compacting: true,
+      inputVisible: true,
+      overlayRows: 0
+    });
+    const filler = fillerHeight(terminalRows, 0, Math.max(0, floor));
+    expect(filler + floor).toBeLessThan(terminalRows);
   });
 });

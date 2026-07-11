@@ -15,7 +15,10 @@ function wrappedRows(line: string, columns: number): number {
   return Math.max(1, Math.ceil(visible / width));
 }
 
-function textRows(text: string, columns: number): number {
+// Exported so App.tsx can count rows of the already-capped stream tail
+// (tailForHeight's output) using the same wrap math, instead of duplicating
+// it, when building the live-region floor estimate.
+export function textRows(text: string, columns: number): number {
   return text.split("\n").reduce((sum, line) => sum + wrappedRows(line, columns), 0);
 }
 
@@ -37,6 +40,12 @@ export function itemRows(item: DisplayItem, columns: number): number {
       );
     case "result":
       return 1;
+    default: {
+      // Exhaustiveness guard: a future DisplayItem kind that isn't handled
+      // above fails typecheck here instead of silently returning undefined.
+      const _exhaustive: never = item;
+      return 1;
+    }
   }
 }
 
@@ -52,3 +61,51 @@ export function staticRows(items: DisplayItem[], columns: number, cap: number): 
 export function fillerHeight(terminalRows: number, staticRows: number, dynamicRows: number): number {
   return Math.max(0, terminalRows - staticRows - dynamicRows - 1);
 }
+
+// The live region (stream tail, WorkingIndicator/ProgressBar, pickers,
+// permission dialog, InputBox, StatusBar) is measured with measureElement
+// AFTER render, so the frame in which it grows still renders with the
+// previous (smaller) dynamicRows. If that frame's filler was sized against
+// the stale value, filler + actual live region can reach terminalRows and
+// trigger Ink's clearTerminal/scrollback-erasing repaint. liveRegionFloor is
+// a synchronous, render-time LOWER BOUND on the live region's height, built
+// from the same state App.tsx uses to decide what to render this frame (no
+// lag). Callers should use Math.max(measuredDynamicRows, liveRegionFloor(...))
+// so understimating never happens; overestimating only lifts the footer for
+// a frame, which is the safe direction.
+export interface LiveRegionState {
+  streamRows: number;        // rows the stream tail occupies (0 if empty)
+  streaming: boolean;        // WorkingIndicator visible
+  compacting: boolean;       // ProgressBar visible
+  inputVisible: boolean;     // InputBox visible (hidden when pickers/dialog shown)
+  overlayRows: number;       // rows for ResumePicker/ProjectPicker/PermissionDialog when shown, else 0
+}
+
+export function liveRegionFloor(s: LiveRegionState): number {
+  // InputBox: bordered box = 3 rows; StatusBar: 1 row (may wrap, but floor is fine)
+  let rows = 1; // StatusBar
+  if (s.inputVisible) rows += 3;
+  if (s.streaming) rows += 1;
+  if (s.compacting) rows += 1;
+  rows += s.streamRows;
+  rows += s.overlayRows;
+  return rows;
+}
+
+// A note on the InputBox suggestion menu (SuggestionMenu.tsx, up to
+// MAX_ROWS=8 extra rows when typing "/" or "@"): its open/closed state and
+// row count live in InputBox's local component state, not in anything
+// App.tsx's render body can see synchronously, so liveRegionFloor above
+// cannot model it as a per-flag addition the way it does streaming/
+// compacting/overlays. Baking a flat "+8 whenever inputVisible" into the
+// floor was considered and rejected: since the input is enabled through
+// most of an idle session, that would keep the footer sitting permanently
+// 8 rows off the bottom edge, defeating the bottom-anchoring feature.
+// Instead, App.tsx lifts the EXACT current menu row count from InputBox via
+// a same-render-batch callback (InputBox's onMenuRowsChange): Ink wraps
+// every useInput handler in reconciler.batchedUpdates
+// (node_modules/ink/build/hooks/use-input.js), so InputBox's own state
+// update and the callback into App's setState land in the same React
+// commit — no one-frame lag, unlike measureElement. This gives an exact
+// value instead of a worst-case guess, so the footer only moves when the
+// menu is actually open, and by exactly as much as it needs to.

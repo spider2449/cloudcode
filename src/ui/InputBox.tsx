@@ -1,7 +1,7 @@
 import React, { useRef, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { getSuggestions, applySuggestion, type CompletionContext } from "../commands/completion.js";
-import { SuggestionMenu } from "./SuggestionMenu.js";
+import { SuggestionMenu, MAX_ROWS } from "./SuggestionMenu.js";
 import type { History } from "../agent/history.js";
 import { useTheme } from "./ThemeContext.js";
 
@@ -10,9 +10,18 @@ interface Props {
   onSubmit(text: string): void;
   disabled: boolean;
   history: History;
+  // Reports the currently rendered suggestion-menu row count (0 when
+  // closed/suppressed) so App.tsx's live-region floor can account for it
+  // without a fixed worst-case guess. Called from inside the same stdin
+  // 'input' event handler that updates this component's own state; Ink
+  // wraps each useInput handler in reconciler.batchedUpdates (see
+  // ink/build/hooks/use-input.js), so this update and InputBox's local
+  // setState calls land in the SAME React commit — no one-frame lag, unlike
+  // measureElement which only reports the previous frame's height.
+  onMenuRowsChange?: (rows: number) => void;
 }
 
-export function InputBox({ completionCtx, onSubmit, disabled, history }: Props) {
+export function InputBox({ completionCtx, onSubmit, disabled, history, onMenuRowsChange }: Props) {
   const theme = useTheme();
   const [value, setValue] = useState("");
   const [cursor, setCursor] = useState(0);
@@ -34,6 +43,10 @@ export function InputBox({ completionCtx, onSubmit, disabled, history }: Props) 
     return getSuggestions(valueRef.current, cursorRef.current, completionCtx);
   };
 
+  const notifyMenuRows = () => {
+    onMenuRowsChange?.(Math.min(currentSuggestions().length, MAX_ROWS));
+  };
+
   const update = (nextValue: string, nextCursor: number) => {
     const changed = nextValue !== valueRef.current;
     valueRef.current = nextValue;
@@ -50,6 +63,7 @@ export function InputBox({ completionCtx, onSubmit, disabled, history }: Props) 
     setCursor(cursorRef.current);
     setSuppressed(suppressedRef.current);
     setSelected(selectedRef.current);
+    notifyMenuRows();
   };
 
   const submit = () => {
@@ -90,6 +104,7 @@ export function InputBox({ completionCtx, onSubmit, disabled, history }: Props) 
     if (key.escape && menuOpen) {
       suppressedRef.current = true;
       setSuppressed(true);
+      notifyMenuRows();
       return;
     }
     if (key.leftArrow) {

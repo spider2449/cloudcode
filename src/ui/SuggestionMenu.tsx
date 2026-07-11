@@ -3,7 +3,10 @@ import { Box, Text } from "ink";
 import type { Suggestion } from "../commands/completion.js";
 import { useTheme } from "./ThemeContext.js";
 
-const MAX_ROWS = 8;
+// Exported so InputBox can report the exact row count of a currently open
+// menu up to App.tsx (see InputBox's onMenuRowsChange), instead of App.tsx
+// guessing/duplicating this cap.
+export const MAX_ROWS = 8;
 
 export function visibleWindow(count: number, selected: number, max = MAX_ROWS): { start: number; end: number } {
   if (count <= max) return { start: 0, end: count };

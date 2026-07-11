@@ -31,7 +31,7 @@ import { tailForHeight } from "./streamTail.js";
 import { VERSION } from "../version.js";
 import { ProjectPicker } from "./ProjectPicker.js";
 import { recentProjects, resolveProjectPath } from "../commands/projectPath.js";
-import { staticRows, fillerHeight } from "./bottomFill.js";
+import { staticRows, fillerHeight, liveRegionFloor, textRows } from "./bottomFill.js";
 
 export interface AppProps {
   cwd: string;
@@ -103,6 +103,11 @@ export function App(props: AppProps) {
   const [workStartedAt, setWorkStartedAt] = useState(0);
   const liveRegionRef = useRef<DOMElement>(null);
   const [dynamicRows, setDynamicRows] = useState(0);
+  // Exact row count of InputBox's currently open suggestion menu, reported
+  // synchronously from within the same input-event batch that updates
+  // InputBox's own state (see InputBox's onMenuRowsChange doc comment) so
+  // the live-region floor never has to guess/reserve a fixed worst case.
+  const [menuRows, setMenuRows] = useState(0);
   const [termSize, setTermSize] = useState({ rows: stdout?.rows ?? 24, columns: stdout?.columns ?? 80 });
   const firstMessageRef = useRef<string | undefined>(undefined);
   const sessionRef = useRef<AgentSession | null>(null);
@@ -393,7 +398,40 @@ export function App(props: AppProps) {
   }
 
   const transcriptRows = staticRows(items, termSize.columns, termSize.rows);
-  const filler = fillerHeight(termSize.rows, transcriptRows, dynamicRows);
+
+  // Render-time state driving the live region this frame — mirrors the JSX
+  // below exactly, so liveRegionFloor is never stale (unlike measureElement,
+  // which only reports last frame's height). See bottomFill.ts for why this
+  // exists: without it, the frame a live-region element first appears in can
+  // overflow the terminal and trigger Ink's scrollback-erasing repaint.
+  const inputVisible = !showResumePicker && !showProjectPicker && phase !== "permission";
+  const inputDisabled = phase === "streaming";
+  const streamTailCap = Math.max(3, termSize.rows - 14);
+  const streamRowsFloor = streamText !== "" ? textRows(tailForHeight(streamText, streamTailCap, termSize.columns), termSize.columns) : 0;
+  const overlayActive = showResumePicker || showProjectPicker || phase === "permission";
+  let liveFloor = liveRegionFloor({
+    streamRows: streamRowsFloor,
+    streaming: phase === "streaming",
+    compacting: compactPct !== undefined,
+    inputVisible,
+    // ResumePicker/ProjectPicker/PermissionDialog row counts vary with entry
+    // counts and wrapping; 12 is a conservative overestimate (overestimating
+    // is safe here, underestimating is not) rather than measuring their
+    // exact structure.
+    overlayRows: overlayActive ? 12 : 0
+  });
+  // InputBox renders a 4th row ("working… (Esc to interrupt)") when disabled
+  // that the flat inputVisible -> +3 baseline above doesn't model.
+  if (inputVisible && inputDisabled) liveFloor += 1;
+  // The suggestion menu (up to SuggestionMenu's MAX_ROWS=8) is owned by
+  // InputBox's local state; menuRows is its exact current row count,
+  // reported same-batch via onMenuRowsChange (see InputBox.tsx), so this is
+  // precise rather than a fixed worst-case reserve baked into every frame
+  // the input is enabled (which would keep the footer permanently off the
+  // bottom edge whenever the user could type — see bottomFill.ts history).
+  if (inputVisible && !inputDisabled) liveFloor += menuRows;
+
+  const filler = fillerHeight(termSize.rows, transcriptRows, Math.max(dynamicRows, liveFloor));
 
   return (
     <ThemeProvider theme={THEMES[themeName] ?? THEMES.dark}>
@@ -454,7 +492,13 @@ export function App(props: AppProps) {
             <PermissionDialog request={activePermission} onDecision={decidePermission} />
           )}
           {!showResumePicker && !showProjectPicker && phase !== "permission" && (
-            <InputBox completionCtx={completionCtx} onSubmit={handleSubmit} disabled={phase === "streaming"} history={historyRef.current} />
+            <InputBox
+              completionCtx={completionCtx}
+              onSubmit={handleSubmit}
+              disabled={phase === "streaming"}
+              history={historyRef.current}
+              onMenuRowsChange={rows => setMenuRows(prev => (prev === rows ? prev : rows))}
+            />
           )}
           <StatusBar
             provider={providerName} model={model} servedModel={servedModel} mode={mode} cwd={props.cwd} costUsd={cost}
