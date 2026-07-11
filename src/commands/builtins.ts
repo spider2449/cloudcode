@@ -2,6 +2,9 @@ import type { Command, CommandContext } from "./types.js";
 import type { PermissionMode } from "../agent/session.js";
 import { THEMES, loadThemeName } from "../ui/theme.js";
 import { loadSettings, saveSetting, type Settings } from "../agent/settings.js";
+import { readdirSync } from "node:fs";
+import { dirname, basename, join, resolve } from "node:path";
+import { resolveProjectPath } from "./projectPath.js";
 
 const MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
 
@@ -162,6 +165,39 @@ const commands: Command[] = [
     name: "resume",
     description: "Pick a past session to resume",
     async run(ctx) { ctx.openResumePicker(); }
+  },
+  {
+    name: "set",
+    description: "Set session values: /set project [path] (no path: pick a recent project)",
+    async run(ctx, args) {
+      const [key, ...rest] = args.split(/\s+/).filter(Boolean);
+      const value = rest.join(" ");
+      if (!key) { ctx.notice("Usage: /set project [path]"); return; }
+      if (key !== "project") { ctx.notice(`Unknown /set key: ${key}. Keys: project`); return; }
+      if (!value) { ctx.openProjectPicker(); return; }
+      const result = resolveProjectPath(value, ctx.currentCwd());
+      if (!result.ok) { ctx.notice(result.error); return; }
+      ctx.switchProject(result.path);
+    },
+    completeArgs(prefix) {
+      const parts = prefix.split(/\s+/);
+      if (parts.length <= 1) return ["project"].filter(k => k.startsWith(parts[0] ?? ""));
+      if (parts[0] !== "project") return [];
+      const typed = parts.slice(1).join(" ");
+      const base = resolve(process.cwd(), typed || ".");
+      // If the typed text doesn't end with a separator, complete within its parent.
+      const endsWithSep = typed.endsWith("/") || typed.endsWith("\\") || typed === "";
+      const dir = endsWithSep ? base : dirname(base);
+      const frag = endsWithSep ? "" : basename(base).toLowerCase();
+      try {
+        return readdirSync(dir, { withFileTypes: true })
+          .filter(d => d.isDirectory() && d.name.toLowerCase().startsWith(frag))
+          .slice(0, 20)
+          .map(d => `project ${join(endsWithSep ? typed : dirname(typed || "."), d.name)}`);
+      } catch {
+        return [];
+      }
+    }
   },
   {
     name: "cost",

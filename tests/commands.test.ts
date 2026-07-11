@@ -41,7 +41,10 @@ function mockCtx(): CommandContext {
     sendPrompt: vi.fn(),
     listSkills: vi.fn().mockReturnValue("/a  does a  (project)"),
     setTheme: vi.fn(),
-    listThemes: vi.fn().mockReturnValue("● dark\n  light\n  mono")
+    listThemes: vi.fn().mockReturnValue("● dark\n  light\n  mono"),
+    switchProject: vi.fn(),
+    openProjectPicker: vi.fn(),
+    currentCwd: vi.fn().mockReturnValue(process.cwd())
   };
 }
 
@@ -71,7 +74,7 @@ describe("parseSlash", () => {
 describe("builtins", () => {
   it("registers all v1 commands", () => {
     const names = [...buildRegistry().keys()].sort();
-    expect(names).toEqual(["clear", "compact", "config", "cost", "exit", "help", "init", "mcp", "model", "permissions", "provider", "resume", "skills", "theme"]);
+    expect(names).toEqual(["clear", "compact", "config", "cost", "exit", "help", "init", "mcp", "model", "permissions", "provider", "resume", "set", "skills", "theme"]);
   });
 
   it("/model with arg sets model; without arg lists fetched models", async () => {
@@ -291,6 +294,39 @@ describe("/config", () => {
     expect(cmd.completeArgs!("theme m", cctx)).toEqual(["theme mono"]);
     expect(cmd.completeArgs!("provider l", cctx)).toEqual(["provider local"]);
     expect(cmd.completeArgs!("model cla", cctx)).toEqual(["model claude-sonnet-5"]);
+  });
+});
+
+describe("/set", () => {
+  it("no args prints usage", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("set")!.run(ctx, "");
+    expect(ctx.notice).toHaveBeenCalledWith(expect.stringContaining("/set project"));
+  });
+
+  it("unknown subcommand prints usage", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("set")!.run(ctx, "banana x");
+    expect(ctx.notice).toHaveBeenCalledWith(expect.stringContaining("Unknown /set key: banana"));
+  });
+
+  it("project with no path opens the picker", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("set")!.run(ctx, "project");
+    expect(ctx.openProjectPicker).toHaveBeenCalled();
+  });
+
+  it("project with a valid path switches", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("set")!.run(ctx, `project ${process.cwd()}`);
+    expect(ctx.switchProject).toHaveBeenCalledWith(process.cwd());
+  });
+
+  it("project with an invalid path notices and does not switch", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("set")!.run(ctx, "project Z:\\definitely\\missing\\dir");
+    expect(ctx.switchProject).not.toHaveBeenCalled();
+    expect(ctx.notice).toHaveBeenCalledWith(expect.stringContaining("Not a directory"));
   });
 });
 

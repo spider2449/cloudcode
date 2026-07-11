@@ -257,6 +257,9 @@ export function App(props: AppProps) {
     listSkills: () => formatSkillList(skillsRef.current),
     setTheme: name => { setThemeName(name); saveThemeName(name); },
     listThemes: () => Object.keys(THEMES).map(n => `${n === themeName ? "●" : " "} ${n}`).join("\n"),
+    switchProject: () => {},
+    openProjectPicker: () => {},
+    currentCwd: () => props.cwd,
   };
 
   function sendUserMessage(text: string): void {

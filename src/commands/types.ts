@@ -20,6 +20,9 @@ export interface CommandContext {
   listSkills(): string;
   setTheme(name: string): void;
   listThemes(): string;
+  switchProject(path: string): void;
+  openProjectPicker(): void;
+  currentCwd(): string;
 }
 
 export interface Command {
