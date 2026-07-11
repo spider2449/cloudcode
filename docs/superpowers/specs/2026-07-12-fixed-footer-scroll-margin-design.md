@@ -107,19 +107,71 @@ createRegions(stdout: NodeJS.WriteStream, initialFooterRows: number): {
   overridden to `stdout.rows - currentFooterRows` (read live, not cached, so
   a resize is always reflected on the next read). `.columns` passes through
   unchanged. Resize events re-emit through this proxy so `useStdout`'s
-  resize listener in `App.tsx` keeps working.
-- `footerStdout`: same `.columns`/resize passthrough; `.write(data)` is
-  wrapped as: save cursor (`\x1b7`), move to `(realRows - currentFooterRows +
-  1, 1)` (`\x1b[{row};1H`), write `data` unmodified, restore cursor
-  (`\x1b8`). Using DEC save/restore (`\x1b7`/`\x1b8`) rather than the ANSI
-  SCO variants, since it round-trips reliably across the target terminals
-  (VS Code integrated terminal, Windows Terminal, xterm-compatible).
+  resize listener in `App.tsx` keeps working. `.write()` passes straight
+  through to the real `stdout` unmodified — the content instance is never
+  itself repositioned, only ever interrupted transiently by footer writes
+  (see below), which restore it exactly.
+
+#### Why naive save/move/restore is wrong, and the corrected mechanism
+
+Ink does not do absolute cursor positioning internally. It delegates all
+repainting to `log-update` (`node_modules/ink/build/log-update.js`), which
+tracks only "how many lines did I write last frame" (`previousLineCount`)
+and repaints with a purely *relative* sequence:
+`ansiEscapes.eraseLines(previousLineCount) + output`, where `eraseLines`
+erases and cursor-ups `previousLineCount` times from **wherever the cursor
+currently is**, and `output` (`str + '\n'`) leaves the cursor one row below
+its own last content line once written. `log-update` has no concept of
+absolute rows and Ink exposes no hook to override it.
+
+An earlier version of this design proposed wrapping every footer write with
+save-cursor → move to the fixed footer origin (top row of the margin) →
+passthrough → restore-cursor. This is incorrect: `eraseLines` assumes the
+cursor sits at the **bottom** of the previous footer frame
+(`footerOrigin + footerLastHeight`), not the top. Repositioning to the top
+before forwarding a write makes `eraseLines(footerLastHeight)` erase upward
+from the wrong row — into the content region above the margin — once the
+footer has rendered more than one frame. The content instance's own
+invariant is unaffected by this bug (footer's save/restore correctly
+protects content's cursor across interleaved footer writes), but the
+footer's own frame-to-frame consistency breaks.
+
+**Corrected mechanism.** `footerStdout.write(data)` is wrapped as:
+
+1. Save cursor (`\x1b7`).
+2. Move to `(footerOrigin + footerLastHeight, 1)` — the row where
+   `log-update` actually expects to resume, not the margin's top row.
+3. Forward `data` unmodified.
+4. Determine `newHeight`: strip the leading `eraseLines(footerLastHeight)`
+   prefix from `data` (a fixed, parseable byte pattern — repeated
+   `\x1b[2K\x1b[1A` pairs, ending in `\x1b[2K\x1b[G` when
+   `footerLastHeight > 0`, or empty when `footerLastHeight === 0`) and count
+   the newlines in the remainder (`output = str + '\n'`).
+   `footerLastHeight = newHeight` for the next call. This is fully
+   deterministic and synchronous — it does not depend on `measureElement`
+   or React effect timing, both of which can lag or coincide with a second
+   write for the same instance before an effect fires.
+5. Restore cursor (`\x1b8`).
+
+`footerOrigin` and `footerLastHeight` are tracked internally by
+`createRegions`, not exposed. `footerLastHeight` resets to 0 whenever
+`setFooterRows` changes the margin (see below), since the footer's next
+write after a margin change is always a full repaint at the new origin.
+
+Because this depends on `log-update`'s and `ansi-escapes`' exact internal
+output format (two dependencies deep inside Ink, not part of Ink's public
+API), the plan's first task is a standalone spike validating this mechanism
+against real `ansi-escapes` output and in a real terminal, before any
+`App`/`Footer` wiring is built on top of it.
+
 - `setFooterRows(rows)`: if `rows !== currentFooterRows`, updates
   `currentFooterRows`, writes the margin sequence
-  `\x1b[1;${realRows - rows}r` directly to the real `stdout`, and marks the
-  footer instance for a full repaint at its new origin (see Footer instance
-  notes below — exact mechanism, e.g. remounting vs. an Ink-exposed clear,
-  is an implementation-time decision documented in the plan).
+  `\x1b[1;${realRows - rows}r` directly to the real `stdout`, resets
+  `footerLastHeight` to 0 (the footer's next write is a full repaint at the
+  new origin), and marks the footer instance for a full repaint (see Footer
+  instance notes below — exact mechanism, e.g. remounting vs. an
+  Ink-exposed clear, is an implementation-time decision documented in the
+  plan).
 - `teardown()`: resets the margin to full-screen (`\x1b[r`) — see Process
   exit below.
 
@@ -210,6 +262,17 @@ Transcript/overlay output (content instance)
 
 ## Testing
 
+- **Spike gate, before any other work.** Because the cursor-multiplexing
+  mechanism above depends on `log-update`'s and `ansi-escapes`' exact
+  internal output format — two dependencies deep inside Ink, undocumented
+  as public API — the implementation plan's first task is a standalone
+  spike: build `terminalRegions.ts`'s write-wrapping and erase-prefix
+  parsing in isolation (no `App`/`Footer` wiring), unit test it against
+  real `ansi-escapes.eraseLines()` output, and manually verify it in a real
+  terminal (VS Code integrated terminal at minimum): two interleaved fake
+  Ink-like writers, confirm no visual corruption after many interleaved
+  frames and after a `setFooterRows` change. This is a go/no-go checkpoint
+  before the rest of the plan proceeds.
 - `terminalRegions.ts` is pure enough to unit test directly: feed it a mock
   `stdout` (extending the existing ink-testing-library-style fake used
   elsewhere in this codebase) and assert the exact escape sequences written
