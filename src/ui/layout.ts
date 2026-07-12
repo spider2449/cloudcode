@@ -25,6 +25,7 @@ export function wrapText(text: string, width: number): string[] {
     if (visibleLength(line) === 0) { out.push(""); continue; }
     let currentRow = "";
     let currentVisible = 0;
+    let hasContent = false;
     let i = 0;
     while (i < line.length) {
       const rest = line.slice(i);
@@ -36,14 +37,17 @@ export function wrapText(text: string, width: number): string[] {
       }
       currentRow += line[i];
       currentVisible++;
+      hasContent = true;
       i++;
       if (currentVisible === w) {
         out.push(currentRow);
         currentRow = "";
         currentVisible = 0;
+        hasContent = false;
       }
     }
-    if (currentRow !== "") out.push(currentRow);
+    if (hasContent) out.push(currentRow);
+    else if (currentRow !== "" && out.length > 0) out[out.length - 1] += currentRow;
   }
   return out;
 }
