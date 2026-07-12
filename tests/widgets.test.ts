@@ -98,3 +98,38 @@ describe("renderProgress", () => {
     expect(renderProgress("X", -10, THEMES.dark)).toContain("0%");
   });
 });
+
+import { renderMenu, visibleWindow, MAX_ROWS } from "../src/ui/widgets/menu.js";
+
+describe("visibleWindow", () => {
+  it("returns the full range when count fits within max", () => {
+    expect(visibleWindow(3, 1, 8)).toEqual({ start: 0, end: 3 });
+  });
+  it("windows around the selected index once count exceeds max", () => {
+    expect(visibleWindow(20, 15, 8)).toEqual({ start: 8, end: 16 });
+  });
+  it("clamps the window to the end of the list", () => {
+    expect(visibleWindow(20, 19, 8)).toEqual({ start: 12, end: 20 });
+  });
+  it("defaults max to MAX_ROWS", () => {
+    expect(MAX_ROWS).toBe(8);
+  });
+});
+
+describe("renderMenu", () => {
+  const suggestions = [
+    { label: "/clear", description: "Clear the session" },
+    { label: "/compact", description: "Compact context" }
+  ];
+  it("marks the selected row with the pointer glyph and accent color", () => {
+    const rows = renderMenu(suggestions, 0, THEMES.dark, 80);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toContain("▶ ");
+    expect(rows[0]).toContain("/clear");
+    expect(rows[1]).not.toContain("▶ ");
+  });
+  it("caps rows at MAX_ROWS regardless of suggestion count", () => {
+    const many = Array.from({ length: 20 }, (_, i) => ({ label: `/cmd${i}`, description: "" }));
+    expect(renderMenu(many, 10, THEMES.dark, 80)).toHaveLength(8);
+  });
+});
