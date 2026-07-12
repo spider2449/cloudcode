@@ -1,0 +1,103 @@
+export type Key =
+  | { t: "printable"; ch: string }
+  | { t: "paste"; text: string }
+  | { t: "enter" }
+  | { t: "tab" }
+  | { t: "backtab" }
+  | { t: "backspace" }
+  | { t: "delete" }
+  | { t: "esc" }
+  | { t: "up" }
+  | { t: "down" }
+  | { t: "left" }
+  | { t: "right" }
+  | { t: "home" }
+  | { t: "end" }
+  | { t: "pgup" }
+  | { t: "pgdn" }
+  | { t: "ctrl"; ch: string }
+  | { t: "alt"; ch: string };
+
+const SEQUENCES: Record<string, Key> = {
+  "\x1b[Z": { t: "backtab" },
+  "\x1b[3~": { t: "delete" },
+  "\x1b[A": { t: "up" }, "\x1bOA": { t: "up" },
+  "\x1b[B": { t: "down" }, "\x1bOB": { t: "down" },
+  "\x1b[C": { t: "right" }, "\x1bOC": { t: "right" },
+  "\x1b[D": { t: "left" }, "\x1bOD": { t: "left" },
+  "\x1b[H": { t: "home" }, "\x1b[1~": { t: "home" }, "\x1bOH": { t: "home" },
+  "\x1b[F": { t: "end" }, "\x1b[4~": { t: "end" }, "\x1bOF": { t: "end" },
+  "\x1b[5~": { t: "pgup" },
+  "\x1b[6~": { t: "pgdn" }
+};
+
+const ESC_TIMEOUT_MS = 25;
+
+export class KeyDecoder {
+  private pending = "";
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  /** Test/production hook: called with keys resolved by the 25ms Escape timeout. */
+  onTimeout: ((keys: Key[]) => void) | undefined;
+
+  feed(chunk: Buffer): Key[] {
+    this.clearTimer();
+    this.pending += chunk.toString("binary");
+    return this.drain();
+  }
+
+  private clearTimer(): void {
+    if (this.timer) { clearTimeout(this.timer); this.timer = undefined; }
+  }
+
+  private drain(): Key[] {
+    const keys: Key[] = [];
+    while (this.pending.length > 0) {
+      const consumed = this.tryConsumeOne(keys);
+      if (consumed === 0) break;
+      this.pending = this.pending.slice(consumed);
+    }
+    if (this.pending === "\x1b") {
+      this.timer = setTimeout(() => {
+        this.pending = "";
+        this.onTimeout?.([{ t: "esc" }]);
+      }, ESC_TIMEOUT_MS);
+    }
+    return keys;
+  }
+
+  private tryConsumeOne(keys: Key[]): number {
+    const s = this.pending;
+
+    if (s.startsWith("\x1b[200~")) {
+      const end = s.indexOf("\x1b[201~");
+      if (end === -1) return 0; // wait for the rest of the paste
+      keys.push({ t: "paste", text: s.slice(6, end) });
+      return end + 6;
+    }
+
+    for (const [seq, key] of Object.entries(SEQUENCES)) {
+      if (s.startsWith(seq)) { keys.push(key); return seq.length; }
+    }
+
+    if (s === "\x1b") return 0; // incomplete: could be Esc alone or a sequence prefix
+
+    if (s.startsWith("\x1b[") || s.startsWith("\x1bO")) return 0; // incomplete escape sequence
+
+    if (s.startsWith("\x1b") && s.length >= 2) {
+      keys.push({ t: "alt", ch: s[1] });
+      return 2;
+    }
+
+    const ch = s[0];
+    if (ch === "\r" || ch === "\n") { keys.push({ t: "enter" }); return 1; }
+    if (ch === "\t") { keys.push({ t: "tab" }); return 1; }
+    if (ch === "\x7f") { keys.push({ t: "backspace" }); return 1; }
+    const code = ch.charCodeAt(0);
+    if (code >= 0x01 && code <= 0x1a) {
+      keys.push({ t: "ctrl", ch: String.fromCharCode(code + 96) });
+      return 1;
+    }
+    keys.push({ t: "printable", ch });
+    return 1;
+  }
+}
