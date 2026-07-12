@@ -3518,50 +3518,40 @@ git commit -m "feat(ui): add key routing, scrollback navigation, and permission-
 
 ---
 
-### Task 18: Delete obsolete Ink UI tests, verify coverage parity
+### Task 18: Verify coverage parity (deletion deferred — see Execution Note)
+
+**Execution Note (recorded during implementation, supersedes the deletion step below):** `src/ui/App.tsx` (still the default UI through Task 19) imports `MessageList.tsx`, `StatusBar.tsx`, `PermissionDialog.tsx`, `ResumePicker.tsx`, `ProjectPicker.tsx`, `WorkingIndicator.tsx`, `ProgressBar.tsx`, and `bottomFill.ts` directly (verified via `grep -n "^import" src/ui/App.tsx`). Deleting these files' tests here would violate this plan's own Global Constraint that "Tasks 1–18 must keep the existing Ink UI building and its tests green throughout" — an untested live dependency of the still-shipping default UI is not an acceptable state. This is the same reasoning already applied in Tasks 9 and 10 (kept `tests/useGitStatus.test.tsx` and `tests/inputBox.test.tsx` alive). **None of the nine files below are deleted in this task.** They are deleted only in the Follow-up work, alongside the legacy source files themselves, once `--tui native` becomes the default.
 
 **Files:**
-- Delete: `tests/app.test.tsx`, `tests/bottom-fill.test.ts`, `tests/messageList.test.tsx`, `tests/statusBar.test.tsx`, `tests/suggestionMenu.test.tsx`, `tests/resumePicker.test.tsx`, `tests/projectPicker.test.tsx`, `tests/permissionDialog.test.tsx`, `tests/workingIndicator.test.tsx`
-- Keep unchanged: `tests/markdown.test.ts`, `tests/transcript.test.ts`, `tests/theme.test.ts`, `tests/welcome.test.ts`, `tests/streamTail.test.ts`
-- Verify: all 44 non-UI test files still pass untouched.
+- ~~Delete: `tests/app.test.tsx`, `tests/bottom-fill.test.ts`, `tests/messageList.test.tsx`, `tests/statusBar.test.tsx`, `tests/suggestionMenu.test.tsx`, `tests/resumePicker.test.tsx`, `tests/projectPicker.test.tsx`, `tests/permissionDialog.test.tsx`, `tests/workingIndicator.test.tsx`~~ — deferred to Follow-up work, see note above.
+- Keep unchanged: everything.
+- Verify: all 44 non-UI test files still pass untouched, and the full suite (including the retained legacy UI tests) is green.
 
-Per the spec's Coverage Parity table (design spec lines 239–256), every deleted file's *intent* has already landed in an earlier task: `app.test.tsx` → `tests/app.test.ts` (Tasks 16–17), `bottom-fill.test.ts` → `tests/layout.test.ts` + `tests/buffer.test.ts` (Tasks 2–3), `messageList.test.tsx` → `tests/buffer.test.ts` + `tests/render.test.ts` (Tasks 3, 15), `statusBar.test.tsx`/`suggestionMenu.test.tsx`/`workingIndicator.test.tsx` → `tests/widgets.test.ts` (Tasks 4–7), `resumePicker.test.tsx`/`projectPicker.test.tsx`/`permissionDialog.test.tsx` → `tests/overlay.test.ts` (Tasks 11–13). `inputBox.test.tsx` and `useGitStatus.test.tsx` were already deleted in Tasks 10 and 9 respectively.
+Per the spec's Coverage Parity table (design spec lines 239–256), every one of these files' *intent* has already landed in an earlier task as a parallel, independent test file: `app.test.tsx` → `tests/app.test.ts` (Tasks 16–17), `bottom-fill.test.ts` → `tests/layout.test.ts` + `tests/buffer.test.ts` (Tasks 2–3), `messageList.test.tsx` → `tests/buffer.test.ts` + `tests/render.test.ts` (Tasks 3, 15), `statusBar.test.tsx`/`suggestionMenu.test.tsx`/`workingIndicator.test.tsx` → `tests/widgets.test.ts` (Tasks 4–7), `resumePicker.test.tsx`/`projectPicker.test.tsx`/`permissionDialog.test.tsx` → `tests/overlay.test.ts` (Tasks 11–13). Both the old and new test suites currently run side by side, which is the correct coexistence state per this plan's incremental rollout.
 
-- [ ] **Step 1: Delete the obsolete files**
+- [ ] **Step 1: Run the full suite to confirm parity coverage exists and nothing regressed**
 
-```bash
-git rm tests/app.test.tsx tests/bottom-fill.test.ts tests/messageList.test.tsx \
-  tests/statusBar.test.tsx tests/suggestionMenu.test.tsx tests/resumePicker.test.tsx \
-  tests/projectPicker.test.tsx tests/permissionDialog.test.tsx tests/workingIndicator.test.tsx
-```
+Run: `npx vitest run` (or `npm test`)
+Expected: All test files pass except the pre-existing unrelated `tests/skills.test.ts` failure (per spec's Decisions ¶6, this persists untouched through the rewrite). Confirm no *other* file fails, and confirm the total test count grew (new hand-rolled test files are additive, nothing was removed).
 
-- [ ] **Step 2: Run the full suite to confirm nothing regressed**
+- [ ] **Step 2: No commit needed**
 
-Run: `npx vitest run`
-Expected: All remaining test files pass. `tests/skills.test.ts` shows its pre-existing unrelated `loadSkills` environment failure (per spec's Decisions ¶6, this persists untouched through the rewrite) — confirm no *other* file fails.
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add -A
-git commit -m "test(ui): remove Ink-based UI tests superseded by the hand-rolled TUI test suite"
-```
+This task made no file changes (verification only); the deletion step is recorded as deferred rather than executed. If a commit is desired for traceability, commit only the plan-document update describing this deviation.
 
 ---
 
 ### Task 19: Wire `--tui native`, replace `src/cli.tsx` with `src/cli.ts`, dependency cleanup
 
 **Files:**
-- Create: `src/cli.ts`
-- Delete: `src/cli.tsx`, `src/ui/bottomFill.ts`
-- Delete tests: `tests/bottom-fill.test.ts` (already removed in Task 18 — no-op if already gone)
-- Modify: `package.json`, `tsconfig.json`
+- Modify: `src/cli.tsx` in place (per the Step 3 note below, it keeps its `.tsx` extension and is not renamed/recreated this task)
+- Do NOT delete: `src/ui/bottomFill.ts` or `tests/bottom-fill.test.ts` — per Task 18's Execution Note, `src/ui/App.tsx` still imports `bottomFill.ts` directly and is still the default UI reached by this same `src/cli.tsx`. Deleting it now would break the build. Deferred to Follow-up work alongside the rest of the legacy UI.
+- Modify: `package.json`, `tsconfig.json` only if changes are actually needed (see Step 4 — in practice, none are needed this task)
 - Test: `tests/cli-args.test.ts` (new — tests `parseArgs` option wiring only, since launching a real TTY app is not unit-testable)
 
 **Interfaces:**
 - Consumes: `App` from `nativeApp.ts` (Task 17), `Terminal` (Task 14), `loadProviders`/`loadSettings` (unchanged, `../agent/*`), `SessionIndex` (unchanged), `VERSION` (unchanged). The legacy Ink `App` (`src/ui/App.tsx`) and its `render(<App/>)` call stay reachable as the default path per the spec's incremental rollout — this task only *adds* the `--tui native` opt-in, it does not remove the Ink code path (that is Rollout step 5, out of scope for this plan).
 
-Because the legacy Ink UI (`src/ui/App.tsx`, `InputBox.tsx`, `StatusBar.tsx`, etc.) must keep building and its own tests (already deleted in Task 18 alongside their hand-rolled replacements) must stay green through step 3 of the rollout, and because `src/cli.tsx` is the *only* file that imports both the Ink `App` and the new one, `src/cli.tsx` becomes `src/cli.ts` with JSX removed from the entrypoint only — the legacy `src/ui/App.tsx` keeps its own `.tsx` extension and Ink imports untouched. `tsconfig.json`'s `"jsx": "react-jsx"` must therefore stay in place (it is a global compiler flag, and `App.tsx` still needs it) — despite the spec's Dependencies & Config Changes section saying to drop it, that drop only becomes safe once the Ink UI is deleted entirely (Rollout step 5). This plan defers that line to the follow-up "delete legacy UI" work and calls it out here so it isn't silently forgotten.
+Because the legacy Ink UI (`src/ui/App.tsx`, `InputBox.tsx`, `StatusBar.tsx`, etc.) must keep building and its own tests (kept alive, not deleted, per Task 18's Execution Note) must stay green through step 3 of the rollout, and because `src/cli.tsx` is the *only* file that imports both the Ink `App` and the new one, `src/cli.tsx` keeps its `.tsx` extension (see Step 3 below) — the legacy `src/ui/App.tsx` keeps its own `.tsx` extension and Ink imports untouched. `tsconfig.json`'s `"jsx": "react-jsx"` must therefore stay in place (it is a global compiler flag, and `App.tsx` still needs it) — despite the spec's Dependencies & Config Changes section saying to drop it, that drop only becomes safe once the Ink UI is deleted entirely (Rollout step 5). This plan defers that line to the follow-up "delete legacy UI" work and calls it out here so it isn't silently forgotten.
 
 `bottomFill.ts` has no remaining importers after Task 16 stopped using it (the hand-rolled `App`/`render` compute layout synchronously without a filler/measureElement dance) — but the legacy `src/ui/App.tsx` still imports it (`App.tsx:34`), so **do not delete it yet**; it is deleted only when the legacy UI is deleted in the follow-up work. Remove it from this task's file list — no action needed here.
 
