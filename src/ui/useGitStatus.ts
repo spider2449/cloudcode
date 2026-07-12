@@ -18,6 +18,9 @@ const defaultExec: GitExec = (args, cwd) =>
 
 const POLL_MS = 5000;
 
+// Kept for the legacy Ink UI (src/ui/App.tsx), which still consumes this
+// hook. The hand-rolled UI uses GitStatusPoller below instead, since App.ts
+// has no hook lifecycle to hang a useEffect off of.
 export function useGitStatus(cwd: string, refreshKey: number, exec: GitExec = defaultExec): GitStatus {
   const [status, setStatus] = useState<GitStatus>({ dirty: false });
 
@@ -39,4 +42,34 @@ export function useGitStatus(cwd: string, refreshKey: number, exec: GitExec = de
   }, [cwd, refreshKey]);
 
   return status;
+}
+
+export class GitStatusPoller {
+  private current: GitStatus = { dirty: false };
+  private timer: ReturnType<typeof setInterval> | undefined;
+
+  constructor(private cwd: string, private exec: GitExec = defaultExec) {}
+
+  get status(): GitStatus {
+    return this.current;
+  }
+
+  async refresh(): Promise<void> {
+    try {
+      const branch = (await this.exec(["rev-parse", "--abbrev-ref", "HEAD"], this.cwd)).trim();
+      const porcelain = await this.exec(["status", "--porcelain", "-uno"], this.cwd);
+      this.current = { branch: branch || undefined, dirty: porcelain.trim().length > 0 };
+    } catch {
+      this.current = { dirty: false };
+    }
+  }
+
+  start(): void {
+    void this.refresh();
+    this.timer = setInterval(() => { void this.refresh(); }, POLL_MS);
+  }
+
+  stop(): void {
+    if (this.timer) { clearInterval(this.timer); this.timer = undefined; }
+  }
 }
