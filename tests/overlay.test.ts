@@ -73,3 +73,43 @@ describe("OverlayManager resume sub-mode", () => {
     expect(mgr.mode).toBe("none");
   });
 });
+
+describe("OverlayManager project sub-mode", () => {
+  it("openProject switches mode to project", () => {
+    const mgr = new OverlayManager();
+    mgr.openProject(["/a", "/b"], "/a", () => {}, () => {});
+    expect(mgr.mode).toBe("project");
+  });
+
+  it("Enter on a different project calls onPick", () => {
+    const onPick = vi.fn();
+    const mgr = new OverlayManager();
+    mgr.openProject(["/a", "/b"], "/a", onPick, () => {});
+    mgr.handleKey({ t: "down" });
+    mgr.handleKey({ t: "enter" });
+    expect(onPick).toHaveBeenCalledWith("/b");
+  });
+
+  it("Enter on the current cwd's entry cancels instead of picking", () => {
+    const onPick = vi.fn();
+    const onCancel = vi.fn();
+    const mgr = new OverlayManager();
+    mgr.openProject(["/a", "/b"], "/a", onPick, onCancel);
+    mgr.handleKey({ t: "enter" });
+    expect(onPick).not.toHaveBeenCalled();
+    expect(onCancel).toHaveBeenCalled();
+  });
+
+  it("marks the current cwd entry with a bullet", () => {
+    const mgr = new OverlayManager();
+    mgr.openProject(["/a", "/b"], "/a", () => {}, () => {});
+    const rows = mgr.render(THEMES.dark, 80);
+    expect(rows.some(r => r.includes("●") && r.includes("/a"))).toBe(true);
+  });
+
+  it("shows a message when there are no recent projects", () => {
+    const mgr = new OverlayManager();
+    mgr.openProject([], "/a", () => {}, () => {});
+    expect(mgr.render(THEMES.dark, 80).join("\n")).toContain("No recent projects");
+  });
+});
