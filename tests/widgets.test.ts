@@ -81,3 +81,20 @@ describe("renderWorkInd", () => {
     expect(row).toContain("(4s · Esc to interrupt)");
   });
 });
+
+import { renderProgress } from "../src/ui/widgets/progress.js";
+
+describe("renderProgress", () => {
+  it("renders a filled/empty bar proportional to pct at the default width", () => {
+    const row = renderProgress("Compacting", 50, THEMES.dark);
+    expect(row).toContain("Compacting");
+    expect(row).toContain("50%");
+    expect(row).toContain("█".repeat(10));
+    expect(row).toContain("░".repeat(10));
+  });
+
+  it("clamps pct to [0,100]", () => {
+    expect(renderProgress("X", 150, THEMES.dark)).toContain("100%");
+    expect(renderProgress("X", -10, THEMES.dark)).toContain("0%");
+  });
+});
