@@ -58,8 +58,26 @@ export function staticRows(items: DisplayItem[], columns: number, cap: number): 
   return rows;
 }
 
-export function fillerHeight(terminalRows: number, staticRows: number, dynamicRows: number): number {
-  return Math.max(0, terminalRows - staticRows - dynamicRows - 1);
+// How many rows of headroom to leave between filler + live region and the
+// terminal's bottom edge. The footer (StatusBar) is the LAST row of the
+// live region, so a reserve of 0 pins it to the very bottom row; a reserve
+// of 1 leaves it one row above. The reserve exists to prevent Ink's
+// clearTerminal/scrollback-erasing repaint when a live-region element first
+// appears and measureElement lags one render behind (its reported
+// dynamicRows is stale-low that frame, so without a reserve filler + actual
+// height can reach terminalRows). Callers should pass 1 during any frame
+// where the live region is growing, shrinking, or being re-laid-out (stream
+// tail present, streaming/compacting indicator visible, overlay open, or
+// the measured dynamicRows has not caught up to the render-time floor), and
+// 0 only in steady-state idle so the footer truly pins to the bottom.
+export function fillerHeight(
+  terminalRows: number,
+  staticRows: number,
+  dynamicRows: number,
+  reserveRows = 1
+): number {
+  const reserve = Math.max(0, Math.floor(reserveRows));
+  return Math.max(0, terminalRows - staticRows - dynamicRows - reserve);
 }
 
 // Resize-transition safety net. React effects (InputBox's onInputRowsChange
@@ -79,9 +97,19 @@ export function resizeSafeFillerHeight(
   terminalRows: number,
   staticRows: number,
   dynamicRows: number,
-  justResized: boolean
+  justResized: boolean,
+  reserveRows = 1
 ): number {
-  return justResized ? 0 : fillerHeight(terminalRows, staticRows, dynamicRows);
+  // A resize IS a growth/transition frame whose stale floor can be far below
+  // the new real height (the input box wraps to MORE rows at the new narrower
+  // width), so for that one frame the filler must be forced to 0 — even if
+  // the caller is in steady-state idle (reserveRows=0) — so that
+  // filler + real_height cannot reach terminalRows and trigger Ink's
+  // clearTerminal/scrollback-erasing repaint. Once the just-resized frame has
+  // passed, the caller's reserveRows is honored so steady-state idle pins the
+  // footer to the very bottom row.
+  if (justResized) return 0;
+  return fillerHeight(terminalRows, staticRows, dynamicRows, reserveRows);
 }
 
 // The live region (stream tail, WorkingIndicator/ProgressBar, pickers,

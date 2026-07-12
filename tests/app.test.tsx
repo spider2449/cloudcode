@@ -440,4 +440,25 @@ describe("bottom-anchored footer", () => {
     // Status bar (provider segment) must be the last line.
     expect(lines[lines.length - 1]).toContain("anthropic");
   });
+
+  it("pins the status bar to the very bottom row in steady-state idle", async () => {
+    // Regression test for the "footer not pinned to bottom" fix.
+    // Applies AFTER the first render settles (measureElement's post-render
+    // effect has run and dynamicRows has caught up to the render-time
+    // floor): steady-state idle is reached, the 1-row safety reserve is
+    // dropped, and the StatusBar pins to the terminal's last (24th) row.
+    // Before the fix the reserve was always 1, so the StatusBar sat on row
+    // 23 and row 24 was empty.
+    const { lastFrame } = makeApp();
+    await wait(60); // let effects (measureElement) settle post-render
+    const lines = lastFrame()!.split("\n");
+    expect(lines.length).toBe(24); // exactly 24 rows — no trailing empty row
+    expect(lines[lines.length - 1]).toContain("anthropic"); // StatusBar at row 24
+    // The row above the StatusBar is the InputBox's bottom border (a
+    // round-corner box-drawing char), confirming the StatusBar itself —
+    // not the input box's last content row — sits on the bottom edge.
+    const inputBoxBottomBorder = lines[lines.length - 2];
+    const borderChars = ["╰", "└", "┌", "╭", "─"];
+    expect(borderChars.some(c => inputBoxBottomBorder.includes(c))).toBe(true);
+  });
 });

@@ -463,7 +463,37 @@ export function App(props: AppProps) {
   // bottomFill.ts for why this is safe.
   const justResized = justResizedRef.current;
   justResizedRef.current = false;
-  const filler = resizeSafeFillerHeight(termSize.rows, transcriptRows, Math.max(dynamicRows, liveFloor), justResized);
+
+  // Steady-state idle = nothing in the live region is entering, leaving, or
+  // being re-laid-out this frame, AND measureElement has caught up to the
+  // render-time floor. Only then can the 1-row safety reserve be dropped so
+  // the StatusBar pins to the terminal's very bottom row. Any of the
+  // following keeps the reserve for that frame (each is a growth/transition
+  // frame where measureElement's dynamicRows is one render behind the real
+  // height, so without the reserve filler + actual height could reach
+  // terminalRows and trigger Ink's clearTerminal/scrollback-erasing repaint
+  // — the mouse-scroll freeze fixed by an earlier commit):
+  //   - streamText !== "" : the stream tail is painting (or about to clear)
+  //   - phase === "streaming": WorkingIndicator is visible
+  //   - compactPct !== undefined: the compaction ProgressBar is animating
+  //   - overlayActive: a picker or the permission dialog is open
+  //   - menuRows > 0: InputBox's suggestion menu is open
+  //   - dynamicRows !== liveFloor: measureElement hasn't caught up yet
+  const steadyIdle =
+    streamText === "" &&
+    phase !== "streaming" &&
+    compactPct === undefined &&
+    !overlayActive &&
+    menuRows === 0 &&
+    dynamicRows === liveFloor;
+  const reserve = steadyIdle ? 0 : 1;
+  const filler = resizeSafeFillerHeight(
+    termSize.rows,
+    transcriptRows,
+    Math.max(dynamicRows, liveFloor),
+    justResized,
+    reserve
+  );
 
   return (
     <ThemeProvider theme={THEMES[themeName] ?? THEMES.dark}>

@@ -65,17 +65,33 @@ describe("staticRows", () => {
 });
 
 describe("fillerHeight", () => {
-  it("fills unused space minus the 1-row reserve", () => {
+  it("fills unused space minus the 1-row reserve by default", () => {
     // 24 rows, 5 transcript rows, 6 live-region rows -> 24 - 5 - 6 - 1 = 12
     expect(fillerHeight(24, 5, 6)).toBe(12);
   });
 
-  it("returns 0 on exact fit", () => {
+  it("returns 0 on exact fit with the default reserve", () => {
     expect(fillerHeight(24, 17, 6)).toBe(0);
   });
 
   it("clamps to 0 on overflow", () => {
     expect(fillerHeight(24, 100, 6)).toBe(0);
+  });
+
+  it("pins the footer to the very bottom row in steady-state idle when reserveRows=0", () => {
+    // 24 rows, 5 transcript rows, 6 live-region rows (StatusBar is the last
+    // of them), no reserve -> 24 - 5 - 6 - 0 = 13. filler + live region then
+    // equals the full terminal height, so the StatusBar sits on row 24.
+    expect(fillerHeight(24, 5, 6, 0)).toBe(13);
+  });
+
+  it("still clamps to 0 on overflow when reserveRows=0", () => {
+    expect(fillerHeight(24, 100, 6, 0)).toBe(0);
+  });
+
+  it("clamps a negative reserve to 0", () => {
+    // A reserve cannot add filler; negative values are flooring to 0.
+    expect(fillerHeight(24, 5, 6, -3)).toBe(13);
   });
 });
 
@@ -305,6 +321,28 @@ describe("resizeSafeFillerHeight (Change 1: resize-transition safety net)", () =
 
   it("falls back to normal fillerHeight once the resize-transition frame has passed", () => {
     expect(resizeSafeFillerHeight(24, 5, 6, false)).toBe(fillerHeight(24, 5, 6));
+  });
+
+  it("honors the caller's reserveRows when not just-resized", () => {
+    // Steady-state idle: caller passes reserveRows=0 so the footer pins to
+    // the bottom edge (filler = 24 - 5 - 6 - 0 = 13).
+    expect(resizeSafeFillerHeight(24, 5, 6, false, 0)).toBe(13);
+    // Growth frame: caller keeps the 1-row reserve (filler = 24 - 5 - 6 - 1).
+    expect(resizeSafeFillerHeight(24, 5, 6, false, 1)).toBe(12);
+    // Unknown reserve falls back to the default 1.
+    expect(resizeSafeFillerHeight(24, 5, 6, false)).toBe(12);
+  });
+
+  it("forces filler to 0 on the just-resized frame even when caller passes reserveRows=0", () => {
+    // On the just-resized frame the measured floor is one render behind and
+    // can be far below the new real height (the input box wraps to MORE rows
+    // at the new narrower width), so any non-zero filler risks
+    // filler + real_height >= terminalRows and an Ink clearTerminal. So
+    // resizeSafeFillerHeight forces filler to 0 for that one frame
+    // regardless of the caller's reserveRows.
+    expect(resizeSafeFillerHeight(24, 5, 6, true, 0)).toBe(0);
+    expect(resizeSafeFillerHeight(24, 5, 6, true, 1)).toBe(0);
+    expect(resizeSafeFillerHeight(24, 5, 6, true)).toBe(0);
   });
 });
 
