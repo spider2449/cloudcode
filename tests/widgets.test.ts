@@ -64,3 +64,20 @@ describe("renderStatusBar", () => {
     expect(row).toContain("Press End to jump to latest");
   });
 });
+
+import { renderWorkInd } from "../src/ui/widgets/workInd.js";
+
+describe("renderWorkInd", () => {
+  const SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
+  it("cycles the spinner glyph by frame index", () => {
+    expect(renderWorkInd(0, "Thinking", 0, THEMES.dark)).toContain(SPINNER[0]);
+    expect(renderWorkInd(3, "Thinking", 0, THEMES.dark)).toContain(SPINNER[3]);
+    expect(renderWorkInd(SPINNER.length, "Thinking", 0, THEMES.dark)).toContain(SPINNER[0]);
+  });
+
+  it("includes the label and elapsed seconds with the interrupt hint", () => {
+    const row = renderWorkInd(0, "Running Read", 4200, THEMES.dark);
+    expect(row).toContain("Running Read…");
+    expect(row).toContain("(4s · Esc to interrupt)");
+  });
+});
