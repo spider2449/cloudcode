@@ -1,10 +1,38 @@
 import type { SessionEntry } from "../../agent/sessionIndex.js";
+import type { PermissionRequest } from "../../agent/session.js";
 import type { Key } from "../input.js";
 import { visibleWindow, MAX_ROWS } from "./menu.js";
+import { toolLabel } from "../transcript.js";
 import { sgr, SGR_RESET } from "../term/ansi.js";
 import type { Theme } from "../theme.js";
 
 export type OverlayMode = "none" | "resume" | "project" | "permission";
+
+interface PermOption {
+  label: string;
+  hotkey: string;
+  allow: boolean;
+  rememberAs?: "allow" | "deny";
+}
+
+const BASE_OPTIONS: PermOption[] = [
+  { label: "Yes (y)", hotkey: "y", allow: true },
+  { label: "No (n)", hotkey: "n", allow: false }
+];
+
+const FILE_OPTIONS: PermOption[] = [
+  { label: "Yes (y)", hotkey: "y", allow: true },
+  { label: "Always for this directory (a)", hotkey: "a", allow: true, rememberAs: "allow" },
+  { label: "No (n)", hotkey: "n", allow: false },
+  { label: "Never for this directory (d)", hotkey: "d", allow: false, rememberAs: "deny" }
+];
+
+interface PermissionState {
+  request: PermissionRequest;
+  options: PermOption[];
+  selected: number;
+  onDecision: (allow: boolean, rememberAs?: "allow" | "deny") => void;
+}
 
 interface ResumeState {
   entries: SessionEntry[];
@@ -25,6 +53,7 @@ export class OverlayManager {
   private _mode: OverlayMode = "none";
   private resumeState: ResumeState | undefined;
   private projectState: ProjectState | undefined;
+  private permissionState: PermissionState | undefined;
 
   get mode(): OverlayMode {
     return this._mode;
@@ -44,15 +73,41 @@ export class OverlayManager {
     this.projectState = { projects, currentCwd, index: 0, onPick, onCancel };
   }
 
+  openPermission(request: PermissionRequest, onDecision: (allow: boolean, rememberAs?: "allow" | "deny") => void): void {
+    this._mode = "permission";
+    const hasFilePath = typeof request.input.file_path === "string";
+    this.permissionState = { request, options: hasFilePath ? FILE_OPTIONS : BASE_OPTIONS, selected: 0, onDecision };
+  }
+
   close(): void {
     this._mode = "none";
     this.resumeState = undefined;
     this.projectState = undefined;
+    this.permissionState = undefined;
   }
 
-  handleKey(k: Key): void {
+  handleKey(k: Key, input?: string): void {
     if (this._mode === "resume") this.handleResumeKey(k);
     else if (this._mode === "project") this.handleProjectKey(k);
+    else if (this._mode === "permission") this.handlePermissionKey(k, input);
+  }
+
+  private handlePermissionKey(k: Key, input?: string): void {
+    const s = this.permissionState;
+    if (!s) return;
+    const decide = (opt: PermOption) => {
+      const cb = s.onDecision;
+      this.close();
+      cb(opt.allow, opt.rememberAs);
+    };
+    if (input) {
+      const hot = s.options.find(o => o.hotkey === input.toLowerCase());
+      if (hot) { decide(hot); return; }
+    }
+    if (k.t === "esc") { const cb = s.onDecision; this.close(); cb(false); return; }
+    if (k.t === "left" || k.t === "up") { s.selected = (s.selected + s.options.length - 1) % s.options.length; return; }
+    if (k.t === "right" || k.t === "down") { s.selected = (s.selected + 1) % s.options.length; return; }
+    if (k.t === "enter") decide(s.options[s.selected]);
   }
 
   private handleProjectKey(k: Key): void {
@@ -84,7 +139,24 @@ export class OverlayManager {
   render(theme: Theme, width: number): string[] {
     if (this._mode === "resume") return this.renderResume(theme, width);
     if (this._mode === "project") return this.renderProject(theme, width);
+    if (this._mode === "permission") return this.renderPermission(theme, width);
     return [];
+  }
+
+  private renderPermission(theme: Theme, width: number): string[] {
+    const s = this.permissionState;
+    if (!s) return [];
+    const warning = sgr(theme.warning);
+    const optionsLine = s.options
+      .map((o, i) => (i === s.selected ? `\x1b[7m ${o.label} \x1b[27m` : ` ${o.label} `))
+      .join("  ");
+    return [
+      "╭" + "─".repeat(Math.max(0, width - 2)) + "╮",
+      `${warning}Permission required${SGR_RESET}`,
+      toolLabel(s.request.toolName, s.request.input),
+      optionsLine,
+      "╰" + "─".repeat(Math.max(0, width - 2)) + "╯"
+    ];
   }
 
   private renderProject(theme: Theme, width: number): string[] {

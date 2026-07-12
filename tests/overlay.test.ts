@@ -113,3 +113,64 @@ describe("OverlayManager project sub-mode", () => {
     expect(mgr.render(THEMES.dark, 80).join("\n")).toContain("No recent projects");
   });
 });
+
+describe("OverlayManager permission sub-mode", () => {
+  const fileRequest = { toolName: "Edit", input: { file_path: "/a/b.ts" } };
+  const bashRequest = { toolName: "Bash", input: { command: "ls" } };
+
+  it("hotkey 'y' allows without remembering", () => {
+    const onDecision = vi.fn();
+    const mgr = new OverlayManager();
+    mgr.openPermission(fileRequest as never, onDecision);
+    mgr.handleKey({ t: "printable", ch: "y" }, "y");
+    expect(onDecision).toHaveBeenCalledWith(true, undefined);
+  });
+
+  it("hotkey 'a' allows and remembers 'allow' (file-path requests only)", () => {
+    const onDecision = vi.fn();
+    const mgr = new OverlayManager();
+    mgr.openPermission(fileRequest as never, onDecision);
+    mgr.handleKey({ t: "printable", ch: "a" }, "a");
+    expect(onDecision).toHaveBeenCalledWith(true, "allow");
+  });
+
+  it("hotkey 'd' denies and remembers 'deny'", () => {
+    const onDecision = vi.fn();
+    const mgr = new OverlayManager();
+    mgr.openPermission(fileRequest as never, onDecision);
+    mgr.handleKey({ t: "printable", ch: "d" }, "d");
+    expect(onDecision).toHaveBeenCalledWith(false, "deny");
+  });
+
+  it("Escape denies without remembering", () => {
+    const onDecision = vi.fn();
+    const mgr = new OverlayManager();
+    mgr.openPermission(fileRequest as never, onDecision);
+    mgr.handleKey({ t: "esc" });
+    expect(onDecision).toHaveBeenCalledWith(false);
+  });
+
+  it("a non-file-path request only offers Yes/No, not Always/Never", () => {
+    const mgr = new OverlayManager();
+    mgr.openPermission(bashRequest as never, () => {});
+    const rows = mgr.render(THEMES.dark, 80);
+    const joined = rows.join("\n");
+    expect(joined).not.toContain("Always for this directory");
+  });
+
+  it("arrow navigation plus Enter selects the currently highlighted option", () => {
+    const onDecision = vi.fn();
+    const mgr = new OverlayManager();
+    mgr.openPermission(bashRequest as never, onDecision);
+    mgr.handleKey({ t: "right" });
+    mgr.handleKey({ t: "enter" });
+    expect(onDecision).toHaveBeenCalledWith(false, undefined);
+  });
+
+  it("renders the tool label from transcript.toolLabel", () => {
+    const mgr = new OverlayManager();
+    mgr.openPermission(fileRequest as never, () => {});
+    const rows = mgr.render(THEMES.dark, 80);
+    expect(rows.join("\n")).toContain("Edit /a/b.ts");
+  });
+});
