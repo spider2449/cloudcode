@@ -104,3 +104,60 @@ describe("App", () => {
     expect(compactSpy).toHaveBeenCalled();
   });
 });
+
+describe("App key routing", () => {
+  it("Ctrl-C once shows a warning notice, twice within 2s exits", async () => {
+    const { app, terminal } = makeApp([textTurn("ok")]);
+    void app.run();
+    app.handleKey({ t: "ctrl", ch: "c" });
+    await wait(5);
+    expect(terminal.writes[terminal.writes.length - 1]).toContain("Press Ctrl+C again to exit");
+    app.handleKey({ t: "ctrl", ch: "c" });
+    await wait(5);
+    expect(app.isRunningForTest()).toBe(false);
+  });
+
+  it("PgUp sets a concrete scrollOffset and the StatusBar shows the scroll hint", async () => {
+    const { app, terminal } = makeApp([textTurn("ok")]);
+    void app.run();
+    for (let i = 0; i < 40; i++) app.submitForTest(`m${i}`);
+    await wait(50);
+    app.handleKey({ t: "pgup" });
+    await wait(5);
+    expect(terminal.writes[terminal.writes.length - 1]).toContain("Press End to jump to latest");
+  });
+
+  it("End resets scrollOffset to stick-to-bottom and clears the hint", async () => {
+    const { app, terminal } = makeApp([textTurn("ok")]);
+    void app.run();
+    app.handleKey({ t: "pgup" });
+    app.handleKey({ t: "end" });
+    await wait(5);
+    expect(terminal.writes[terminal.writes.length - 1]).not.toContain("Press End to jump to latest");
+  });
+
+  it("scrollback keys are ignored while an overlay is open", async () => {
+    const { app, terminal } = makeApp([textTurn("ok")]);
+    void app.run();
+    app.openResumePickerForTest();
+    app.handleKey({ t: "pgup" });
+    await wait(5);
+    expect(terminal.writes[terminal.writes.length - 1]).not.toContain("Press End to jump to latest");
+  });
+
+  it("BackTab cycles the permission mode", async () => {
+    const { app, terminal } = makeApp([textTurn("ok")]);
+    void app.run();
+    app.handleKey({ t: "backtab" });
+    await wait(5);
+    expect(terminal.writes[terminal.writes.length - 1]).toContain("acceptEdits");
+  });
+
+  it("printable keys reach the InputBox and appear in the next frame", async () => {
+    const { app, terminal } = makeApp([textTurn("ok")]);
+    void app.run();
+    app.handleKey({ t: "printable", ch: "x" });
+    await wait(5);
+    expect(terminal.writes[terminal.writes.length - 1]).toContain("> x");
+  });
+});

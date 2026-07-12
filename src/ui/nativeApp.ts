@@ -24,6 +24,7 @@ import { InputBox } from "./widgets/inputBox.js";
 import { OverlayManager } from "./widgets/overlay.js";
 import { render, type BottomState } from "./term/render.js";
 import type { ITerminal } from "./term/terminal.js";
+import type { Key } from "./input.js";
 
 export interface AppProps {
   cwd: string;
@@ -73,6 +74,7 @@ export class App {
 
   private firstMessage: string | undefined;
   private session: AgentSession | undefined;
+  private lastCtrlCAt = 0;
   private history = new History();
   private permissionStore: PermissionStore;
   private registry = buildRegistry();
@@ -379,8 +381,92 @@ export class App {
     this.handleSubmit(text);
   }
 
+  /** Test helper: reports whether the App's run loop is still active. */
+  isRunningForTest(): boolean {
+    return this.running;
+  }
+
+  /** Test helper: opens the resume picker overlay as /resume would. */
+  openResumePickerForTest(): void {
+    this.ctx.openResumePicker();
+  }
+
   tick(): void {
     this.workIndFrame += 1;
+    this.recompute();
+  }
+
+  handleKeys(ks: Key[]): void {
+    for (const k of ks) this.handleKey(k);
+  }
+
+  handleKey(k: Key): void {
+    // Phase 1: globals.
+    if (k.t === "esc" && this.phase === "streaming" && this.overlay.mode === "none") {
+      void this.session?.interrupt();
+      return;
+    }
+    if (k.t === "ctrl" && k.ch === "l") {
+      this.recompute();
+      return;
+    }
+    if (k.t === "ctrl" && k.ch === "c") {
+      const now = Date.now();
+      if (now - this.lastCtrlCAt < 2000) {
+        this.ctx.exit();
+      } else {
+        this.lastCtrlCAt = now;
+        void this.session?.interrupt();
+        this.notice("Press Ctrl+C again to exit.");
+        this.recompute();
+      }
+      return;
+    }
+
+    // Phase 2: scrollback navigation, only when no overlay is open.
+    if (this.overlay.mode === "none") {
+      const size = this.terminal.size();
+      const height = Math.max(1, size.rows - 6);
+      if (k.t === "pgup" || (k.t === "ctrl" && k.ch === "b")) {
+        const total = this.buffer.totalRows(size.columns, this.theme);
+        const current = this.scrollOffset ?? Math.max(0, total - height);
+        this.scrollOffset = Math.max(0, current - height);
+        this.recompute();
+        return;
+      }
+      if (k.t === "pgdn" || (k.t === "ctrl" && k.ch === "f")) {
+        const total = this.buffer.totalRows(size.columns, this.theme);
+        const current = this.scrollOffset ?? Math.max(0, total - height);
+        const next = current + height;
+        this.scrollOffset = next >= total - height ? null : next;
+        this.recompute();
+        return;
+      }
+      if (k.t === "home") { this.scrollOffset = 0; this.recompute(); return; }
+      if (k.t === "end") { this.scrollOffset = null; this.recompute(); return; }
+    }
+
+    // Phase 3: focus owner.
+    if (this.overlay.isOpen) {
+      const input = k.t === "printable" ? k.ch : undefined;
+      this.overlay.handleKey(k, input);
+      this.recompute();
+      return;
+    }
+    if (k.t === "backtab") {
+      const next = MODE_CYCLE[(MODE_CYCLE.indexOf(this.mode) + 1) % MODE_CYCLE.length];
+      this.ctx.setPermissionMode(next).catch(err => {
+        this.buffer.append({ kind: "error", text: err instanceof Error ? err.message : String(err) });
+        this.recompute();
+      });
+      return;
+    }
+    if (k.t === "paste") {
+      this.inputBox.handlePaste(k.text, this.phase === "streaming");
+      this.recompute();
+      return;
+    }
+    this.inputBox.handleKey(k, this.phase === "streaming");
     this.recompute();
   }
 
@@ -424,6 +510,7 @@ export class App {
     this.git.start();
     this.tickTimer = setInterval(() => this.tick(), 1000);
     this.terminal.onResize(() => this.recompute());
+    this.terminal.onKeys(keys => this.handleKeys(keys));
     this.terminal.onLine(line => this.handleSubmit(line));
     this.recompute();
     await new Promise<void>(resolve => { this.stopResolve = resolve; });
