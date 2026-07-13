@@ -79,6 +79,31 @@ describe("InputBox", () => {
     expect(box.render(theme, 80, false).contentRows.join("\n")).toContain("draft text");
   });
 
+  it("up-arrow keeps navigating history even when the recalled entry matches a registered command", () => {
+    const history = new History();
+    history.add("/older");
+    history.add("/clear");
+    const box = new InputBox(ctx({ registry: registryWithClear() }), history);
+    box.handleKey({ t: "up" }, false);
+    expect(box.render(theme, 80, false).contentRows.join("\n")).toContain("/clear");
+    // Without the fix, the single-suggestion menu that opens for "/clear" hijacks
+    // the next Up press into a menu-cycle no-op instead of recalling "/older".
+    box.handleKey({ t: "up" }, false);
+    expect(box.render(theme, 80, false).contentRows.join("\n")).toContain("/older");
+  });
+
+  it("down-arrow keeps navigating history even when the recalled entry matches a registered command", () => {
+    const history = new History();
+    history.add("/older");
+    history.add("/clear");
+    const box = new InputBox(ctx({ registry: registryWithClear() }), history);
+    box.handleKey({ t: "up" }, false);
+    box.handleKey({ t: "up" }, false);
+    expect(box.render(theme, 80, false).contentRows.join("\n")).toContain("/older");
+    box.handleKey({ t: "down" }, false);
+    expect(box.render(theme, 80, false).contentRows.join("\n")).toContain("/clear");
+  });
+
   it("typing '@' triggers a file-cache refresh exactly once per @-token session", () => {
     const refreshFiles = vi.fn();
     const box = new InputBox(ctx({ listFiles: () => ["a.ts", "b.ts"], refreshFiles }), new History());

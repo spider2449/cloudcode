@@ -23,6 +23,11 @@ export type Key =
 // (64/65) become keys; presses/releases/motion are consumed and dropped.
 const SGR_MOUSE_RE = /^\x1b\[<(\d+);\d+;\d+[Mm]/;
 
+// Any complete CSI sequence we don't otherwise recognize (e.g. focus-in/out
+// reports, modified arrows like Ctrl+Up). Matched so it can be discarded
+// wholesale instead of leaving `tryConsumeOne` stuck re-scanning it forever.
+const UNKNOWN_CSI_RE = /^\x1b\[[0-9;?]*[A-Za-z~]/;
+
 const SEQUENCES: Record<string, Key> = {
   "\x1b[Z": { t: "backtab" },
   "\x1b[3~": { t: "delete" },
@@ -94,6 +99,9 @@ export class KeyDecoder {
     }
 
     if (s === "\x1b") return 0; // incomplete: could be Esc alone or a sequence prefix
+
+    const unknownCsi = UNKNOWN_CSI_RE.exec(s);
+    if (unknownCsi) return unknownCsi[0].length; // recognized as CSI, but not a key we act on: discard
 
     if (s.startsWith("\x1b[") || s.startsWith("\x1bO")) return 0; // incomplete escape sequence
 

@@ -97,4 +97,18 @@ describe("KeyDecoder", () => {
     const d = new KeyDecoder();
     expect(d.feed(b("\x1bx"))).toEqual([{ t: "alt", ch: "x" }]);
   });
+
+  it("discards an unrecognized but complete CSI sequence instead of wedging the decoder", () => {
+    const d = new KeyDecoder();
+    // \x1b[I is a terminal focus-in report; not in SEQUENCES, but complete.
+    expect(d.feed(b("\x1b[I"))).toEqual([]);
+    // The decoder must still parse subsequent keys, not get stuck re-scanning the discarded bytes.
+    expect(d.feed(b("h"))).toEqual([{ t: "printable", ch: "h" }]);
+  });
+
+  it("discards an unrecognized modified-arrow CSI sequence (e.g. Ctrl+Up)", () => {
+    const d = new KeyDecoder();
+    expect(d.feed(b("\x1b[1;5A"))).toEqual([]);
+    expect(d.feed(b("h"))).toEqual([{ t: "printable", ch: "h" }]);
+  });
 });

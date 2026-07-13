@@ -83,7 +83,7 @@ export class InputBox {
       if (menuOpen) { this.selected = (this.selected - 1 + menu.length) % menu.length; return; }
       if (this.draft === undefined) this.draft = this.value;
       const recalled = this.history.back();
-      if (recalled !== undefined) this.setValue(recalled, recalled.length);
+      if (recalled !== undefined) { this.setValue(recalled, recalled.length); this.suppressed = true; }
       return;
     }
     if (k.t === "down") {
@@ -91,6 +91,7 @@ export class InputBox {
       const recalled = this.history.forward();
       if (recalled !== undefined) {
         this.setValue(recalled, recalled.length);
+        this.suppressed = true;
       } else {
         this.setValue(this.draft ?? "", (this.draft ?? "").length);
         this.draft = undefined;
