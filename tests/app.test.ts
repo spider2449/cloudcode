@@ -118,13 +118,30 @@ describe("App key routing", () => {
   });
 
   it("PgUp sets a concrete scrollOffset and the StatusBar shows the scroll hint", async () => {
-    const { app, terminal } = makeApp([textTurn("ok")]);
+    const { app, terminal } = makeApp(Array.from({ length: 40 }, () => textTurn("ok")));
     void app.run();
-    for (let i = 0; i < 40; i++) app.submitForTest(`m${i}`);
-    await wait(50);
+    for (let i = 0; i < 40; i++) {
+      app.submitForTest(`m${i}`);
+      await wait(15);
+    }
     app.handleKey({ t: "pgup" });
     await wait(5);
     expect(terminal.writes[terminal.writes.length - 1]).toContain("Press End to jump to latest");
+  });
+
+  it("mouse wheel up scrolls back and wheel down returns to stick-to-bottom", async () => {
+    const { app, terminal } = makeApp(Array.from({ length: 40 }, () => textTurn("ok")));
+    void app.run();
+    for (let i = 0; i < 40; i++) {
+      app.submitForTest(`m${i}`);
+      await wait(15);
+    }
+    app.handleKey({ t: "wheel", dir: "up" });
+    await wait(5);
+    expect(terminal.writes[terminal.writes.length - 1]).toContain("Press End to jump to latest");
+    app.handleKey({ t: "wheel", dir: "down" });
+    await wait(5);
+    expect(terminal.writes[terminal.writes.length - 1]).not.toContain("Press End to jump to latest");
   });
 
   it("End resets scrollOffset to stick-to-bottom and clears the hint", async () => {

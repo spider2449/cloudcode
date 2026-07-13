@@ -71,6 +71,12 @@ export class App {
   private workStartedAt = 0;
   private workIndFrame = 0;
   private scrollOffset: number | null = null;
+  private welcomePinned = false;
+  // Item count at construction; the welcome pin auto-releases once the
+  // transcript grows past this, so anything appended later (chat, slash
+  // command output, errors) scrolls into view instead of landing below a
+  // still-pinned banner.
+  private startupItemCount = 0;
 
   private firstMessage: string | undefined;
   private session: AgentSession | undefined;
@@ -102,9 +108,21 @@ export class App {
     this.inputBox.onSubmit = text => this.handleSubmit(text);
     this.ctx = this.buildCommandContext();
 
-    const welcome = loadWelcome({ version: VERSION, provider: props.initialProvider, model: this.model });
-    if (welcome) this.buffer.append({ kind: "notice", text: welcome });
+    const initialSize = terminal.size();
+    const welcome = loadWelcome(
+      { version: VERSION, provider: props.initialProvider, model: this.model },
+      undefined,
+      { rows: Math.max(1, initialSize.rows - 6), columns: initialSize.columns }
+    );
+    if (welcome) {
+      this.buffer.append({ kind: "notice", text: welcome });
+      // Pin the view (not scrollOffset itself, so the "Press End" hint stays hidden)
+      // to the top so the banner is fully visible instead of tail-anchored past its end.
+      this.welcomePinned = true;
+    }
     if (props.switchedFrom) this.buffer.append({ kind: "notice", text: `Switched project to ${props.cwd}` });
+
+    this.startupItemCount = this.buffer.itemCount;
 
     if (props.openResumeOnStart) {
       this.overlay.openResume(
@@ -363,6 +381,7 @@ export class App {
   }
 
   private handleSubmit(text: string): void {
+    if (this.phase === "streaming") return;
     const slash = parseSlash(text);
     if (slash) {
       const cmd = this.registry.get(slash.name);
@@ -429,21 +448,36 @@ export class App {
       const height = Math.max(1, size.rows - 6);
       if (k.t === "pgup" || (k.t === "ctrl" && k.ch === "b")) {
         const total = this.buffer.totalRows(size.columns, this.theme);
-        const current = this.scrollOffset ?? Math.max(0, total - height);
+        const current = this.scrollOffset ?? (this.welcomePinned ? 0 : Math.max(0, total - height));
+        this.welcomePinned = false;
         this.scrollOffset = Math.max(0, current - height);
         this.recompute();
         return;
       }
       if (k.t === "pgdn" || (k.t === "ctrl" && k.ch === "f")) {
         const total = this.buffer.totalRows(size.columns, this.theme);
-        const current = this.scrollOffset ?? Math.max(0, total - height);
+        const current = this.scrollOffset ?? (this.welcomePinned ? 0 : Math.max(0, total - height));
         const next = current + height;
+        this.welcomePinned = false;
         this.scrollOffset = next >= total - height ? null : next;
         this.recompute();
         return;
       }
-      if (k.t === "home") { this.scrollOffset = 0; this.recompute(); return; }
-      if (k.t === "end") { this.scrollOffset = null; this.recompute(); return; }
+      if (k.t === "home") { this.welcomePinned = false; this.scrollOffset = 0; this.recompute(); return; }
+      if (k.t === "end") { this.welcomePinned = false; this.scrollOffset = null; this.recompute(); return; }
+      if (k.t === "wheel") {
+        const total = this.buffer.totalRows(size.columns, this.theme);
+        const current = this.scrollOffset ?? (this.welcomePinned ? 0 : Math.max(0, total - height));
+        this.welcomePinned = false;
+        if (k.dir === "up") {
+          this.scrollOffset = Math.max(0, current - 3);
+        } else {
+          const next = current + 3;
+          this.scrollOffset = next >= total - height ? null : next;
+        }
+        this.recompute();
+        return;
+      }
     }
 
     // Phase 3: focus owner.
@@ -472,6 +506,7 @@ export class App {
 
   recompute(): void {
     const size = this.terminal.size();
+    if (this.welcomePinned && this.buffer.itemCount > this.startupItemCount) this.welcomePinned = false;
     const inputVisible = this.overlay.mode === "none" && this.phase !== "permission";
     const bottom: BottomState = {
       overlay: this.overlay.mode,
@@ -500,7 +535,8 @@ export class App {
       workIndFrame: this.workIndFrame,
       workStartedAt: this.workStartedAt
     };
-    const frame = render(this.buffer, this.scrollOffset, bottom, this.theme, size);
+    const viewOffset = this.scrollOffset ?? (this.welcomePinned ? 0 : null);
+    const frame = render(this.buffer, this.scrollOffset, bottom, this.theme, size, viewOffset);
     this.terminal.write(frame);
   }
 
@@ -513,6 +549,11 @@ export class App {
     this.terminal.onKeys(keys => this.handleKeys(keys));
     this.terminal.onLine(line => this.handleSubmit(line));
     this.recompute();
+    // Some terminals (e.g. VS Code's) report a stale rows/columns size for the
+    // first tick or two after the process attaches, before layout settles, and
+    // don't always follow up with a real "resize" event. Re-paint shortly after
+    // startup so the frame reflects the settled size instead of a stale one.
+    setTimeout(() => { if (this.running) this.recompute(); }, 50);
     await new Promise<void>(resolve => { this.stopResolve = resolve; });
   }
 

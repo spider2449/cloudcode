@@ -27,7 +27,8 @@ export function render(
   scrollOffset: number | null,
   bottom: BottomState,
   theme: Theme,
-  size: { rows: number; columns: number }
+  size: { rows: number; columns: number },
+  viewOffset: number | null = scrollOffset
 ): string {
   const { rows, columns } = size;
 
@@ -55,7 +56,7 @@ export function render(
   const visibleFooter = footerRows.slice(footerRows.length - footerHeight);
   const transcriptHeight = Math.max(0, rows - footerHeight);
 
-  const { rows: transcriptRows } = buffer.visibleWindow(scrollOffset, transcriptHeight, columns, theme);
+  const { rows: transcriptRows } = buffer.visibleWindow(viewOffset, transcriptHeight, columns, theme);
 
   const out: string[] = [CLEAR_AND_HOME];
   transcriptRows.forEach((row, i) => {

@@ -34,6 +34,18 @@ describe("KeyDecoder", () => {
     expect(d.feed(b("\x1b[6~"))).toEqual([{ t: "pgdn" }]);
   });
 
+  it("decodes SGR mouse wheel reports and drops other mouse events", () => {
+    const d = new KeyDecoder();
+    expect(d.feed(b("\x1b[<64;10;5M"))).toEqual([{ t: "wheel", dir: "up" }]);
+    expect(d.feed(b("\x1b[<65;10;5M"))).toEqual([{ t: "wheel", dir: "down" }]);
+    // Button press (0) and release (m form) are consumed without emitting keys.
+    expect(d.feed(b("\x1b[<0;10;5M"))).toEqual([]);
+    expect(d.feed(b("\x1b[<0;10;5m"))).toEqual([]);
+    // A split sequence waits for the rest instead of misparsing.
+    expect(d.feed(b("\x1b[<64;10"))).toEqual([]);
+    expect(d.feed(b(";5M"))).toEqual([{ t: "wheel", dir: "up" }]);
+  });
+
   it("decodes Ctrl-A..Z from bytes 0x01..0x1A", () => {
     const d = new KeyDecoder();
     expect(d.feed(Buffer.from([0x03]))).toEqual([{ t: "ctrl", ch: "c" }]);

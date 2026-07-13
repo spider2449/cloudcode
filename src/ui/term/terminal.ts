@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline";
 import { KeyDecoder, type Key } from "../input.js";
-import { ALT_SCREEN_ON, ALT_SCREEN_OFF, BRACKETED_PASTE_ON, BRACKETED_PASTE_OFF, CURSOR_HIDE, CURSOR_SHOW } from "./ansi.js";
+import { ALT_SCREEN_ON, ALT_SCREEN_OFF, BRACKETED_PASTE_ON, BRACKETED_PASTE_OFF, CURSOR_HIDE, CURSOR_SHOW, AUTOWRAP_OFF, AUTOWRAP_ON, MOUSE_ON, MOUSE_OFF } from "./ansi.js";
 
 export interface ITerminal {
   isTTY: boolean;
@@ -21,7 +21,7 @@ export class Terminal implements ITerminal {
   constructor() {
     this.isTTY = process.stdin.isTTY === true;
     if (this.isTTY) {
-      process.stdout.write(ALT_SCREEN_ON + BRACKETED_PASTE_ON + CURSOR_HIDE);
+      process.stdout.write(ALT_SCREEN_ON + BRACKETED_PASTE_ON + CURSOR_HIDE + AUTOWRAP_OFF + MOUSE_ON);
       process.stdin.setRawMode(true);
       this.decoder = new KeyDecoder();
       this.decoder.onTimeout = keys => this.keysCb?.(keys);
@@ -61,7 +61,7 @@ export class Terminal implements ITerminal {
     if (this.isTTY) {
       process.stdin.setRawMode(false);
       process.stdin.pause();
-      process.stdout.write(BRACKETED_PASTE_OFF + CURSOR_SHOW + ALT_SCREEN_OFF);
+      process.stdout.write(MOUSE_OFF + AUTOWRAP_ON + BRACKETED_PASTE_OFF + CURSOR_SHOW + ALT_SCREEN_OFF);
     }
   }
 }

@@ -16,7 +16,12 @@ export type Key =
   | { t: "pgup" }
   | { t: "pgdn" }
   | { t: "ctrl"; ch: string }
-  | { t: "alt"; ch: string };
+  | { t: "alt"; ch: string }
+  | { t: "wheel"; dir: "up" | "down" };
+
+// SGR mouse report: ESC [ < button ; col ; row (M|m). Only wheel buttons
+// (64/65) become keys; presses/releases/motion are consumed and dropped.
+const SGR_MOUSE_RE = /^\x1b\[<(\d+);\d+;\d+[Mm]/;
 
 const SEQUENCES: Record<string, Key> = {
   "\x1b[Z": { t: "backtab" },
@@ -74,6 +79,15 @@ export class KeyDecoder {
       keys.push({ t: "paste", text: s.slice(6, end) });
       return end + 6;
     }
+
+    const mouse = SGR_MOUSE_RE.exec(s);
+    if (mouse) {
+      const button = Number(mouse[1]);
+      if (button === 64) keys.push({ t: "wheel", dir: "up" });
+      else if (button === 65) keys.push({ t: "wheel", dir: "down" });
+      return mouse[0].length;
+    }
+    if (s.startsWith("\x1b[<")) return 0; // incomplete mouse sequence
 
     for (const [seq, key] of Object.entries(SEQUENCES)) {
       if (s.startsWith(seq)) { keys.push(key); return seq.length; }

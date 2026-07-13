@@ -15,6 +15,10 @@ export class Buffer {
     this.cachedWidth = -1;
   }
 
+  get itemCount(): number {
+    return this.items.length;
+  }
+
   clear(): void {
     this.items = [];
     this.rowOffsets = [0];

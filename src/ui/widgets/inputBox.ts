@@ -2,6 +2,7 @@ import { getSuggestions, applySuggestion, type CompletionContext, type Suggestio
 import type { History } from "../../agent/history.js";
 import type { Key } from "../input.js";
 import { renderMenu } from "./menu.js";
+import { sgr, SGR_RESET } from "../term/ansi.js";
 import type { Theme } from "../theme.js";
 
 export interface InputBoxRender {
@@ -131,7 +132,10 @@ export class InputBox {
     const content = "> " + before + (disabled ? "" : "█") + after;
     const innerWidth = Math.max(1, width - 4);
     const wrapped = this.wrap(content, innerWidth);
-    const borderRows = ["╭" + "─".repeat(Math.max(0, width - 2)) + "╮", "╰" + "─".repeat(Math.max(0, width - 2)) + "╯"];
+    // A single muted divider separating the transcript from the input area.
+    const dividerCode = sgr(theme.muted);
+    const divider = "─".repeat(Math.max(1, width));
+    const borderRows = [dividerCode ? `${dividerCode}${divider}${SGR_RESET}` : divider];
     const hintRow = disabled ? "working… (Esc to interrupt)" : null;
     const suggestions = disabled ? [] : this.currentSuggestions();
     const menuRows = disabled ? [] : renderMenu(suggestions, Math.min(this.selected, Math.max(0, suggestions.length - 1)), theme, width);

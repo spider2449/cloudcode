@@ -31,7 +31,7 @@ import { tailForHeight } from "./streamTail.js";
 import { VERSION } from "../version.js";
 import { ProjectPicker } from "./ProjectPicker.js";
 import { recentProjects, resolveProjectPath } from "../commands/projectPath.js";
-import { staticRows, resizeSafeFillerHeight, liveRegionFloor, textRows } from "./bottomFill.js";
+import { staticRows, resizeSafeFillerHeight, liveRegionFloor, textRows, itemRows } from "./bottomFill.js";
 
 export interface AppProps {
   cwd: string;
@@ -59,11 +59,22 @@ export function App(props: AppProps) {
     return (name === props.initialProvider ? props.initialModel : undefined) ?? props.providers[name]?.model;
   }
   const [items, setItems] = useState<DisplayItem[]>(() => {
-    const welcome = loadWelcome({
-      version: VERSION,
-      provider: props.initialProvider,
-      model: modelFor(props.initialProvider)
-    });
+    // Fit budget: terminal minus the live region floor (input box 3 + status
+    // bar 1 + working-indicator/hint headroom 2). A banner taller than this
+    // pushes the transcript's top rows above the visible screen, since the
+    // <Static> transcript scrolls rather than clips.
+    const welcome = loadWelcome(
+      {
+        version: VERSION,
+        provider: props.initialProvider,
+        model: modelFor(props.initialProvider)
+      },
+      undefined,
+      {
+        rows: Math.max(1, (process.stdout.rows ?? 24) - 6),
+        columns: process.stdout.columns ?? 80
+      }
+    );
     const initial: DisplayItem[] = welcome ? [{ kind: "notice", text: welcome }] : [];
     if (props.switchedFrom) initial.push({ kind: "notice", text: `Switched project to ${props.cwd}` });
     return initial;
@@ -122,6 +133,15 @@ export function App(props: AppProps) {
   // terminal width, so that one frame forces filler=0 instead of trusting
   // the stale values.
   const justResizedRef = useRef(false);
+  // Bottom-anchoring state for when the transcript has outgrown the screen
+  // (base filler 0): the previous frame's total row count and how many items
+  // were already committed to <Static>, so a frame whose live region SHRANK
+  // (e.g. a tall stream tail just committed on "result") can pad itself to
+  // keep its bottom edge in place instead of leaving the footer stranded
+  // mid-screen above the rows the taller frame used to occupy.
+  const prevFrameRowsRef = useRef(0);
+  const prevStaticCountRef = useRef(0);
+  const prevTranscriptKeyRef = useRef(0);
   const firstMessageRef = useRef<string | undefined>(undefined);
   const sessionRef = useRef<AgentSession | null>(null);
   const lastCtrlCRef = useRef(0);
@@ -464,36 +484,48 @@ export function App(props: AppProps) {
   const justResized = justResizedRef.current;
   justResizedRef.current = false;
 
-  // Steady-state idle = nothing in the live region is entering, leaving, or
-  // being re-laid-out this frame, AND measureElement has caught up to the
-  // render-time floor. Only then can the 1-row safety reserve be dropped so
-  // the StatusBar pins to the terminal's very bottom row. Any of the
-  // following keeps the reserve for that frame (each is a growth/transition
-  // frame where measureElement's dynamicRows is one render behind the real
-  // height, so without the reserve filler + actual height could reach
-  // terminalRows and trigger Ink's clearTerminal/scrollback-erasing repaint
-  // — the mouse-scroll freeze fixed by an earlier commit):
-  //   - streamText !== "" : the stream tail is painting (or about to clear)
-  //   - phase === "streaming": WorkingIndicator is visible
-  //   - compactPct !== undefined: the compaction ProgressBar is animating
-  //   - overlayActive: a picker or the permission dialog is open
-  //   - menuRows > 0: InputBox's suggestion menu is open
-  //   - dynamicRows !== liveFloor: measureElement hasn't caught up yet
-  const steadyIdle =
-    streamText === "" &&
-    phase !== "streaming" &&
-    compactPct === undefined &&
-    !overlayActive &&
-    menuRows === 0 &&
-    dynamicRows === liveFloor;
-  const reserve = steadyIdle ? 0 : 1;
-  const filler = resizeSafeFillerHeight(
+  // The reserve can never drop to 0: Ink terminates every frame with "\n"
+  // (see ink's log-update), so a frame whose content reaches the terminal's
+  // bottom row scrolls the screen by one — permanently clipping the top of
+  // the <Static> transcript, which Ink never repaints. With a reserve of 1
+  // the frame ends one row short and the trailing newline lands exactly on
+  // the bottom row without scrolling. This also covers the growth/transition
+  // frames (streaming, overlays, suggestion menu, measureElement lag) that a
+  // former steadyIdle flag used to special-case by picking 0 vs 1.
+  const reserve = 1;
+  const liveRows = Math.max(dynamicRows, liveFloor);
+  let filler = resizeSafeFillerHeight(
     termSize.rows,
     transcriptRows,
-    Math.max(dynamicRows, liveFloor),
+    liveRows,
     justResized,
     reserve
   );
+  // Once the transcript exceeds one screen the base filler is 0 and the frame
+  // just renders wherever the previous frame's erase left the cursor. That is
+  // fine while the live region grows or holds height, but when it shrinks
+  // (tall stream tail committed to <Static> on "result") the short new frame
+  // ends far above the terminal's bottom edge, with dead blank rows below.
+  // Anchor the frame's bottom edge instead: pad by what the previous frame
+  // occupied, minus the static rows committed this render (which are written
+  // between the erase and the new frame and push the cursor back down).
+  if (prevTranscriptKeyRef.current !== transcriptKey) {
+    prevTranscriptKeyRef.current = transcriptKey;
+    prevFrameRowsRef.current = 0;
+    prevStaticCountRef.current = 0;
+  }
+  let committedRows = 0;
+  for (let i = prevStaticCountRef.current; i < items.length; i++) {
+    committedRows += itemRows(items[i], termSize.columns);
+  }
+  prevStaticCountRef.current = items.length;
+  if (filler === 0 && !justResized) {
+    filler = Math.max(0, Math.min(
+      prevFrameRowsRef.current - committedRows - liveRows,
+      termSize.rows - reserve - liveRows
+    ));
+  }
+  prevFrameRowsRef.current = filler + liveRows;
 
   return (
     <ThemeProvider theme={THEMES[themeName] ?? THEMES.dark}>

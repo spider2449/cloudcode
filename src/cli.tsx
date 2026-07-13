@@ -16,7 +16,7 @@ const { values } = parseArgs({
     resume: { type: "boolean", default: false },
     provider: { type: "string" },
     version: { type: "boolean", default: false },
-    tui: { type: "string", default: "legacy" }
+    tui: { type: "string", default: "native" }
   }
 });
 
@@ -68,6 +68,12 @@ if (values.tui === "native") {
   });
   app.run().finally(() => terminal.cleanup());
 } else {
+  // Ink draws its first frame at the current cursor position, below the shell
+  // prompt and npm's script banner. The bottom-anchoring filler sizes that
+  // frame to the full terminal height, so those pre-existing rows push the
+  // frame's top (the welcome banner) off-screen. Clear and home first so the
+  // frame starts at row 1.
+  if (process.stdout.isTTY) process.stdout.write("\x1b[2J\x1b[H");
   function Root() {
     const [cwd, setCwd] = React.useState(initialCwd);
     const [prevCwd, setPrevCwd] = React.useState<string | undefined>(undefined);

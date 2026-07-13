@@ -4,6 +4,15 @@ export const BRACKETED_PASTE_ON = "\x1b[?2004h";
 export const BRACKETED_PASTE_OFF = "\x1b[?2004l";
 export const CURSOR_HIDE = "\x1b[?25l";
 export const CURSOR_SHOW = "\x1b[?25h";
+// DECAWM: with autowrap on, a row longer than the terminal width wraps; a wrap
+// on the bottom row scrolls the whole alt screen and misaligns every frame.
+export const AUTOWRAP_OFF = "\x1b[?7l";
+export const AUTOWRAP_ON = "\x1b[?7h";
+// Basic mouse button tracking (1000) with SGR encoding (1006), so the wheel
+// can scroll the transcript on the alt screen. Text selection needs
+// Shift+drag while this is active, as in other mouse-capturing TUIs.
+export const MOUSE_ON = "\x1b[?1000h\x1b[?1006h";
+export const MOUSE_OFF = "\x1b[?1006l\x1b[?1000l";
 export const CLEAR_AND_HOME = "\x1b[2J\x1b[H";
 export const SGR_RESET = "\x1b[0m";
 
