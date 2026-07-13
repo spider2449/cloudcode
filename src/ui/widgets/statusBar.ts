@@ -13,7 +13,6 @@ export interface StatusBarProps {
   tokens?: number;
   contextPct?: number;
   elapsedMs?: number;
-  scrollHint?: boolean;
 }
 
 export function formatTokens(n: number): string {
@@ -43,7 +42,6 @@ export function renderStatusBar(p: StatusBarProps, theme: Theme, width: number):
   if (p.costUsd && p.costUsd > 0) segments.push(`$${p.costUsd.toFixed(4)}`);
   if (p.elapsedMs != null && p.elapsedMs > 0) segments.push(formatElapsed(p.elapsedMs));
   segments.push(p.cwd);
-  if (p.scrollHint) segments.push("Press End to jump to latest");
   // Truncate to the terminal width: an overlong bottom row wraps, which
   // scrolls the whole alt screen up and clips the top of the transcript.
   let text = segments.join(" · ");

@@ -58,11 +58,6 @@ describe("renderStatusBar", () => {
     expect(row).not.toContain("tok");
     expect(row).not.toContain("$");
   });
-
-  it("appends the scroll hint when scrollHint is true", () => {
-    const row = renderStatusBar({ provider: "a", mode: "default", cwd: "/r", scrollHint: true }, theme, 80);
-    expect(row).toContain("Press End to jump to latest");
-  });
 });
 
 import { renderWorkInd } from "../src/ui/widgets/workInd.js";

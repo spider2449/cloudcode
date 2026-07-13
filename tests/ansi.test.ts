@@ -1,11 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { ALT_SCREEN_ON, ALT_SCREEN_OFF, BRACKETED_PASTE_ON, BRACKETED_PASTE_OFF,
+import { BRACKETED_PASTE_ON, BRACKETED_PASTE_OFF,
   CURSOR_HIDE, CURSOR_SHOW, CLEAR_AND_HOME, cursorTo, sgr, SGR_RESET, ERASE_DOWN, cursorUp } from "../src/ui/term/ansi.js";
 
 describe("ansi", () => {
   it("exposes the exact escape sequences the spec requires", () => {
-    expect(ALT_SCREEN_ON).toBe("\x1b[?1049h");
-    expect(ALT_SCREEN_OFF).toBe("\x1b[?1049l");
     expect(BRACKETED_PASTE_ON).toBe("\x1b[?2004h");
     expect(BRACKETED_PASTE_OFF).toBe("\x1b[?2004l");
     expect(CURSOR_HIDE).toBe("\x1b[?25l");
