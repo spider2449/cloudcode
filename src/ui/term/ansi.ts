@@ -16,8 +16,16 @@ export const MOUSE_OFF = "\x1b[?1006l\x1b[?1000l";
 export const CLEAR_AND_HOME = "\x1b[2J\x1b[H";
 export const SGR_RESET = "\x1b[0m";
 
+// Erase from the cursor to the end of the screen. Used by the inline
+// renderer to wipe the previous dynamic block before repainting it.
+export const ERASE_DOWN = "\x1b[0J";
+
 export function cursorTo(row: number, col: number): string {
   return `\x1b[${row};${col}H`;
+}
+
+export function cursorUp(n: number): string {
+  return n > 0 ? `\x1b[${n}A` : "";
 }
 
 const COLOR_CODES: Record<string, number> = {

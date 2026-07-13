@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ALT_SCREEN_ON, ALT_SCREEN_OFF, BRACKETED_PASTE_ON, BRACKETED_PASTE_OFF,
-  CURSOR_HIDE, CURSOR_SHOW, CLEAR_AND_HOME, cursorTo, sgr, SGR_RESET } from "../src/ui/term/ansi.js";
+  CURSOR_HIDE, CURSOR_SHOW, CLEAR_AND_HOME, cursorTo, sgr, SGR_RESET, ERASE_DOWN, cursorUp } from "../src/ui/term/ansi.js";
 
 describe("ansi", () => {
   it("exposes the exact escape sequences the spec requires", () => {
@@ -30,5 +30,21 @@ describe("ansi", () => {
     expect(sgr("gray")).toBe("\x1b[90m");
     expect(sgr("blackBright")).toBe("\x1b[90m");
     expect(sgr(undefined)).toBe("");
+  });
+});
+
+describe("relative movement helpers", () => {
+  it("ERASE_DOWN clears from cursor to end of screen", () => {
+    expect(ERASE_DOWN).toBe("\x1b[0J");
+  });
+
+  it("cursorUp emits CUU for positive counts", () => {
+    expect(cursorUp(3)).toBe("\x1b[3A");
+    expect(cursorUp(1)).toBe("\x1b[1A");
+  });
+
+  it("cursorUp emits nothing for zero or negative counts", () => {
+    expect(cursorUp(0)).toBe("");
+    expect(cursorUp(-2)).toBe("");
   });
 });
