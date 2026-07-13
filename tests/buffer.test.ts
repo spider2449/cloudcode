@@ -1,65 +1,49 @@
 import { describe, it, expect } from "vitest";
 import { Buffer } from "../src/ui/buffer.js";
 import { THEMES } from "../src/ui/theme.js";
-import type { DisplayItem } from "../src/ui/transcript.js";
 
 const theme = THEMES.dark;
 
-function notice(text: string): DisplayItem {
-  return { kind: "notice", text };
-}
-
-describe("Buffer", () => {
-  it("starts empty", () => {
+describe("Buffer commit semantics", () => {
+  it("takeCommitRows returns nothing for an empty buffer", () => {
     const buf = new Buffer();
-    expect(buf.totalRows(80, theme)).toBe(0);
-    expect(buf.visibleWindow(null, 5, 80, theme)).toEqual({ rows: [], tailRow: -1 });
+    expect(buf.takeCommitRows(80, theme)).toEqual([]);
   });
 
-  it("append grows totalRows by the item's wrapped row count", () => {
+  it("returns rows for appended items exactly once", () => {
     const buf = new Buffer();
-    buf.append(notice("one line"));
-    expect(buf.totalRows(80, theme)).toBe(1);
-    buf.append(notice("a\nb\nc"));
-    expect(buf.totalRows(80, theme)).toBe(4);
+    buf.append({ kind: "notice", text: "one" });
+    buf.append({ kind: "notice", text: "a\nb\nc" });
+    const first = buf.takeCommitRows(80, theme);
+    expect(first.length).toBe(4); // 1 + 3 laid-out rows
+    expect(first.join("\n")).toContain("one");
+    // Second call: nothing new was appended, nothing is re-emitted.
+    expect(buf.takeCommitRows(80, theme)).toEqual([]);
   });
 
-  it("stick-to-bottom (startRow=null) returns the tail window", () => {
+  it("items appended after a commit are returned by the next commit", () => {
     const buf = new Buffer();
-    for (let i = 0; i < 10; i++) buf.append(notice(`line${i}`));
-    const { rows, tailRow } = buf.visibleWindow(null, 3, 80, theme);
-    expect(rows).toHaveLength(3);
-    expect(rows[2]).toContain("line9");
-    expect(tailRow).toBe(9);
+    buf.append({ kind: "notice", text: "first" });
+    buf.takeCommitRows(80, theme);
+    buf.append({ kind: "notice", text: "second" });
+    const rows = buf.takeCommitRows(80, theme);
+    expect(rows.join("\n")).toContain("second");
+    expect(rows.join("\n")).not.toContain("first");
   });
 
-  it("an absolute startRow returns rows starting at that offset", () => {
+  it("wraps uncommitted items at the width passed to takeCommitRows", () => {
     const buf = new Buffer();
-    for (let i = 0; i < 10; i++) buf.append(notice(`line${i}`));
-    const { rows } = buf.visibleWindow(0, 3, 80, theme);
-    expect(rows[0]).toContain("line0");
-    expect(rows[2]).toContain("line2");
+    buf.append({ kind: "notice", text: "aaaa bbbb" });
+    expect(buf.takeCommitRows(4, theme).length).toBeGreaterThan(1);
   });
 
-  it("re-wraps correctly across a width change (resize)", () => {
+  it("clear() resets the committed marker so re-appended items commit again", () => {
     const buf = new Buffer();
-    buf.append(notice("abcdefgh"));
-    expect(buf.totalRows(4, theme)).toBe(2);
-    expect(buf.totalRows(8, theme)).toBe(1);
-  });
-
-  it("clear empties the buffer", () => {
-    const buf = new Buffer();
-    buf.append(notice("x"));
+    buf.append({ kind: "notice", text: "x" });
+    buf.takeCommitRows(80, theme);
     buf.clear();
-    expect(buf.totalRows(80, theme)).toBe(0);
-    expect(buf.visibleWindow(null, 5, 80, theme).tailRow).toBe(-1);
-  });
-
-  it("visibleWindow at the end of a short buffer returns fewer rows than height without padding", () => {
-    const buf = new Buffer();
-    buf.append(notice("only one line"));
-    const { rows } = buf.visibleWindow(null, 5, 80, theme);
-    expect(rows).toHaveLength(1);
+    expect(buf.itemCount).toBe(0);
+    buf.append({ kind: "notice", text: "y" });
+    expect(buf.takeCommitRows(80, theme).join("\n")).toContain("y");
   });
 });

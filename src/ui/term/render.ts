@@ -5,7 +5,7 @@ import { renderProgress } from "../widgets/progress.js";
 import type { InputBoxRender } from "../widgets/inputBox.js";
 import type { OverlayMode } from "../widgets/overlay.js";
 import { tailForHeight } from "../streamTail.js";
-import { CLEAR_AND_HOME, cursorTo } from "./ansi.js";
+import { ERASE_DOWN, cursorUp } from "./ansi.js";
 import type { Theme } from "../theme.js";
 
 export interface BottomState {
@@ -14,7 +14,6 @@ export interface BottomState {
   streamingText: string;
   activeTool?: string;
   compactPct?: number;
-  scrollOffset: number | null;
   inputRender: InputBoxRender;
   overlayRows: string[];
   statusBarProps: StatusBarProps;
@@ -22,49 +21,64 @@ export interface BottomState {
   workStartedAt: number;
 }
 
-export function render(
-  buffer: Buffer,
-  scrollOffset: number | null,
-  bottom: BottomState,
-  theme: Theme,
-  size: { rows: number; columns: number },
-  viewOffset: number | null = scrollOffset
-): string {
-  const { rows, columns } = size;
+/**
+ * Claude Code-style inline renderer. Transcript rows are printed once into
+ * the terminal's normal scrollback and never touched again, so native mouse
+ * selection, copy, and wheel scrolling work in the message area. Only the
+ * dynamic bottom block (streaming tail, indicators, input box or overlay,
+ * status bar) is repainted, using cursor-relative movement.
+ */
+export class InlineRenderer {
+  // Number of lines the cursor must travel up to reach the first line of the
+  // previously painted dynamic block (block height minus one, since the
+  // cursor parks on the block's last line).
+  private lastDynamicLines = 0;
 
-  // Footer region, built bottom-up so its total height is known before the
-  // transcript region's height is computed.
-  const footerRows: string[] = [];
-  footerRows.push(renderStatusBar({ ...bottom.statusBarProps, scrollHint: scrollOffset !== null }, theme, columns));
-  if (bottom.overlay !== "none") {
-    footerRows.unshift(...bottom.overlayRows);
-  } else {
-    footerRows.unshift(...bottom.inputRender.menuRows);
-    if (bottom.inputRender.hintRow !== null) footerRows.unshift(bottom.inputRender.hintRow);
-    footerRows.unshift(...bottom.inputRender.contentRows);
-    footerRows.unshift(...bottom.inputRender.borderRows);
+  frame(
+    buffer: Buffer,
+    bottom: BottomState,
+    theme: Theme,
+    size: { rows: number; columns: number }
+  ): string {
+    const { rows, columns } = size;
+
+    // Dynamic block, built bottom-up (same assembly as the old renderer).
+    const dyn: string[] = [];
+    dyn.push(renderStatusBar(bottom.statusBarProps, theme, columns));
+    if (bottom.overlay !== "none") {
+      dyn.unshift(...bottom.overlayRows);
+    } else {
+      dyn.unshift(...bottom.inputRender.menuRows);
+      if (bottom.inputRender.hintRow !== null) dyn.unshift(bottom.inputRender.hintRow);
+      dyn.unshift(...bottom.inputRender.contentRows);
+      dyn.unshift(...bottom.inputRender.borderRows);
+    }
+    if (bottom.compactPct !== undefined) dyn.unshift(renderProgress("Compacting", bottom.compactPct, theme, 20));
+    if (bottom.streaming) dyn.unshift(renderWorkInd(bottom.workIndFrame, bottom.activeTool ? `Running ${bottom.activeTool}` : "Thinking", Date.now() - bottom.workStartedAt, theme));
+    if (bottom.streamingText !== "") {
+      const streamTailCap = Math.max(3, rows - dyn.length - 3);
+      dyn.unshift(...tailForHeight(bottom.streamingText, streamTailCap, columns).split("\n"));
+    }
+
+    // Cap the block below the viewport height: moving the cursor up more
+    // rows than the viewport has would corrupt the frame.
+    const visible = dyn.slice(Math.max(0, dyn.length - (rows - 1)));
+
+    const staticRows = buffer.takeCommitRows(columns, theme);
+    const out =
+      "\r" + cursorUp(this.lastDynamicLines) + ERASE_DOWN +
+      staticRows.map(r => r + "\r\n").join("") +
+      visible.join("\r\n");
+    this.lastDynamicLines = Math.max(0, visible.length - 1);
+    return out;
   }
-  if (bottom.compactPct !== undefined) footerRows.unshift(renderProgress("Compacting", bottom.compactPct, theme, 20));
-  if (bottom.streaming) footerRows.unshift(renderWorkInd(bottom.workIndFrame, bottom.activeTool ? `Running ${bottom.activeTool}` : "Thinking", Date.now() - bottom.workStartedAt, theme));
-  if (bottom.streamingText !== "") {
-    const streamTailCap = Math.max(3, rows - footerRows.length - 3);
-    const tail = tailForHeight(bottom.streamingText, streamTailCap, columns);
-    footerRows.unshift(...tail.split("\n"));
+
+  invalidate(): void {
+    this.lastDynamicLines = 0;
   }
 
-  const footerHeight = Math.min(rows, footerRows.length);
-  const visibleFooter = footerRows.slice(footerRows.length - footerHeight);
-  const transcriptHeight = Math.max(0, rows - footerHeight);
-
-  const { rows: transcriptRows } = buffer.visibleWindow(viewOffset, transcriptHeight, columns, theme);
-
-  const out: string[] = [CLEAR_AND_HOME];
-  transcriptRows.forEach((row, i) => {
-    out.push(cursorTo(i + 1, 1) + row);
-  });
-  const footerStartRow = rows - footerHeight + 1;
-  visibleFooter.forEach((row, i) => {
-    out.push(cursorTo(footerStartRow + i, 1) + row);
-  });
-  return out.join("");
+  finalize(): string {
+    this.lastDynamicLines = 0;
+    return "\r\n";
+  }
 }
