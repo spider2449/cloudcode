@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline";
 import { KeyDecoder, type Key } from "../input.js";
-import { BRACKETED_PASTE_ON, BRACKETED_PASTE_OFF, CURSOR_HIDE, CURSOR_SHOW, AUTOWRAP_OFF, AUTOWRAP_ON } from "./ansi.js";
+import { BRACKETED_PASTE_ON, BRACKETED_PASTE_OFF, CURSOR_HIDE, CURSOR_SHOW, AUTOWRAP_OFF, AUTOWRAP_ON, RESET_SCROLL_REGION } from "./ansi.js";
 
 export interface ITerminal {
   isTTY: boolean;
@@ -64,7 +64,7 @@ export class Terminal implements ITerminal {
     if (this.isTTY) {
       process.stdin.setRawMode(false);
       process.stdin.pause();
-      process.stdout.write(AUTOWRAP_ON + BRACKETED_PASTE_OFF + CURSOR_SHOW);
+      process.stdout.write(RESET_SCROLL_REGION + AUTOWRAP_ON + BRACKETED_PASTE_OFF + CURSOR_SHOW);
     }
   }
 }

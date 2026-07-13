@@ -21,6 +21,18 @@ export function cursorUp(n: number): string {
   return n > 0 ? `\x1b[${n}A` : "";
 }
 
+// DECSTBM: confine scrolling to rows top..bottom (1-indexed, inclusive).
+// Used to pin the footer band below the scroll region to the terminal's
+// bottom edge while the transcript above it scrolls independently.
+export function setScrollRegion(top: number, bottom: number): string {
+  return `\x1b[${top};${bottom}r`;
+}
+
+// Restores the scroll region to the whole screen. Must be written before
+// handing control back to the shell, or the shell prompt would be visually
+// confined to whatever sub-region the app last used.
+export const RESET_SCROLL_REGION = "\x1b[r";
+
 const COLOR_CODES: Record<string, number> = {
   black: 30, red: 31, green: 32, yellow: 33, blue: 34, magenta: 35, cyan: 36, white: 37,
   gray: 90, blackBright: 90

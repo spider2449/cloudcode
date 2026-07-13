@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { BRACKETED_PASTE_ON, BRACKETED_PASTE_OFF,
-  CURSOR_HIDE, CURSOR_SHOW, CLEAR_AND_HOME, cursorTo, sgr, SGR_RESET, ERASE_DOWN, cursorUp } from "../src/ui/term/ansi.js";
+  CURSOR_HIDE, CURSOR_SHOW, CLEAR_AND_HOME, cursorTo, sgr, SGR_RESET, ERASE_DOWN, cursorUp,
+  setScrollRegion, RESET_SCROLL_REGION } from "../src/ui/term/ansi.js";
 
 describe("ansi", () => {
   it("exposes the exact escape sequences the spec requires", () => {
@@ -44,5 +45,16 @@ describe("relative movement helpers", () => {
   it("cursorUp emits nothing for zero or negative counts", () => {
     expect(cursorUp(0)).toBe("");
     expect(cursorUp(-2)).toBe("");
+  });
+});
+
+describe("scroll region helpers", () => {
+  it("setScrollRegion emits DECSTBM for the given rows", () => {
+    expect(setScrollRegion(1, 20)).toBe("\x1b[1;20r");
+    expect(setScrollRegion(3, 10)).toBe("\x1b[3;10r");
+  });
+
+  it("RESET_SCROLL_REGION restores the full-screen scroll region", () => {
+    expect(RESET_SCROLL_REGION).toBe("\x1b[r");
   });
 });
