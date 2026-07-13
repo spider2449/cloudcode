@@ -5,7 +5,7 @@ import { renderProgress } from "../widgets/progress.js";
 import type { InputBoxRender } from "../widgets/inputBox.js";
 import type { OverlayMode } from "../widgets/overlay.js";
 import { tailForHeight } from "../streamTail.js";
-import { ERASE_DOWN, cursorUp } from "./ansi.js";
+import { ERASE_DOWN, cursorTo, setScrollRegion, RESET_SCROLL_REGION } from "./ansi.js";
 import type { Theme } from "../theme.js";
 
 export interface BottomState {
@@ -22,17 +22,19 @@ export interface BottomState {
 }
 
 /**
- * Claude Code-style inline renderer. Transcript rows are printed once into
- * the terminal's normal scrollback and never touched again, so native mouse
- * selection, copy, and wheel scrolling work in the message area. Only the
- * dynamic bottom block (streaming tail, indicators, input box or overlay,
- * status bar) is repainted, using cursor-relative movement.
+ * Claude Code-style inline renderer with a pinned-bottom footer. The
+ * transcript lives in a terminal scroll region (rows 1..scrollBottom) that
+ * the terminal itself scrolls, pushing lines that leave the top into native
+ * scrollback for selection/copy/wheel-scroll. The footer band below it
+ * (scrollBottom+1..rows) is repainted every frame with cursor addressing
+ * confined to those rows, so it stays pinned to the bottom edge.
  */
 export class InlineRenderer {
-  // Number of lines the cursor must travel up to reach the first line of the
-  // previously painted dynamic block (block height minus one, since the
-  // cursor parks on the block's last line).
-  private lastDynamicLines = 0;
+  // -1 means "no region defined yet" (first frame after construction or
+  // after invalidate()).
+  private lastScrollBottom = -1;
+  private lastRows = -1;
+  private lastColumns = -1;
 
   frame(
     buffer: Buffer,
@@ -42,7 +44,7 @@ export class InlineRenderer {
   ): string {
     const { rows, columns } = size;
 
-    // Dynamic block, built bottom-up (same assembly as the old renderer).
+    // Footer content, built bottom-up (same assembly as before).
     const dyn: string[] = [];
     dyn.push(renderStatusBar(bottom.statusBarProps, theme, columns));
     if (bottom.overlay !== "none") {
@@ -60,25 +62,50 @@ export class InlineRenderer {
       dyn.unshift(...tailForHeight(bottom.streamingText, streamTailCap, columns).split("\n"));
     }
 
-    // Cap the block below the viewport height: moving the cursor up more
-    // rows than the viewport has would corrupt the frame.
-    const visible = dyn.slice(Math.max(0, dyn.length - (rows - 1)));
+    // Cap the footer so the scroll region always keeps at least 1 row.
+    const footer = dyn.slice(Math.max(0, dyn.length - (rows - 1)));
+    const scrollBottom = Math.max(1, rows - footer.length);
+
+    let out = "";
+    const firstFrame = this.lastScrollBottom < 0;
+    const sizeChanged = rows !== this.lastRows || columns !== this.lastColumns;
+
+    if (!firstFrame && !sizeChanged && scrollBottom < this.lastScrollBottom) {
+      // Footer is growing: evacuate the rows about to become footer into
+      // native scrollback by scrolling the OLD region before shrinking it,
+      // so already-committed transcript lines aren't silently overwritten.
+      const evacuate = this.lastScrollBottom - scrollBottom;
+      out += cursorTo(this.lastScrollBottom, 1) + "\r\n".repeat(evacuate);
+    }
+
+    if (firstFrame || sizeChanged || scrollBottom !== this.lastScrollBottom) {
+      if (!firstFrame && scrollBottom > this.lastScrollBottom) {
+        // Footer is shrinking (or the window grew): the rows being freed
+        // back to the message region still hold stale footer bytes.
+        out += cursorTo(this.lastScrollBottom + 1, 1) + ERASE_DOWN;
+      }
+      out += setScrollRegion(1, scrollBottom);
+      this.lastScrollBottom = scrollBottom;
+      this.lastRows = rows;
+      this.lastColumns = columns;
+    }
 
     const staticRows = buffer.takeCommitRows(columns, theme);
-    const out =
-      "\r" + cursorUp(this.lastDynamicLines) + ERASE_DOWN +
-      staticRows.map(r => r + "\r\n").join("") +
-      visible.join("\r\n");
-    this.lastDynamicLines = Math.max(0, visible.length - 1);
+    out += cursorTo(scrollBottom, 1) + staticRows.map(r => r + "\r\n").join("");
+    out += cursorTo(scrollBottom + 1, 1) + ERASE_DOWN + footer.join("\r\n");
     return out;
   }
 
   invalidate(): void {
-    this.lastDynamicLines = 0;
+    this.lastScrollBottom = -1;
+    this.lastRows = -1;
+    this.lastColumns = -1;
   }
 
   finalize(): string {
-    this.lastDynamicLines = 0;
-    return "\r\n";
+    this.lastScrollBottom = -1;
+    this.lastRows = -1;
+    this.lastColumns = -1;
+    return RESET_SCROLL_REGION + "\r\n";
   }
 }
