@@ -158,13 +158,17 @@ describe("App key routing", () => {
     expect(terminal.writes.length).toBe(count);
   });
 
-  it("scrollback keys are ignored while an overlay is open", async () => {
+  it("keys are routed to the overlay, not the input box, while an overlay is open", async () => {
     const { app, terminal } = makeApp([textTurn("ok")]);
     void app.run();
     app.openResumePickerForTest();
     app.handleKey({ t: "pgup" });
     await wait(5);
-    expect(terminal.writes[terminal.writes.length - 1]).not.toContain("Press End to jump to latest");
+    const last = terminal.writes[terminal.writes.length - 1];
+    // The overlay must still be rendered (pgup did not close or bypass it)...
+    expect(last).toContain("Resume a session");
+    // ...and pgup must not have reached the input box as typed content.
+    expect(last).not.toContain("> pgup");
   });
 
   it("BackTab cycles the permission mode", async () => {
