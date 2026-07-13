@@ -42,8 +42,8 @@ export function renderStatusBar(p: StatusBarProps, theme: Theme, width: number):
   if (p.costUsd && p.costUsd > 0) segments.push(`$${p.costUsd.toFixed(4)}`);
   if (p.elapsedMs != null && p.elapsedMs > 0) segments.push(formatElapsed(p.elapsedMs));
   segments.push(p.cwd);
-  // Truncate to the terminal width: an overlong bottom row wraps, which
-  // scrolls the whole alt screen up and clips the top of the transcript.
+  // Truncate to the terminal width: with autowrap off, an overlong row is
+  // truncated by the terminal; truncate here with an ellipsis so it degrades cleanly.
   let text = segments.join(" · ");
   if (text.length > width) text = text.slice(0, Math.max(0, width - 1)) + "…";
   const code = sgr(theme.muted);

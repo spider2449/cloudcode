@@ -3,7 +3,7 @@ export const BRACKETED_PASTE_OFF = "\x1b[?2004l";
 export const CURSOR_HIDE = "\x1b[?25l";
 export const CURSOR_SHOW = "\x1b[?25h";
 // DECAWM: with autowrap on, a row longer than the terminal width wraps; a wrap
-// on the bottom row scrolls the whole alt screen and misaligns every frame.
+// on the bottom row scrolls the whole screen and misaligns every frame.
 export const AUTOWRAP_OFF = "\x1b[?7l";
 export const AUTOWRAP_ON = "\x1b[?7h";
 export const CLEAR_AND_HOME = "\x1b[2J\x1b[H";
