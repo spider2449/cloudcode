@@ -58,7 +58,7 @@ export function App(props: AppProps) {
   function modelFor(name: string): string | undefined {
     return (name === props.initialProvider ? props.initialModel : undefined) ?? props.providers[name]?.model;
   }
-  const [items, setItems] = useState<DisplayItem[]>(() => {
+  function welcomeItems(provider: string): DisplayItem[] {
     // Fit budget: terminal minus the live region floor (input box 3 + status
     // bar 1 + working-indicator/hint headroom 2). A banner taller than this
     // pushes the transcript's top rows above the visible screen, since the
@@ -66,8 +66,8 @@ export function App(props: AppProps) {
     const welcome = loadWelcome(
       {
         version: VERSION,
-        provider: props.initialProvider,
-        model: modelFor(props.initialProvider)
+        provider,
+        model: modelFor(provider)
       },
       undefined,
       {
@@ -75,7 +75,10 @@ export function App(props: AppProps) {
         columns: process.stdout.columns ?? 80
       }
     );
-    const initial: DisplayItem[] = welcome ? [{ kind: "notice", text: welcome }] : [];
+    return welcome ? [{ kind: "notice", text: welcome }] : [];
+  }
+  const [items, setItems] = useState<DisplayItem[]>(() => {
+    const initial = welcomeItems(props.initialProvider);
     if (props.switchedFrom) initial.push({ kind: "notice", text: `Switched project to ${props.cwd}` });
     return initial;
   });
@@ -309,7 +312,13 @@ export function App(props: AppProps) {
 
   const ctx: CommandContext = {
     notice,
-    clearSession: async () => { resetItems(); streamRef.current = ""; patchLive({ streamText: "", activeTool: undefined }); await restartSession(providerName); },
+    clearSession: async () => {
+      setItems(welcomeItems(providerName));
+      setTranscriptKey(k => k + 1);
+      streamRef.current = "";
+      patchLive({ streamText: "", activeTool: undefined });
+      await restartSession(providerName);
+    },
     setModel: async m => { await sessionRef.current?.setModel(m); setModel(m); setServedModel(undefined); },
     availableModels: () => availableModelsRef.current,
     currentModel: () => model,

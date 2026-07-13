@@ -143,6 +143,11 @@ const commands: Command[] = [
     }
   },
   {
+    name: "new",
+    description: "Start a new session and show the welcome screen",
+    async run(ctx) { await ctx.clearSession(); }
+  },
+  {
     name: "permissions",
     description: "Permission mode or rules: /permissions <default|acceptEdits|bypassPermissions|list|clear>",
     async run(ctx, args) {

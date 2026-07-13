@@ -76,7 +76,13 @@ describe("parseSlash", () => {
 describe("builtins", () => {
   it("registers all v1 commands", () => {
     const names = [...buildRegistry().keys()].sort();
-    expect(names).toEqual(["clear", "compact", "config", "cost", "exit", "help", "init", "mcp", "model", "permissions", "provider", "resume", "set", "skill", "skills", "theme"]);
+    expect(names).toEqual(["clear", "compact", "config", "cost", "exit", "help", "init", "mcp", "model", "new", "permissions", "provider", "resume", "set", "skill", "skills", "theme"]);
+  });
+
+  it("/new starts a new session", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("new")!.run(ctx, "");
+    expect(ctx.clearSession).toHaveBeenCalled();
   });
 
   it("/model with arg sets model; without arg lists fetched models", async () => {

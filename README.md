@@ -2,8 +2,8 @@
 
 A Claude Code-style terminal coding agent with its own native agent engine (no
 subprocess, no bundled CLI) talking directly to the Anthropic Messages API, with
-an Ink TUI, slash commands, session resume, permission modes, and switchable
-providers including local llama.cpp.
+a hand-rolled alt-screen TUI, slash commands, session resume, permission modes,
+and switchable providers including local llama.cpp.
 
 ## Setup
 
@@ -68,10 +68,19 @@ Shift+Tab cycles permission modes. Esc interrupts. Ctrl+C twice exits.
 
 ## UX
 
+The UI is a hand-rolled TUI on the terminal's alternate screen: the transcript
+scrolls independently while the input box and status bar stay pinned to the
+bottom. Scroll with the mouse wheel or PgUp/PgDn/Home/End; End (or any new
+message) returns to stick-to-bottom. Because the app captures the mouse,
+select text with Shift+drag.
+
 Streaming output renders token by token; assistant replies render as markdown with
 syntax-highlighted code blocks; Edit/Write tools show a colored diff preview.
 Input supports cursor movement (←/→), command history (↑/↓, persisted to
 ~/.cloudcode/history.json), and multi-line input (end a line with \ and press Enter).
+
+The legacy Ink-based UI remains available with `npm run dev -- --tui=legacy`
+(or `cloudcode --tui=legacy`); the native TUI is the default.
 
 ## Release
 

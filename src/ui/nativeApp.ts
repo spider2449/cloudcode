@@ -108,18 +108,7 @@ export class App {
     this.inputBox.onSubmit = text => this.handleSubmit(text);
     this.ctx = this.buildCommandContext();
 
-    const initialSize = terminal.size();
-    const welcome = loadWelcome(
-      { version: VERSION, provider: props.initialProvider, model: this.model },
-      undefined,
-      { rows: Math.max(1, initialSize.rows - 6), columns: initialSize.columns }
-    );
-    if (welcome) {
-      this.buffer.append({ kind: "notice", text: welcome });
-      // Pin the view (not scrollOffset itself, so the "Press End" hint stays hidden)
-      // to the top so the banner is fully visible instead of tail-anchored past its end.
-      this.welcomePinned = true;
-    }
+    this.appendWelcome();
     if (props.switchedFrom) this.buffer.append({ kind: "notice", text: `Switched project to ${props.cwd}` });
 
     this.startupItemCount = this.buffer.itemCount;
@@ -130,6 +119,22 @@ export class App {
         e => this.pickResume(e),
         () => this.overlay.close()
       );
+    }
+  }
+
+  /** Append the welcome banner to the buffer and pin the view to its top. */
+  private appendWelcome(): void {
+    const size = this.terminal.size();
+    const welcome = loadWelcome(
+      { version: VERSION, provider: this.providerName, model: this.model },
+      undefined,
+      { rows: Math.max(1, size.rows - 6), columns: size.columns }
+    );
+    if (welcome) {
+      this.buffer.append({ kind: "notice", text: welcome });
+      // Pin the view (not scrollOffset itself, so the "Press End" hint stays hidden)
+      // to the top so the banner is fully visible instead of tail-anchored past its end.
+      this.welcomePinned = true;
     }
   }
 
@@ -291,6 +296,9 @@ export class App {
         this.buffer.clear();
         this.streamText = "";
         this.activeTool = undefined;
+        this.scrollOffset = null;
+        this.appendWelcome();
+        this.startupItemCount = this.buffer.itemCount;
         await this.restartSession(this.providerName);
         this.recompute();
       },

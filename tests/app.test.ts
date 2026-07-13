@@ -66,6 +66,18 @@ describe("App", () => {
     expect(last).toContain("> hello");
   });
 
+  it("/new clears the transcript and re-shows the welcome banner", async () => {
+    const { app, terminal } = makeApp([textTurn("hi there")]);
+    void app.run();
+    app.submitForTest("hello");
+    await wait();
+    app.submitForTest("/new");
+    await wait();
+    const last = terminal.writes[terminal.writes.length - 1];
+    expect(last).toContain("Welcome to cloudcode");
+    expect(last).not.toContain("hi there");
+  });
+
   it("commits the assistant reply to the buffer on result", async () => {
     const { app, terminal } = makeApp([textTurn("hi there")]);
     void app.run();
