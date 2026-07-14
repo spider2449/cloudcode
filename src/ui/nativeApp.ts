@@ -357,7 +357,9 @@ export class App {
       switchProject: path => {
         if (!this.props.onSwitchProject) { this.notice("Project switching is not available."); return; }
         const err = this.props.onSwitchProject(path);
-        if (err) this.notice(err);
+        if (err) { this.notice(err); return; }
+        void this.session?.dispose();
+        this.stop();
       },
       openProjectPicker: () => {
         this.overlay.openProject(

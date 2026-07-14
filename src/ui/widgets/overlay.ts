@@ -45,6 +45,7 @@ interface ProjectState {
   projects: string[];
   currentCwd: string;
   index: number;
+  text: string;
   onPick: (p: string) => void;
   onCancel: () => void;
 }
@@ -70,7 +71,7 @@ export class OverlayManager {
 
   openProject(projects: string[], currentCwd: string, onPick: (p: string) => void, onCancel: () => void): void {
     this._mode = "project";
-    this.projectState = { projects, currentCwd, index: 0, onPick, onCancel };
+    this.projectState = { projects, currentCwd, index: 0, text: "", onPick, onCancel };
   }
 
   openPermission(request: PermissionRequest, onDecision: (allow: boolean, rememberAs?: "allow" | "deny") => void): void {
@@ -88,8 +89,12 @@ export class OverlayManager {
 
   handleKey(k: Key, input?: string): void {
     if (this._mode === "resume") this.handleResumeKey(k);
-    else if (this._mode === "project") this.handleProjectKey(k);
+    else if (this._mode === "project") this.handleProjectKey(k, input);
     else if (this._mode === "permission") this.handlePermissionKey(k, input);
+  }
+
+  private filteredProjects(s: ProjectState): string[] {
+    return s.text ? s.projects.filter(p => p.toLowerCase().includes(s.text.toLowerCase())) : s.projects;
   }
 
   private handlePermissionKey(k: Key, input?: string): void {
@@ -110,18 +115,28 @@ export class OverlayManager {
     if (k.t === "enter") decide(s.options[s.selected]);
   }
 
-  private handleProjectKey(k: Key): void {
+  private handleProjectKey(k: Key, input?: string): void {
     const s = this.projectState;
     if (!s) return;
     if (k.t === "esc") { const cb = s.onCancel; this.close(); cb(); return; }
+    const filtered = this.filteredProjects(s);
     if (k.t === "up") { s.index = Math.max(0, s.index - 1); return; }
-    if (k.t === "down") { s.index = Math.min(s.projects.length - 1, s.index + 1); return; }
+    if (k.t === "down") { s.index = Math.min(filtered.length - 1, s.index + 1); return; }
+    if (k.t === "backspace") { s.text = s.text.slice(0, -1); s.index = 0; return; }
     if (k.t === "enter") {
-      const p = s.projects[s.index];
-      if (!p) return;
-      if (p === s.currentCwd) { const cb = s.onCancel; this.close(); cb(); }
-      else { const cb = s.onPick; this.close(); cb(p); }
+      const p = filtered[s.index];
+      if (p) {
+        if (p === s.currentCwd) { const cb = s.onCancel; this.close(); cb(); }
+        else { const cb = s.onPick; this.close(); cb(p); }
+      } else if (s.text) {
+        const cb = s.onPick;
+        const text = s.text;
+        this.close();
+        cb(text);
+      }
+      return;
     }
+    if (k.t === "printable" && input) { s.text += input; s.index = 0; }
   }
 
   private handleResumeKey(k: Key): void {
@@ -163,20 +178,24 @@ export class OverlayManager {
     const s = this.projectState;
     if (!s) return [];
     const muted = sgr(theme.muted);
-    if (s.projects.length === 0) {
-      return [`${muted}No recent projects. Press Esc to close.${SGR_RESET}`];
-    }
-    const { start, end } = visibleWindow(s.projects.length, s.index, MAX_ROWS);
     const warning = sgr(theme.warning);
+    const filtered = this.filteredProjects(s);
     const rows: string[] = [
       "╭" + "─".repeat(Math.max(0, width - 2)) + "╮",
-      `${warning}Switch project (↑/↓, Enter, Esc)${SGR_RESET}`
+      `${warning}Switch project (type a path, ↑/↓ to pick recent, Enter, Esc)${SGR_RESET}`,
+      `> ${s.text}\x1b[7m \x1b[27m`
     ];
-    for (let i = start; i < end; i++) {
-      const p = s.projects[i];
-      const marker = p === s.currentCwd ? "● " : "  ";
-      const line = marker + p;
-      rows.push(i === s.index ? `\x1b[7m${line}\x1b[27m` : line);
+    if (filtered.length === 0) {
+      const msg = s.projects.length === 0 ? "No recent projects." : "No matches.";
+      rows.push(`${muted}${msg} Press Enter to use the typed path.${SGR_RESET}`);
+    } else {
+      const { start, end } = visibleWindow(filtered.length, s.index, MAX_ROWS);
+      for (let i = start; i < end; i++) {
+        const p = filtered[i];
+        const marker = p === s.currentCwd ? "● " : "  ";
+        const line = marker + p;
+        rows.push(i === s.index ? `\x1b[7m${line}\x1b[27m` : line);
+      }
     }
     rows.push("╰" + "─".repeat(Math.max(0, width - 2)) + "╯");
     return rows;

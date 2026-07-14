@@ -1,3 +1,5 @@
+import { StringDecoder } from "node:string_decoder";
+
 export type Key =
   | { t: "printable"; ch: string }
   | { t: "paste"; text: string }
@@ -46,12 +48,17 @@ const ESC_TIMEOUT_MS = 25;
 export class KeyDecoder {
   private pending = "";
   private timer: ReturnType<typeof setTimeout> | undefined;
+  // Escape sequences are pure ASCII, so decoding as UTF-8 leaves them intact
+  // while correctly assembling multi-byte characters (e.g. Chinese IME input).
+  // StringDecoder buffers a trailing incomplete multi-byte sequence across
+  // feed() calls instead of emitting a replacement character for it.
+  private utf8 = new StringDecoder("utf8");
   /** Test/production hook: called with keys resolved by the 25ms Escape timeout. */
   onTimeout: ((keys: Key[]) => void) | undefined;
 
   feed(chunk: Buffer): Key[] {
     this.clearTimer();
-    this.pending += chunk.toString("binary");
+    this.pending += this.utf8.write(chunk);
     return this.drain();
   }
 

@@ -13,34 +13,61 @@ interface Props {
 export function ProjectPicker({ projects, currentCwd, onPick, onCancel }: Props) {
   const theme = useTheme();
   const [index, setIndex] = useState(0);
+  const [text, setText] = useState("");
 
-  useInput((_input, key) => {
-    if (key.escape) onCancel();
-    else if (key.upArrow) setIndex(i => Math.max(0, i - 1));
-    else if (key.downArrow) setIndex(i => Math.min(projects.length - 1, i + 1));
-    else if (key.return && projects[index]) {
-      if (projects[index] === currentCwd) onCancel();
-      else onPick(projects[index]);
+  const filtered = text
+    ? projects.filter(p => p.toLowerCase().includes(text.toLowerCase()))
+    : projects;
+  const clampedIndex = Math.min(index, Math.max(0, filtered.length - 1));
+
+  useInput((input, key) => {
+    if (key.escape) { onCancel(); return; }
+    if (key.upArrow) { setIndex(i => Math.max(0, i - 1)); return; }
+    if (key.downArrow) { setIndex(i => Math.min(filtered.length - 1, i + 1)); return; }
+    if (key.return) {
+      const picked = filtered[clampedIndex];
+      if (picked) {
+        if (picked === currentCwd) onCancel();
+        else onPick(picked);
+      } else if (text) {
+        onPick(text);
+      }
+      return;
+    }
+    if (key.backspace || key.delete) {
+      setText(t => t.slice(0, -1));
+      setIndex(0);
+      return;
+    }
+    if (input && !key.ctrl && !key.meta) {
+      setText(t => t + input);
+      setIndex(0);
     }
   });
 
-  if (projects.length === 0) {
-    return <Text color={theme.muted}>No recent projects. Press Esc to close.</Text>;
-  }
-  // Cap visible rows to MAX_ROWS regardless of entry count — see
-  // ResumePicker.tsx for why (mirrors SuggestionMenu.tsx's windowing).
-  const { start, end } = visibleWindow(projects.length, index, MAX_ROWS);
   return (
     <Box flexDirection="column" borderStyle="round" paddingX={1}>
-      <Text color={theme.warning}>Switch project (↑/↓, Enter, Esc)</Text>
-      {projects.slice(start, end).map((p, i) => {
-        const idx = start + i;
-        return (
-          <Text key={p} inverse={idx === index}>
-            {p === currentCwd ? "● " : "  "}{p}
-          </Text>
-        );
-      })}
+      <Text color={theme.warning}>Switch project (type a path, ↑/↓ to pick recent, Enter, Esc)</Text>
+      <Text>{"> "}{text}<Text inverse> </Text></Text>
+      {filtered.length === 0 ? (
+        <Text color={theme.muted}>
+          {projects.length === 0 ? "No recent projects." : "No matches."} Press Enter to use the typed path.
+        </Text>
+      ) : (
+        (() => {
+          // Cap visible rows to MAX_ROWS regardless of entry count — see
+          // ResumePicker.tsx for why (mirrors SuggestionMenu.tsx's windowing).
+          const { start, end } = visibleWindow(filtered.length, clampedIndex, MAX_ROWS);
+          return filtered.slice(start, end).map((p, i) => {
+            const idx = start + i;
+            return (
+              <Text key={p} inverse={idx === clampedIndex}>
+                {p === currentCwd ? "● " : "  "}{p}
+              </Text>
+            );
+          });
+        })()
+      )}
     </Box>
   );
 }

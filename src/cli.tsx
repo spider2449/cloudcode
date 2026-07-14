@@ -47,16 +47,6 @@ if (values.continue) {
 
 if (values.tui === "native") {
   const terminal = new Terminal();
-  const app = new App({
-    cwd: initialCwd,
-    providers,
-    initialProvider: providerName,
-    initialModel: settings.model,
-    initialMode: settings.permissionMode,
-    resume,
-    sessionIndex,
-    openResumeOnStart: values.resume
-  }, terminal);
   const cleanupAndExit = (code: number) => { terminal.cleanup(); process.exit(code); };
   process.on("SIGINT", () => cleanupAndExit(0));
   process.on("SIGTERM", () => cleanupAndExit(0));
@@ -66,7 +56,43 @@ if (values.tui === "native") {
     terminal.cleanup();
     throw err;
   });
-  app.run().finally(() => terminal.cleanup());
+
+  void (async () => {
+    let cwd = initialCwd;
+    let switchedFrom: string | undefined;
+    let pendingResume = resume;
+    let pendingOpenResume = values.resume;
+    for (;;) {
+      let switchTo: string | undefined;
+      const app = new App({
+        cwd,
+        providers,
+        initialProvider: providerName,
+        initialModel: settings.model,
+        initialMode: settings.permissionMode,
+        resume: pendingResume,
+        sessionIndex,
+        openResumeOnStart: pendingOpenResume,
+        switchedFrom,
+        onSwitchProject: path => {
+          try {
+            process.chdir(path);
+          } catch (err) {
+            return `Failed to switch project: ${err instanceof Error ? err.message : String(err)}`;
+          }
+          switchTo = path;
+          return undefined;
+        }
+      }, terminal);
+      await app.run();
+      if (!switchTo) break;
+      switchedFrom = cwd;
+      cwd = switchTo;
+      pendingResume = undefined;
+      pendingOpenResume = false;
+    }
+    terminal.cleanup();
+  })();
 } else {
   // Ink draws its first frame at the current cursor position, below the shell
   // prompt and npm's script banner. The bottom-anchoring filler sizes that
