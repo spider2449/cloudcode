@@ -9,17 +9,22 @@ export interface Usage {
 
 export type ContentBlock =
   | { type: "text"; text: string }
+  | { type: "thinking"; thinking: string; signature: string }
   | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> };
 
 export type EngineMessage =
   | { type: "system"; subtype: "init"; session_id: string; tools: string[] }
-  | { type: "stream_event"; event: { type: "content_block_delta"; delta: { type: "text_delta"; text: string } } }
+  | { type: "stream_event"; event: { type: "content_block_delta"; delta: { type: "text_delta"; text: string } | { type: "thinking_delta"; thinking: string } } }
   | { type: "assistant"; message: { content: ContentBlock[] } }
   | { type: "result"; subtype: "success"; total_cost_usd?: number; duration_ms: number; usage?: Usage }
   | { type: "result"; subtype: "error_during_execution"; result: string };
 
 export function textDelta(text: string): EngineMessage {
   return { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text } } };
+}
+
+export function thinkingDelta(thinking: string): EngineMessage {
+  return { type: "stream_event", event: { type: "content_block_delta", delta: { type: "thinking_delta", thinking } } };
 }
 
 export function assistantMessage(content: ContentBlock[]): EngineMessage {
