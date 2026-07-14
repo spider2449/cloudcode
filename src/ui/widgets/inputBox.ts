@@ -116,15 +116,11 @@ export class InputBox {
 
   handlePaste(text: string, disabled: boolean): void {
     if (disabled) return;
-    for (const ch of text) {
-      if (ch === "\r" || ch === "\n") {
-        const m = this.currentSuggestions();
-        if (m.length > 0 && !this.acceptIsNoop(m)) this.accept(m);
-        else this.submit();
-      } else if (ch >= " ") {
-        this.setValue(this.value.slice(0, this.cursor) + ch + this.value.slice(this.cursor), this.cursor + 1);
-      }
-    }
+    // Pasted newlines are literal text, never Enter: submitting mid-paste
+    // would fire the first line at the model. Normalize CRLF/CR to LF and
+    // strip other control characters.
+    const clean = [...text.replace(/\r\n?/g, "\n")].filter(ch => ch === "\n" || ch >= " ").join("");
+    this.setValue(this.value.slice(0, this.cursor) + clean + this.value.slice(this.cursor), this.cursor + clean.length);
   }
 
   render(theme: Theme, width: number, disabled: boolean): InputBoxRender {

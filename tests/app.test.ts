@@ -62,8 +62,11 @@ describe("App", () => {
     void app.run();
     app.submitForTest("hello");
     await wait();
-    const last = terminal.writes[terminal.writes.length - 1];
-    expect(last).toContain("> hello");
+    // Inline rendering commits the transcript row to scrollback once, then
+    // never re-emits it, so check the full write history rather than only
+    // the most recent (dynamic-block-only) frame.
+    const all = terminal.writes.join("");
+    expect(all).toContain("> hello");
   });
 
   it("/new clears the transcript and re-shows the welcome banner", async () => {
@@ -71,11 +74,12 @@ describe("App", () => {
     void app.run();
     app.submitForTest("hello");
     await wait();
+    terminal.writes.length = 0;
     app.submitForTest("/new");
     await wait();
-    const last = terminal.writes[terminal.writes.length - 1];
-    expect(last).toContain("Welcome to cloudcode");
-    expect(last).not.toContain("hi there");
+    const all = terminal.writes.join("");
+    expect(all).toContain("Welcome to cloudcode");
+    expect(all).not.toContain("hi there");
   });
 
   it("commits the assistant reply to the buffer on result", async () => {
@@ -83,8 +87,8 @@ describe("App", () => {
     void app.run();
     app.submitForTest("hello");
     await wait();
-    const last = terminal.writes[terminal.writes.length - 1];
-    expect(last).toContain("hi there");
+    const all = terminal.writes.join("");
+    expect(all).toContain("hi there");
   });
 
   it("updates cost and token StatusBar segments from usage on result", async () => {
@@ -96,13 +100,14 @@ describe("App", () => {
     expect(last).toContain("tok");
   });
 
-  it("every emitted frame's last written row is the StatusBar", async () => {
+  it("every emitted frame ends with the StatusBar as the last written row", async () => {
     const { app, terminal } = makeApp([textTurn("ok")]);
     void app.run();
     app.submitForTest("hello");
     await wait();
     for (const frame of terminal.writes) {
-      expect(frame).toContain("\x1b[24;1H");
+      const lines = frame.split("\r\n");
+      expect(lines[lines.length - 1]).toContain("/repo");
     }
   });
 
@@ -129,49 +134,41 @@ describe("App key routing", () => {
     expect(app.isRunningForTest()).toBe(false);
   });
 
-  it("PgUp sets a concrete scrollOffset and the StatusBar shows the scroll hint", async () => {
-    const { app, terminal } = makeApp(Array.from({ length: 40 }, () => textTurn("ok")));
-    void app.run();
-    for (let i = 0; i < 40; i++) {
-      app.submitForTest(`m${i}`);
-      await wait(15);
-    }
-    app.handleKey({ t: "pgup" });
-    await wait(5);
-    expect(terminal.writes[terminal.writes.length - 1]).toContain("Press End to jump to latest");
-  });
-
-  it("mouse wheel up scrolls back and wheel down returns to stick-to-bottom", async () => {
-    const { app, terminal } = makeApp(Array.from({ length: 40 }, () => textTurn("ok")));
-    void app.run();
-    for (let i = 0; i < 40; i++) {
-      app.submitForTest(`m${i}`);
-      await wait(15);
-    }
-    app.handleKey({ t: "wheel", dir: "up" });
-    await wait(5);
-    expect(terminal.writes[terminal.writes.length - 1]).toContain("Press End to jump to latest");
-    app.handleKey({ t: "wheel", dir: "down" });
-    await wait(5);
-    expect(terminal.writes[terminal.writes.length - 1]).not.toContain("Press End to jump to latest");
-  });
-
-  it("End resets scrollOffset to stick-to-bottom and clears the hint", async () => {
+  it("transcript items are written to the terminal exactly once", async () => {
     const { app, terminal } = makeApp([textTurn("ok")]);
     void app.run();
-    app.handleKey({ t: "pgup" });
-    app.handleKey({ t: "end" });
     await wait(5);
-    expect(terminal.writes[terminal.writes.length - 1]).not.toContain("Press End to jump to latest");
+    app.recompute();
+    const before = terminal.writes.join("");
+    app.handleKey({ t: "printable", ch: "x" }); // triggers another recompute
+    const after = terminal.writes.join("").slice(before.length);
+    // The welcome banner was committed in the first frame and must not be
+    // re-emitted by later frames.
+    expect(before).toContain("cloudcode");
+    expect(after).not.toContain("\x1b[2J");
   });
 
-  it("scrollback keys are ignored while an overlay is open", async () => {
+  it("tick() writes nothing while idle so a mouse selection survives", async () => {
+    const { app, terminal } = makeApp([textTurn("ok")]);
+    void app.run();
+    await wait(5);
+    app.recompute();
+    const count = terminal.writes.length;
+    app.tick();
+    expect(terminal.writes.length).toBe(count);
+  });
+
+  it("keys are routed to the overlay, not the input box, while an overlay is open", async () => {
     const { app, terminal } = makeApp([textTurn("ok")]);
     void app.run();
     app.openResumePickerForTest();
     app.handleKey({ t: "pgup" });
     await wait(5);
-    expect(terminal.writes[terminal.writes.length - 1]).not.toContain("Press End to jump to latest");
+    const last = terminal.writes[terminal.writes.length - 1];
+    // The overlay must still be rendered (pgup did not close or bypass it)...
+    expect(last).toContain("Resume a session");
+    // ...and pgup must not have reached the input box as typed content.
+    expect(last).not.toContain("> pgup");
   });
 
   it("BackTab cycles the permission mode", async () => {

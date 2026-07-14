@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline";
 import { KeyDecoder, type Key } from "../input.js";
-import { ALT_SCREEN_ON, ALT_SCREEN_OFF, BRACKETED_PASTE_ON, BRACKETED_PASTE_OFF, CURSOR_HIDE, CURSOR_SHOW, AUTOWRAP_OFF, AUTOWRAP_ON, MOUSE_OFF } from "./ansi.js";
+import { BRACKETED_PASTE_ON, BRACKETED_PASTE_OFF, CURSOR_HIDE, CURSOR_SHOW, AUTOWRAP_OFF, AUTOWRAP_ON, RESET_SCROLL_REGION } from "./ansi.js";
 
 export interface ITerminal {
   isTTY: boolean;
@@ -21,11 +21,10 @@ export class Terminal implements ITerminal {
   constructor() {
     this.isTTY = process.stdin.isTTY === true;
     if (this.isTTY) {
-      // Mouse tracking is intentionally left off: it captures click-drag events,
-      // which blocks the terminal's native text selection needed to copy output.
-      // Repainting on every tick also clears any shift-override selection almost
-      // immediately, so there's no good way to keep both wheel-scroll and copy.
-      process.stdout.write(ALT_SCREEN_ON + BRACKETED_PASTE_ON + CURSOR_HIDE + AUTOWRAP_OFF);
+      // Inline rendering on the normal screen: the transcript lives in the
+      // terminal's own scrollback, so native mouse selection, copy, and wheel
+      // scrolling work without any mouse capture.
+      process.stdout.write(BRACKETED_PASTE_ON + CURSOR_HIDE + AUTOWRAP_OFF);
       process.stdin.setRawMode(true);
       this.decoder = new KeyDecoder();
       this.decoder.onTimeout = keys => this.keysCb?.(keys);
@@ -65,7 +64,7 @@ export class Terminal implements ITerminal {
     if (this.isTTY) {
       process.stdin.setRawMode(false);
       process.stdin.pause();
-      process.stdout.write(MOUSE_OFF + AUTOWRAP_ON + BRACKETED_PASTE_OFF + CURSOR_SHOW + ALT_SCREEN_OFF);
+      process.stdout.write(RESET_SCROLL_REGION + AUTOWRAP_ON + BRACKETED_PASTE_OFF + CURSOR_SHOW);
     }
   }
 }

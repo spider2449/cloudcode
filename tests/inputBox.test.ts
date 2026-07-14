@@ -152,4 +152,35 @@ describe("InputBox", () => {
     box.handlePaste("PASTED", false);
     expect(box.render(theme, 80, false).contentRows.join("\n")).toContain("abPASTED");
   });
+
+  it("a multi-line paste with LF inserts newlines literally instead of submitting", () => {
+    const box = new InputBox(ctx(), new History());
+    const onSubmit = vi.fn();
+    box.onSubmit = onSubmit;
+    box.handlePaste("line1\nline2\nline3", false);
+    expect(onSubmit).not.toHaveBeenCalled();
+    const content = box.render(theme, 80, false).contentRows.join("\n");
+    expect(content).toContain("line1");
+    expect(content).toContain("line2");
+    expect(content).toContain("line3");
+  });
+
+  it("a multi-line paste with CRLF normalizes to single newlines and does not submit", () => {
+    const box = new InputBox(ctx(), new History());
+    const onSubmit = vi.fn();
+    box.onSubmit = onSubmit;
+    box.handlePaste("a\r\nb", false);
+    expect(onSubmit).not.toHaveBeenCalled();
+    // Exactly one newline between a and b: pressing Enter now submits "a\nb".
+    box.handleKey({ t: "enter" }, false);
+    expect(onSubmit).toHaveBeenCalledWith("a\nb");
+  });
+
+  it("a paste ending with a newline keeps it as text, still requiring Enter to submit", () => {
+    const box = new InputBox(ctx(), new History());
+    const onSubmit = vi.fn();
+    box.onSubmit = onSubmit;
+    box.handlePaste("hello\n", false);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
 });

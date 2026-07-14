@@ -1,11 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { ALT_SCREEN_ON, ALT_SCREEN_OFF, BRACKETED_PASTE_ON, BRACKETED_PASTE_OFF,
-  CURSOR_HIDE, CURSOR_SHOW, CLEAR_AND_HOME, cursorTo, sgr, SGR_RESET } from "../src/ui/term/ansi.js";
+import { BRACKETED_PASTE_ON, BRACKETED_PASTE_OFF,
+  CURSOR_HIDE, CURSOR_SHOW, CLEAR_AND_HOME, cursorTo, sgr, SGR_RESET, ERASE_DOWN, cursorUp,
+  setScrollRegion, RESET_SCROLL_REGION } from "../src/ui/term/ansi.js";
 
 describe("ansi", () => {
   it("exposes the exact escape sequences the spec requires", () => {
-    expect(ALT_SCREEN_ON).toBe("\x1b[?1049h");
-    expect(ALT_SCREEN_OFF).toBe("\x1b[?1049l");
     expect(BRACKETED_PASTE_ON).toBe("\x1b[?2004h");
     expect(BRACKETED_PASTE_OFF).toBe("\x1b[?2004l");
     expect(CURSOR_HIDE).toBe("\x1b[?25l");
@@ -30,5 +29,32 @@ describe("ansi", () => {
     expect(sgr("gray")).toBe("\x1b[90m");
     expect(sgr("blackBright")).toBe("\x1b[90m");
     expect(sgr(undefined)).toBe("");
+  });
+});
+
+describe("relative movement helpers", () => {
+  it("ERASE_DOWN clears from cursor to end of screen", () => {
+    expect(ERASE_DOWN).toBe("\x1b[0J");
+  });
+
+  it("cursorUp emits CUU for positive counts", () => {
+    expect(cursorUp(3)).toBe("\x1b[3A");
+    expect(cursorUp(1)).toBe("\x1b[1A");
+  });
+
+  it("cursorUp emits nothing for zero or negative counts", () => {
+    expect(cursorUp(0)).toBe("");
+    expect(cursorUp(-2)).toBe("");
+  });
+});
+
+describe("scroll region helpers", () => {
+  it("setScrollRegion emits DECSTBM for the given rows", () => {
+    expect(setScrollRegion(1, 20)).toBe("\x1b[1;20r");
+    expect(setScrollRegion(3, 10)).toBe("\x1b[3;10r");
+  });
+
+  it("RESET_SCROLL_REGION restores the full-screen scroll region", () => {
+    expect(RESET_SCROLL_REGION).toBe("\x1b[r");
   });
 });

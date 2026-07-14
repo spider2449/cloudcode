@@ -5,7 +5,7 @@ import { renderProgress } from "../widgets/progress.js";
 import type { InputBoxRender } from "../widgets/inputBox.js";
 import type { OverlayMode } from "../widgets/overlay.js";
 import { tailForHeight } from "../streamTail.js";
-import { CLEAR_AND_HOME, cursorTo } from "./ansi.js";
+import { ERASE_DOWN, cursorTo, setScrollRegion, RESET_SCROLL_REGION } from "./ansi.js";
 import type { Theme } from "../theme.js";
 
 export interface BottomState {
@@ -14,7 +14,6 @@ export interface BottomState {
   streamingText: string;
   activeTool?: string;
   compactPct?: number;
-  scrollOffset: number | null;
   inputRender: InputBoxRender;
   overlayRows: string[];
   statusBarProps: StatusBarProps;
@@ -22,49 +21,91 @@ export interface BottomState {
   workStartedAt: number;
 }
 
-export function render(
-  buffer: Buffer,
-  scrollOffset: number | null,
-  bottom: BottomState,
-  theme: Theme,
-  size: { rows: number; columns: number },
-  viewOffset: number | null = scrollOffset
-): string {
-  const { rows, columns } = size;
+/**
+ * Claude Code-style inline renderer with a pinned-bottom footer. The
+ * transcript lives in a terminal scroll region (rows 1..scrollBottom) that
+ * the terminal itself scrolls, pushing lines that leave the top into native
+ * scrollback for selection/copy/wheel-scroll. The footer band below it
+ * (scrollBottom+1..rows) is repainted every frame with cursor addressing
+ * confined to those rows, so it stays pinned to the bottom edge.
+ */
+export class InlineRenderer {
+  // -1 means "no region defined yet" (first frame after construction or
+  // after invalidate()).
+  private lastScrollBottom = -1;
+  private lastRows = -1;
+  private lastColumns = -1;
 
-  // Footer region, built bottom-up so its total height is known before the
-  // transcript region's height is computed.
-  const footerRows: string[] = [];
-  footerRows.push(renderStatusBar({ ...bottom.statusBarProps, scrollHint: scrollOffset !== null }, theme, columns));
-  if (bottom.overlay !== "none") {
-    footerRows.unshift(...bottom.overlayRows);
-  } else {
-    footerRows.unshift(...bottom.inputRender.menuRows);
-    if (bottom.inputRender.hintRow !== null) footerRows.unshift(bottom.inputRender.hintRow);
-    footerRows.unshift(...bottom.inputRender.contentRows);
-    footerRows.unshift(...bottom.inputRender.borderRows);
+  frame(
+    buffer: Buffer,
+    bottom: BottomState,
+    theme: Theme,
+    size: { rows: number; columns: number }
+  ): string {
+    const { rows, columns } = size;
+
+    // Footer content, built bottom-up (same assembly as before).
+    const dyn: string[] = [];
+    dyn.push(renderStatusBar(bottom.statusBarProps, theme, columns));
+    if (bottom.overlay !== "none") {
+      dyn.unshift(...bottom.overlayRows);
+    } else {
+      dyn.unshift(...bottom.inputRender.menuRows);
+      if (bottom.inputRender.hintRow !== null) dyn.unshift(bottom.inputRender.hintRow);
+      dyn.unshift(...bottom.inputRender.contentRows);
+      dyn.unshift(...bottom.inputRender.borderRows);
+    }
+    if (bottom.compactPct !== undefined) dyn.unshift(renderProgress("Compacting", bottom.compactPct, theme, 20));
+    if (bottom.streaming) dyn.unshift(renderWorkInd(bottom.workIndFrame, bottom.activeTool ? `Running ${bottom.activeTool}` : "Thinking", Date.now() - bottom.workStartedAt, theme));
+    if (bottom.streamingText !== "") {
+      const streamTailCap = Math.max(3, rows - dyn.length - 3);
+      dyn.unshift(...tailForHeight(bottom.streamingText, streamTailCap, columns).split("\n"));
+    }
+
+    // Cap the footer so the scroll region always keeps at least 1 row.
+    const footer = dyn.slice(Math.max(0, dyn.length - (rows - 1)));
+    const scrollBottom = Math.max(1, rows - footer.length);
+
+    let out = "";
+    const firstFrame = this.lastScrollBottom < 0;
+    const sizeChanged = rows !== this.lastRows || columns !== this.lastColumns;
+
+    if (!firstFrame && !sizeChanged && scrollBottom < this.lastScrollBottom) {
+      // Footer is growing: evacuate the rows about to become footer into
+      // native scrollback by scrolling the OLD region before shrinking it,
+      // so already-committed transcript lines aren't silently overwritten.
+      const evacuate = this.lastScrollBottom - scrollBottom;
+      out += cursorTo(this.lastScrollBottom, 1) + "\r\n".repeat(evacuate);
+    }
+
+    if (firstFrame || sizeChanged || scrollBottom !== this.lastScrollBottom) {
+      if (!firstFrame && scrollBottom > this.lastScrollBottom) {
+        // Footer is shrinking (or the window grew): the rows being freed
+        // back to the message region still hold stale footer bytes.
+        out += cursorTo(this.lastScrollBottom + 1, 1) + ERASE_DOWN;
+      }
+      out += setScrollRegion(1, scrollBottom);
+      this.lastScrollBottom = scrollBottom;
+      this.lastRows = rows;
+      this.lastColumns = columns;
+    }
+
+    const staticRows = buffer.takeCommitRows(columns, theme);
+    out += cursorTo(scrollBottom, 1) + staticRows.map(r => r + "\r\n").join("");
+    out += cursorTo(scrollBottom + 1, 1) + ERASE_DOWN + footer.join("\r\n");
+    return out;
   }
-  if (bottom.compactPct !== undefined) footerRows.unshift(renderProgress("Compacting", bottom.compactPct, theme, 20));
-  if (bottom.streaming) footerRows.unshift(renderWorkInd(bottom.workIndFrame, bottom.activeTool ? `Running ${bottom.activeTool}` : "Thinking", Date.now() - bottom.workStartedAt, theme));
-  if (bottom.streamingText !== "") {
-    const streamTailCap = Math.max(3, rows - footerRows.length - 3);
-    const tail = tailForHeight(bottom.streamingText, streamTailCap, columns);
-    footerRows.unshift(...tail.split("\n"));
+
+  invalidate(): void {
+    this.lastScrollBottom = -1;
+    this.lastRows = -1;
+    this.lastColumns = -1;
   }
 
-  const footerHeight = Math.min(rows, footerRows.length);
-  const visibleFooter = footerRows.slice(footerRows.length - footerHeight);
-  const transcriptHeight = Math.max(0, rows - footerHeight);
-
-  const { rows: transcriptRows } = buffer.visibleWindow(viewOffset, transcriptHeight, columns, theme);
-
-  const out: string[] = [CLEAR_AND_HOME];
-  transcriptRows.forEach((row, i) => {
-    out.push(cursorTo(i + 1, 1) + row);
-  });
-  const footerStartRow = rows - footerHeight + 1;
-  visibleFooter.forEach((row, i) => {
-    out.push(cursorTo(footerStartRow + i, 1) + row);
-  });
-  return out.join("");
+  finalize(): string {
+    this.lastScrollBottom = -1;
+    this.lastRows = -1;
+    this.lastColumns = -1;
+    return RESET_SCROLL_REGION + "\r\n";
+  }
 }

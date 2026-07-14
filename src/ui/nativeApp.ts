@@ -22,7 +22,8 @@ import { GitStatusPoller } from "./useGitStatus.js";
 import { Buffer } from "./buffer.js";
 import { InputBox } from "./widgets/inputBox.js";
 import { OverlayManager } from "./widgets/overlay.js";
-import { render, type BottomState } from "./term/render.js";
+import { InlineRenderer, type BottomState } from "./term/render.js";
+import { CLEAR_AND_HOME } from "./term/ansi.js";
 import type { ITerminal } from "./term/terminal.js";
 import type { Key } from "./input.js";
 
@@ -70,13 +71,7 @@ export class App {
   private startedAt = Date.now();
   private workStartedAt = 0;
   private workIndFrame = 0;
-  private scrollOffset: number | null = null;
-  private welcomePinned = false;
-  // Item count at construction; the welcome pin auto-releases once the
-  // transcript grows past this, so anything appended later (chat, slash
-  // command output, errors) scrolls into view instead of landing below a
-  // still-pinned banner.
-  private startupItemCount = 0;
+  private renderer = new InlineRenderer();
 
   private firstMessage: string | undefined;
   private session: AgentSession | undefined;
@@ -111,8 +106,6 @@ export class App {
     this.appendWelcome();
     if (props.switchedFrom) this.buffer.append({ kind: "notice", text: `Switched project to ${props.cwd}` });
 
-    this.startupItemCount = this.buffer.itemCount;
-
     if (props.openResumeOnStart) {
       this.overlay.openResume(
         props.sessionIndex.list(),
@@ -132,9 +125,6 @@ export class App {
     );
     if (welcome) {
       this.buffer.append({ kind: "notice", text: welcome });
-      // Pin the view (not scrollOffset itself, so the "Press End" hint stays hidden)
-      // to the top so the banner is fully visible instead of tail-anchored past its end.
-      this.welcomePinned = true;
     }
   }
 
@@ -283,6 +273,8 @@ export class App {
   private pickResume(e: { id: string; provider: string }): void {
     this.overlay.close();
     this.buffer.clear();
+    this.terminal.write(CLEAR_AND_HOME);
+    this.renderer.invalidate();
     const provider = this.props.providers[e.provider] ? e.provider : this.providerName;
     this.providerName = provider;
     this.model = this.props.providers[provider]?.model;
@@ -294,11 +286,11 @@ export class App {
       notice: text => this.notice(text),
       clearSession: async () => {
         this.buffer.clear();
+        this.terminal.write(CLEAR_AND_HOME);
+        this.renderer.invalidate();
         this.streamText = "";
         this.activeTool = undefined;
-        this.scrollOffset = null;
         this.appendWelcome();
-        this.startupItemCount = this.buffer.itemCount;
         await this.restartSession(this.providerName);
         this.recompute();
       },
@@ -421,6 +413,7 @@ export class App {
   }
 
   tick(): void {
+    if (this.phase === "idle" && this.compactPct === undefined) return;
     this.workIndFrame += 1;
     this.recompute();
   }
@@ -436,6 +429,8 @@ export class App {
       return;
     }
     if (k.t === "ctrl" && k.ch === "l") {
+      this.terminal.write(CLEAR_AND_HOME);
+      this.renderer.invalidate();
       this.recompute();
       return;
     }
@@ -450,44 +445,6 @@ export class App {
         this.recompute();
       }
       return;
-    }
-
-    // Phase 2: scrollback navigation, only when no overlay is open.
-    if (this.overlay.mode === "none") {
-      const size = this.terminal.size();
-      const height = Math.max(1, size.rows - 6);
-      if (k.t === "pgup" || (k.t === "ctrl" && k.ch === "b")) {
-        const total = this.buffer.totalRows(size.columns, this.theme);
-        const current = this.scrollOffset ?? (this.welcomePinned ? 0 : Math.max(0, total - height));
-        this.welcomePinned = false;
-        this.scrollOffset = Math.max(0, current - height);
-        this.recompute();
-        return;
-      }
-      if (k.t === "pgdn" || (k.t === "ctrl" && k.ch === "f")) {
-        const total = this.buffer.totalRows(size.columns, this.theme);
-        const current = this.scrollOffset ?? (this.welcomePinned ? 0 : Math.max(0, total - height));
-        const next = current + height;
-        this.welcomePinned = false;
-        this.scrollOffset = next >= total - height ? null : next;
-        this.recompute();
-        return;
-      }
-      if (k.t === "home") { this.welcomePinned = false; this.scrollOffset = 0; this.recompute(); return; }
-      if (k.t === "end") { this.welcomePinned = false; this.scrollOffset = null; this.recompute(); return; }
-      if (k.t === "wheel") {
-        const total = this.buffer.totalRows(size.columns, this.theme);
-        const current = this.scrollOffset ?? (this.welcomePinned ? 0 : Math.max(0, total - height));
-        this.welcomePinned = false;
-        if (k.dir === "up") {
-          this.scrollOffset = Math.max(0, current - 3);
-        } else {
-          const next = current + 3;
-          this.scrollOffset = next >= total - height ? null : next;
-        }
-        this.recompute();
-        return;
-      }
     }
 
     // Phase 3: focus owner.
@@ -516,7 +473,6 @@ export class App {
 
   recompute(): void {
     const size = this.terminal.size();
-    if (this.welcomePinned && this.buffer.itemCount > this.startupItemCount) this.welcomePinned = false;
     const inputVisible = this.overlay.mode === "none" && this.phase !== "permission";
     const bottom: BottomState = {
       overlay: this.overlay.mode,
@@ -524,7 +480,6 @@ export class App {
       streamingText: this.streamText,
       activeTool: this.activeTool,
       compactPct: this.compactPct,
-      scrollOffset: this.scrollOffset,
       inputRender: inputVisible
         ? this.inputBox.render(this.theme, size.columns, this.phase === "streaming")
         : { borderRows: [], contentRows: [], menuRows: [], hintRow: null, totalRows: 0 },
@@ -545,9 +500,7 @@ export class App {
       workIndFrame: this.workIndFrame,
       workStartedAt: this.workStartedAt
     };
-    const viewOffset = this.scrollOffset ?? (this.welcomePinned ? 0 : null);
-    const frame = render(this.buffer, this.scrollOffset, bottom, this.theme, size, viewOffset);
-    this.terminal.write(frame);
+    this.terminal.write(this.renderer.frame(this.buffer, bottom, this.theme, size));
   }
 
   async run(): Promise<void> {
@@ -572,6 +525,7 @@ export class App {
   private stop(): void {
     if (this.tickTimer) clearInterval(this.tickTimer);
     this.git.stop();
+    this.terminal.write(this.renderer.finalize());
     this.running = false;
     this.stopResolve?.();
   }
