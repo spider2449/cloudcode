@@ -1,5 +1,12 @@
 export const BRACKETED_PASTE_ON = "\x1b[?2004h";
 export const BRACKETED_PASTE_OFF = "\x1b[?2004l";
+// Kitty keyboard protocol, "disambiguate escape codes" flag (bit 1): reports
+// key events as CSI u sequences carrying a modifier bitmask, which is what
+// lets Shift+Enter be told apart from plain Enter (see input.ts CSI_U_RE).
+// Terminals that don't support it (most legacy ones) simply ignore this
+// sequence, so it's safe to send unconditionally.
+export const KITTY_KEYBOARD_ON = "\x1b[>1u";
+export const KITTY_KEYBOARD_OFF = "\x1b[<u";
 export const CURSOR_HIDE = "\x1b[?25l";
 export const CURSOR_SHOW = "\x1b[?25h";
 // DECAWM: with autowrap on, a row longer than the terminal width wraps; a wrap

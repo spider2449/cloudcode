@@ -106,6 +106,19 @@ describe("KeyDecoder", () => {
     expect(d.feed(b("h"))).toEqual([{ t: "printable", ch: "h" }]);
   });
 
+  it("decodes CSI u Enter/Shift+Enter reports from the Kitty keyboard protocol", () => {
+    const d = new KeyDecoder();
+    expect(d.feed(b("\x1b[13u"))).toEqual([{ t: "enter" }]);
+    expect(d.feed(b("\x1b[13;1u"))).toEqual([{ t: "enter" }]);
+    expect(d.feed(b("\x1b[13;2u"))).toEqual([{ t: "shift-enter" }]);
+  });
+
+  it("decodes ESC+CR/LF as Shift+Enter (VS Code integrated terminal's encoding)", () => {
+    const d = new KeyDecoder();
+    expect(d.feed(b("\x1b\r"))).toEqual([{ t: "shift-enter" }]);
+    expect(d.feed(b("\x1b\n"))).toEqual([{ t: "shift-enter" }]);
+  });
+
   it("discards an unrecognized modified-arrow CSI sequence (e.g. Ctrl+Up)", () => {
     const d = new KeyDecoder();
     expect(d.feed(b("\x1b[1;5A"))).toEqual([]);

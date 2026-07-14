@@ -4,6 +4,7 @@ export type Key =
   | { t: "printable"; ch: string }
   | { t: "paste"; text: string }
   | { t: "enter" }
+  | { t: "shift-enter" }
   | { t: "tab" }
   | { t: "backtab" }
   | { t: "backspace" }
@@ -29,6 +30,15 @@ const SGR_MOUSE_RE = /^\x1b\[<(\d+);\d+;\d+[Mm]/;
 // reports, modified arrows like Ctrl+Up). Matched so it can be discarded
 // wholesale instead of leaving `tryConsumeOne` stuck re-scanning it forever.
 const UNKNOWN_CSI_RE = /^\x1b\[[0-9;?]*[A-Za-z~]/;
+
+// CSI u ("Kitty keyboard protocol" / xterm modifyOtherKeys) key report:
+// ESC [ <keycode> ; <modifiers> u. Terminal.ts enables this mode on start so
+// Enter's keycode (13) arrives with a modifier bit distinguishing Shift+Enter
+// (modifier 2 = Shift, encoded as 1+1) from plain Enter, which is otherwise
+// impossible: both send the same "\r" byte in a legacy terminal.
+const CSI_U_RE = /^\x1b\[(\d+)(?:;(\d+))?u/;
+const CSI_U_ENTER_KEYCODE = 13;
+const CSI_U_SHIFT_BIT = 1; // (modifiers - 1) & CSI_U_SHIFT_BIT
 
 const SEQUENCES: Record<string, Key> = {
   "\x1b[Z": { t: "backtab" },
@@ -101,11 +111,32 @@ export class KeyDecoder {
     }
     if (s.startsWith("\x1b[<")) return 0; // incomplete mouse sequence
 
+    const csiU = CSI_U_RE.exec(s);
+    if (csiU) {
+      const keycode = Number(csiU[1]);
+      const modifiers = csiU[2] ? Number(csiU[2]) : 1;
+      if (keycode === CSI_U_ENTER_KEYCODE) {
+        const shifted = ((modifiers - 1) & CSI_U_SHIFT_BIT) !== 0;
+        keys.push(shifted ? { t: "shift-enter" } : { t: "enter" });
+      }
+      // Other CSI u key reports (not Enter) aren't otherwise handled; drop them.
+      return csiU[0].length;
+    }
+
     for (const [seq, key] of Object.entries(SEQUENCES)) {
       if (s.startsWith(seq)) { keys.push(key); return seq.length; }
     }
 
     if (s === "\x1b") return 0; // incomplete: could be Esc alone or a sequence prefix
+
+    // ESC followed directly by CR/LF: some terminals without Kitty-protocol
+    // support (e.g. VS Code's integrated terminal) send Shift+Enter this way
+    // instead of a CSI u report — the same ESC-prefix convention used for
+    // Alt+<key>, repurposed for this one combination.
+    if (s.startsWith("\x1b") && (s[1] === "\r" || s[1] === "\n")) {
+      keys.push({ t: "shift-enter" });
+      return 2;
+    }
 
     const unknownCsi = UNKNOWN_CSI_RE.exec(s);
     if (unknownCsi) return unknownCsi[0].length; // recognized as CSI, but not a key we act on: discard

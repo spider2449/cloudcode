@@ -103,6 +103,10 @@ export class InputBox {
       return;
     }
     if (k.t === "tab") { if (menuOpen) this.accept(menu); return; }
+    if (k.t === "shift-enter") {
+      this.setValue(this.value.slice(0, this.cursor) + "\n" + this.value.slice(this.cursor), this.cursor + 1);
+      return;
+    }
     if (k.t === "enter") {
       if (menuOpen && !this.acceptIsNoop(menu)) this.accept(menu);
       else this.submit();

@@ -30,6 +30,19 @@ describe("InputBox", () => {
     expect(r.borderRows.join("\n") + r.contentRows.join("\n")).toContain("> hi");
   });
 
+  it("shift-enter inserts a newline instead of submitting", () => {
+    const box = new InputBox(ctx(), new History());
+    const onSubmit = vi.fn();
+    box.onSubmit = onSubmit;
+    type(box, "hi");
+    box.handleKey({ t: "shift-enter" }, false);
+    type(box, "there");
+    const r = box.render(theme, 80, false);
+    expect(r.contentRows.join("\n")).toContain("hi");
+    expect(r.contentRows.join("\n")).toContain("there");
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
   it("backspace removes the character before the cursor", () => {
     const box = new InputBox(ctx(), new History());
     type(box, "hi");
