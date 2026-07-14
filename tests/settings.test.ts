@@ -55,4 +55,12 @@ describe("settings persistence", () => {
     writeFileSync(file, JSON.stringify({ permissionMode: "bypassPermissions" }));
     expect(loadSettings(file)).toEqual({});
   });
+
+  it("round-trips effort and rejects invalid values", () => {
+    const file = join(dir(), "settings.json");
+    saveSetting("effort", "medium", file);
+    expect(loadSettings(file).effort).toBe("medium");
+    saveSetting("effort", "extreme", file);
+    expect(loadSettings(file).effort).toBeUndefined();
+  });
 });
