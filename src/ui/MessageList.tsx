@@ -15,6 +15,13 @@ function renderItem(item: DisplayItem, i: number, theme: Theme): React.ReactNode
       return <Text key={i} color={theme.accent}>{"⏺ "}{item.label}</Text>;
     case "notice":
       return <Text key={i} color={theme.muted}>{item.text}</Text>;
+    case "welcome":
+      return (
+        <Box key={i} flexDirection="column">
+          <Text color={theme.accent}>{item.logo}</Text>
+          <Text color={theme.muted}>{item.body}</Text>
+        </Box>
+      );
     case "error":
       return <Text key={i} color={theme.error}>{item.text}</Text>;
     case "diff":

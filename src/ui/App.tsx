@@ -27,7 +27,7 @@ import { mergeSkillCommands } from "../commands/skillCommands.js";
 import { THEMES, loadThemeName, saveThemeName } from "./theme.js";
 import { saveSetting } from "../agent/settings.js";
 import { ThemeProvider } from "./ThemeContext.js";
-import { loadWelcome } from "./welcome.js";
+import { loadWelcome, splitWelcomeLogo } from "./welcome.js";
 import { tailForHeight } from "./streamTail.js";
 import { VERSION } from "../version.js";
 import { ProjectPicker } from "./ProjectPicker.js";
@@ -78,7 +78,9 @@ export function App(props: AppProps) {
         columns: process.stdout.columns ?? 80
       }
     );
-    return welcome ? [{ kind: "notice", text: welcome }] : [];
+    if (!welcome) return [];
+    const { logo, body } = splitWelcomeLogo(welcome);
+    return logo !== undefined ? [{ kind: "welcome", logo, body }] : [{ kind: "notice", text: body }];
   }
   const [items, setItems] = useState<DisplayItem[]>(() => {
     const initial = welcomeItems(props.initialProvider);

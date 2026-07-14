@@ -7,6 +7,7 @@ export type DisplayItem =
   | { kind: "assistant"; text: string }
   | { kind: "tool"; label: string }
   | { kind: "notice"; text: string }
+  | { kind: "welcome"; logo: string; body: string }
   | { kind: "error"; text: string }
   | { kind: "result"; costUsd?: number; durationMs?: number }
   | { kind: "diff"; lines: DiffLine[] };

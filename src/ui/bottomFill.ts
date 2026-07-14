@@ -33,6 +33,8 @@ export function itemRows(item: DisplayItem, columns: number): number {
     case "notice":
     case "error":
       return textRows(item.text, columns);
+    case "welcome":
+      return textRows(item.logo, columns) + textRows(item.body, columns);
     case "diff":
       return item.lines.reduce(
         (sum, l) => sum + wrappedRows(`${l.sign} ${l.text}`, Math.max(1, columns - 2)),

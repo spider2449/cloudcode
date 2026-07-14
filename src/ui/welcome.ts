@@ -58,3 +58,10 @@ export function loadWelcome(vars: WelcomeVars, filePath = defaultPath(), fit?: W
   }
   return text;
 }
+
+/** Splits welcome text into the leading logo block (if any) and the rest, for separate coloring. */
+export function splitWelcomeLogo(text: string): { logo?: string; body: string } {
+  const blank = text.indexOf("\n\n");
+  if (blank === -1) return { body: text };
+  return { logo: text.slice(0, blank), body: text.slice(blank + 2) };
+}

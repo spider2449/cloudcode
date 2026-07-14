@@ -15,7 +15,7 @@ import { loadMcpServers, formatMcpStatus } from "../agent/mcp.js";
 import { loadSkills, formatSkillList, type Skill } from "../agent/skills.js";
 import { mergeSkillCommands } from "../commands/skillCommands.js";
 import { THEMES, loadThemeName, saveThemeName } from "./theme.js";
-import { loadWelcome } from "./welcome.js";
+import { loadWelcome, splitWelcomeLogo } from "./welcome.js";
 import { VERSION } from "../version.js";
 import { recentProjects, resolveProjectPath } from "../commands/projectPath.js";
 import { GitStatusPoller } from "./useGitStatus.js";
@@ -128,7 +128,8 @@ export class App {
       { rows: Math.max(1, size.rows - 6), columns: size.columns }
     );
     if (welcome) {
-      this.buffer.append({ kind: "notice", text: welcome });
+      const { logo, body } = splitWelcomeLogo(welcome);
+      this.buffer.append(logo !== undefined ? { kind: "welcome", logo, body } : { kind: "notice", text: body });
     }
   }
 

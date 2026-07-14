@@ -67,6 +67,8 @@ export function layoutItem(item: DisplayItem, theme: Theme, width: number): stri
       return wrapText(colorize("⏺ " + item.label, theme.accent), width);
     case "notice":
       return wrapText(colorize(item.text, theme.muted), width);
+    case "welcome":
+      return [...wrapText(colorize(item.logo, theme.accent), width), ...wrapText(colorize(item.body, theme.muted), width)];
     case "error":
       return wrapText(colorize(item.text, theme.error), width);
     case "diff": {
