@@ -78,6 +78,31 @@ const toolUseTurnMissingTrailingStop = () => [
   { type: "message_stop" }
 ];
 
+// Captures each request passed to create() so tests can assert on the
+// thinking parameter and max_tokens.
+function capturingClient(turns: object[][], requests: unknown[]) {
+  let call = 0;
+  return {
+    async *create(req: unknown) {
+      requests.push(req);
+      const events = turns[call++] ?? [];
+      for (const e of events) yield e as never;
+    }
+  };
+}
+
+const thinkingTurn = (thinking: string, text: string) => [
+  { type: "content_block_start", index: 0, content_block: { type: "thinking", thinking: "" } },
+  { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking } },
+  { type: "content_block_delta", index: 0, delta: { type: "signature_delta", signature: "sig123" } },
+  { type: "content_block_stop", index: 0 },
+  { type: "content_block_start", index: 1, content_block: { type: "text", text: "" } },
+  { type: "content_block_delta", index: 1, delta: { type: "text_delta", text } },
+  { type: "content_block_stop", index: 1 },
+  { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { input_tokens: 10, output_tokens: 5 } },
+  { type: "message_stop" }
+];
+
 function makeLoop(turns: object[][], received: unknown[]) {
   return new EngineLoop({
     client: fakeClient(turns),
@@ -179,5 +204,62 @@ describe("EngineLoop", () => {
     });
     await loop.runTurn("go", new AbortController().signal);
     expect(JSON.stringify(loop.messages)).toContain("User denied");
+  });
+});
+
+describe("EngineLoop thinking", () => {
+  function makeEffortLoop(turns: object[][], received: unknown[], requests: unknown[], effort: "off" | "low" | "medium" | "high") {
+    return new EngineLoop({
+      client: capturingClient(turns, requests),
+      model: "test-model",
+      systemPrompt: "sys",
+      tools: [echoTool],
+      cwd: process.cwd(),
+      permissionMode: "bypassPermissions",
+      store: new PermissionStore(mkdtempSync(join(tmpdir(), "cc-loop-"))),
+      effort,
+      onMessage: m => received.push(m),
+      requestPermission: async () => true
+    });
+  }
+
+  it("omits thinking param when effort is off", async () => {
+    const requests: unknown[] = [];
+    const loop = makeEffortLoop([textTurn("hi")], [], requests, "off");
+    await loop.runTurn("q", new AbortController().signal);
+    const req = requests[0] as { thinking?: unknown; max_tokens: number };
+    expect(req.thinking).toBeUndefined();
+    expect(req.max_tokens).toBe(8192);
+  });
+
+  it("sends thinking budget and raised max_tokens when effort is medium", async () => {
+    const requests: unknown[] = [];
+    const loop = makeEffortLoop([textTurn("hi")], [], requests, "medium");
+    await loop.runTurn("q", new AbortController().signal);
+    const req = requests[0] as { thinking?: unknown; max_tokens: number };
+    expect(req.thinking).toEqual({ type: "enabled", budget_tokens: 16384 });
+    expect(req.max_tokens).toBe(16384 + 8192);
+  });
+
+  it("setEffort applies to the next request", async () => {
+    const requests: unknown[] = [];
+    const loop = makeEffortLoop([textTurn("a"), textTurn("b")], [], requests, "off");
+    await loop.runTurn("q1", new AbortController().signal);
+    loop.setEffort("high");
+    await loop.runTurn("q2", new AbortController().signal);
+    expect((requests[1] as { thinking?: unknown }).thinking).toEqual({ type: "enabled", budget_tokens: 32768 });
+  });
+
+  it("accumulates thinking blocks with signature into history and emits thinking deltas", async () => {
+    const received: unknown[] = [];
+    const requests: unknown[] = [];
+    const loop = makeEffortLoop([thinkingTurn("let me think", "answer")], received, requests, "low");
+    await loop.runTurn("q", new AbortController().signal);
+    const assistant = loop.messages[1] as { role: string; content: Array<Record<string, unknown>> };
+    expect(assistant.content[0]).toEqual({ type: "thinking", thinking: "let me think", signature: "sig123" });
+    expect(assistant.content[1]).toEqual({ type: "text", text: "answer" });
+    const thinkingMsgs = received.filter(m =>
+      (m as { event?: { delta?: { type?: string } } }).event?.delta?.type === "thinking_delta");
+    expect(thinkingMsgs).toHaveLength(1);
   });
 });

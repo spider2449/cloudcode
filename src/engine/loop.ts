@@ -1,5 +1,5 @@
 import type { EngineMessage, ContentBlock, Usage } from "./messages.js";
-import { textDelta, assistantMessage, errorResult } from "./messages.js";
+import { textDelta, thinkingDelta, assistantMessage, errorResult } from "./messages.js";
 import type { ToolDef } from "./tools/types.js";
 import type { MessagesClient } from "./api.js";
 import type { PermissionMode } from "../agent/session.js";
@@ -7,6 +7,7 @@ import type { PermissionStore } from "../agent/permissionStore.js";
 import { decidePermission } from "./permissions.js";
 import { costUsd } from "./pricing.js";
 import { compactHistory, estimateTokens } from "./compact.js";
+import { EFFORT_BUDGETS, type EffortLevel } from "./effort.js";
 
 const MAX_TOKENS = 8192;
 const MAX_LOOP_TURNS = 100;
@@ -19,6 +20,7 @@ export interface EngineOptions {
   cwd: string;
   permissionMode: PermissionMode;
   store: PermissionStore;
+  effort?: EffortLevel;
   onMessage(msg: EngineMessage): void;
   requestPermission(toolName: string, input: Record<string, unknown>): Promise<boolean>;
 }
@@ -54,11 +56,13 @@ export class EngineLoop {
   tools: ToolDef[];
   private model: string;
   private mode: PermissionMode;
+  private effort: EffortLevel;
 
   constructor(private opts: EngineOptions) {
     this.model = opts.model;
     this.mode = opts.permissionMode;
     this.tools = opts.tools;
+    this.effort = opts.effort ?? "off";
   }
 
   setModel(model: string): void {
@@ -67,6 +71,10 @@ export class EngineLoop {
 
   setPermissionMode(mode: PermissionMode): void {
     this.mode = mode;
+  }
+
+  setEffort(level: EffortLevel): void {
+    this.effort = level;
   }
 
   async runTurn(userText: string, signal: AbortSignal): Promise<void> {
@@ -145,28 +153,39 @@ export class EngineLoop {
       }
       pendingJson = "";
     };
+    // With extended thinking enabled, budget_tokens counts against
+    // max_tokens, so raise the cap to keep MAX_TOKENS available for the
+    // visible answer.
+    const budget = this.effort === "off" ? undefined : EFFORT_BUDGETS[this.effort];
     const req = {
       model: this.model,
       system: [{ type: "text" as const, text: this.opts.systemPrompt, cache_control: { type: "ephemeral" as const } }],
       messages: withCacheControlOnLastBlock(this.messages),
       tools: this.tools.map(t => ({ name: t.name, description: t.description, input_schema: t.input_schema })),
-      max_tokens: MAX_TOKENS
+      max_tokens: budget === undefined ? MAX_TOKENS : budget + MAX_TOKENS,
+      ...(budget === undefined ? {} : { thinking: { type: "enabled" as const, budget_tokens: budget } })
     };
     for await (const event of this.opts.client.create(req, signal)) {
       const type = event.type as string;
       if (type === "content_block_start") {
-        const cb = event.content_block as { type: string; text?: string; id?: string; name?: string };
+        const cb = event.content_block as { type: string; text?: string; id?: string; name?: string; thinking?: string };
         finalizePendingToolInput();
         if (cb.type === "text") blocks.push({ type: "text", text: cb.text ?? "" });
+        else if (cb.type === "thinking") blocks.push({ type: "thinking", thinking: cb.thinking ?? "", signature: "" });
         else if (cb.type === "tool_use") {
           blocks.push({ type: "tool_use", id: cb.id ?? "", name: cb.name ?? "", input: {} });
         }
       } else if (type === "content_block_delta") {
-        const delta = event.delta as { type: string; text?: string; partial_json?: string };
+        const delta = event.delta as { type: string; text?: string; partial_json?: string; thinking?: string; signature?: string };
         const last = blocks[blocks.length - 1];
         if (delta.type === "text_delta" && last?.type === "text") {
           last.text += delta.text ?? "";
           this.opts.onMessage(textDelta(delta.text ?? ""));
+        } else if (delta.type === "thinking_delta" && last?.type === "thinking") {
+          last.thinking += delta.thinking ?? "";
+          this.opts.onMessage(thinkingDelta(delta.thinking ?? ""));
+        } else if (delta.type === "signature_delta" && last?.type === "thinking") {
+          last.signature += delta.signature ?? "";
         } else if (delta.type === "input_json_delta" && last?.type === "tool_use") {
           pendingJson += delta.partial_json ?? "";
         }

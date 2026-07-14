@@ -7,6 +7,7 @@ export interface StreamRequest {
   messages: unknown[];
   tools: unknown[];
   max_tokens: number;
+  thinking?: { type: "enabled"; budget_tokens: number };
 }
 
 export interface MessagesClient {

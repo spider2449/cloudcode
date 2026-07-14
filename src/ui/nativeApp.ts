@@ -9,7 +9,7 @@ import { parseSlash } from "../commands/registry.js";
 import type { CommandContext } from "../commands/types.js";
 import { FileIndex } from "../commands/fileIndex.js";
 import type { CompletionContext } from "../commands/completion.js";
-import { toDisplayItems, streamDelta, type DisplayItem } from "./transcript.js";
+import { toDisplayItems, streamDelta, streamThinkingDelta, type DisplayItem } from "./transcript.js";
 import { fetchModels } from "../agent/models.js";
 import { loadMcpServers, formatMcpStatus } from "../agent/mcp.js";
 import { loadSkills, formatSkillList, type Skill } from "../agent/skills.js";
@@ -26,6 +26,8 @@ import { InlineRenderer, type BottomState } from "./term/render.js";
 import { CLEAR_AND_HOME } from "./term/ansi.js";
 import type { ITerminal } from "./term/terminal.js";
 import type { Key } from "./input.js";
+import { loadSettings } from "../agent/settings.js";
+import type { EffortLevel } from "../engine/effort.js";
 
 export interface AppProps {
   cwd: string;
@@ -57,9 +59,11 @@ export class App {
 
   private phase: Phase = "idle";
   private streamText = "";
+  private thinkingText = "";
   private activeTool: string | undefined;
   private providerName: string;
   private model: string | undefined;
+  private effort: EffortLevel = loadSettings().effort ?? "off";
   private servedModel: string | undefined;
   private mode: PermissionMode;
   private permissionQueue: PermissionRequest[] = [];
@@ -170,11 +174,13 @@ export class App {
   handleMessage(msg: EngineMessage): void {
     const served = (msg as { message?: { model?: string } }).message?.model;
     if (served) this.servedModel = served;
+    const thinking = streamThinkingDelta(msg);
+    if (thinking) { this.thinkingText += thinking; this.recompute(); return; }
     const delta = streamDelta(msg);
-    if (delta) { this.streamText += delta; this.recompute(); return; }
+    if (delta) { this.thinkingText = ""; this.streamText += delta; this.recompute(); return; }
     const mapped = toDisplayItems(msg);
     for (const item of mapped) this.buffer.append(item);
-    if (mapped.some(i => i.kind === "assistant")) { this.streamText = ""; this.activeTool = undefined; }
+    if (mapped.some(i => i.kind === "assistant")) { this.streamText = ""; this.thinkingText = ""; this.activeTool = undefined; }
     const lastTool = [...mapped].reverse().find((i): i is Extract<DisplayItem, { kind: "tool" }> => i.kind === "tool");
     if (lastTool) this.activeTool = lastTool.label.split(" ")[0];
 
@@ -184,6 +190,7 @@ export class App {
         this.buffer.append({ kind: "assistant", text: this.streamText });
         this.streamText = "";
       }
+      this.thinkingText = "";
       this.activeTool = undefined;
       this.phase = "idle";
       const cost = (msg as { total_cost_usd?: number }).total_cost_usd;
@@ -217,6 +224,7 @@ export class App {
       providerName: name,
       provider: this.props.providers[name],
       model: this.modelFor(name),
+      effort: this.effort,
       permissionMode: modeOverride ?? this.mode,
       resume,
       cwd: this.props.cwd,
@@ -289,6 +297,7 @@ export class App {
         this.terminal.write(CLEAR_AND_HOME);
         this.renderer.invalidate();
         this.streamText = "";
+        this.thinkingText = "";
         this.activeTool = undefined;
         this.appendWelcome();
         await this.restartSession(this.providerName);
@@ -297,6 +306,8 @@ export class App {
       setModel: async m => { await this.session?.setModel(m); this.model = m; this.servedModel = undefined; this.recompute(); },
       availableModels: () => this.availableModels,
       currentModel: () => this.model,
+      setEffort: async level => { await this.session?.setEffort(level); this.effort = level; },
+      currentEffort: () => this.effort,
       setPermissionMode: async m => {
         const pm = m as PermissionMode;
         await this.session?.setPermissionMode(pm);
@@ -481,6 +492,7 @@ export class App {
       overlay: this.overlay.mode,
       streaming: this.phase === "streaming",
       streamingText: this.streamText,
+      thinkingText: this.thinkingText,
       activeTool: this.activeTool,
       compactPct: this.compactPct,
       inputRender: inputVisible

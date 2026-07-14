@@ -15,6 +15,7 @@ function baseBottom(overrides: Partial<BottomState> = {}): BottomState {
     overlay: "none",
     streaming: false,
     streamingText: "",
+    thinkingText: "",
     activeTool: undefined,
     compactPct: undefined,
     inputRender: emptyInputRender(),
@@ -151,5 +152,12 @@ describe("InlineRenderer", () => {
   it("finalize() resets the scroll region and parks the cursor on a fresh line", () => {
     const r = new InlineRenderer();
     expect(r.finalize()).toBe("\x1b[r\r\n");
+  });
+
+  it("renders thinkingText dim above the stream text", () => {
+    const r = new InlineRenderer();
+    const buf = new Buffer();
+    const out = r.frame(buf, baseBottom({ thinkingText: "pondering...", streamingText: "" }), theme, size);
+    expect(out).toContain("\x1b[2mpondering...\x1b[22m");
   });
 });

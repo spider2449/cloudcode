@@ -2,11 +2,13 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { configDir } from "./providers.js";
 import type { PermissionMode } from "./session.js";
+import { isEffortLevel, type EffortLevel } from "../engine/effort.js";
 
 export interface Settings {
   provider?: string;
   model?: string;
   permissionMode?: PermissionMode;
+  effort?: EffortLevel;
 }
 
 // bypassPermissions is deliberately not persistable: a saved bypass would make
@@ -33,6 +35,7 @@ export function loadSettings(filePath: string = DEFAULT_FILE()): Settings {
   if (PERSISTABLE_MODES.includes(raw.permissionMode as PermissionMode)) {
     out.permissionMode = raw.permissionMode as PermissionMode;
   }
+  if (isEffortLevel(raw.effort)) out.effort = raw.effort;
   return out;
 }
 
