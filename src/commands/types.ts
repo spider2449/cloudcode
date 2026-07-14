@@ -1,10 +1,13 @@
 import type { PermissionMode } from "../agent/session.js";
 import type { CompletionContext } from "./completion.js";
+import type { EffortLevel } from "../engine/effort.js";
 
 export interface CommandContext {
   notice(text: string): void;
   clearSession(): Promise<void>;
   setModel(model: string): Promise<void>;
+  setEffort(level: EffortLevel): Promise<void>;
+  currentEffort(): EffortLevel;
   availableModels(): string[];
   currentModel(): string | undefined;
   setPermissionMode(mode: PermissionMode): Promise<void>;

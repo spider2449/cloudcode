@@ -32,6 +32,8 @@ import { VERSION } from "../version.js";
 import { ProjectPicker } from "./ProjectPicker.js";
 import { recentProjects, resolveProjectPath } from "../commands/projectPath.js";
 import { staticRows, resizeSafeFillerHeight, liveRegionFloor, textRows, itemRows } from "./bottomFill.js";
+import { loadSettings } from "../agent/settings.js";
+import type { EffortLevel } from "../engine/effort.js";
 
 export interface AppProps {
   cwd: string;
@@ -101,6 +103,7 @@ export function App(props: AppProps) {
   const resetItems = () => { setItems([]); setTranscriptKey(k => k + 1); };
   const [providerName, setProviderName] = useState(props.initialProvider);
   const [model, setModel] = useState<string | undefined>(modelFor(props.initialProvider));
+  const effortRef = useRef<EffortLevel>(loadSettings().effort ?? "off");
   const [mode, setMode] = useState<PermissionMode>(props.initialMode ?? "default");
   const [servedModel, setServedModel] = useState<string | undefined>(undefined);
   const [permissionQueue, setPermissionQueue] = useState<PermissionRequest[]>([]);
@@ -242,6 +245,7 @@ export function App(props: AppProps) {
       providerName: name,
       provider: props.providers[name],
       model: modelFor(name),
+      effort: effortRef.current,
       permissionMode: modeOverride ?? mode,
       resume,
       cwd: props.cwd,
@@ -322,6 +326,8 @@ export function App(props: AppProps) {
     setModel: async m => { await sessionRef.current?.setModel(m); setModel(m); setServedModel(undefined); },
     availableModels: () => availableModelsRef.current,
     currentModel: () => model,
+    setEffort: async level => { await sessionRef.current?.setEffort(level); effortRef.current = level; },
+    currentEffort: () => effortRef.current,
     setPermissionMode: async m => {
       const pm = m as PermissionMode;
       await sessionRef.current?.setPermissionMode(pm);

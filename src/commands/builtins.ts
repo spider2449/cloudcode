@@ -11,15 +11,17 @@ import {
   skillReposDir, defaultGitRunner
 } from "../agent/skillRepos.js";
 import { scanRepoSkills } from "../agent/skills.js";
+import { EFFORT_LEVELS, isEffortLevel } from "../engine/effort.js";
 
 const MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
 
-const CONFIG_KEYS = ["provider", "model", "permissionMode", "theme"] as const;
+const CONFIG_KEYS = ["provider", "model", "permissionMode", "theme", "effort"] as const;
 type ConfigKey = (typeof CONFIG_KEYS)[number];
 
 function configValue(key: ConfigKey): string {
   if (key === "theme") return loadThemeName();
-  return loadSettings()[key as keyof Settings] ?? "(unset)";
+  if (key === "effort") return loadSettings().effort ?? "off";
+  return loadSettings()[key as keyof Omit<Settings, "effort">] ?? "(unset)";
 }
 
 const commands: Command[] = [
@@ -93,6 +95,14 @@ const commands: Command[] = [
           saveSetting("permissionMode", value);
           await ctx.setPermissionMode(value as PermissionMode);
           break;
+        case "effort":
+          if (!isEffortLevel(value)) {
+            ctx.notice(`Unknown level: ${value}. Levels: ${EFFORT_LEVELS.join(", ")}`);
+            return;
+          }
+          saveSetting("effort", value);
+          await ctx.setEffort(value);
+          break;
         case "theme":
           if (!(value in THEMES)) {
             ctx.notice(`Unknown theme: ${value}. Themes: ${Object.keys(THEMES).join(", ")}`);
@@ -111,6 +121,7 @@ const commands: Command[] = [
         key === "provider" ? cctx.providerNames() :
         key === "permissionMode" ? MODES :
         key === "theme" ? Object.keys(THEMES) :
+        key === "effort" ? [...EFFORT_LEVELS] :
         key === "model" ? cctx.availableModels() : [];
       return values.filter(v => v.startsWith(valuePrefix)).map(v => `${key} ${v}`);
     }
@@ -226,6 +237,27 @@ const commands: Command[] = [
     name: "cost",
     description: "Show token/cost usage for this session",
     async run(ctx) { ctx.notice(ctx.costSummary()); }
+  },
+  {
+    name: "effort",
+    description: "Set reasoning effort: /effort <off|low|medium|high>; no arg lists levels",
+    async run(ctx, args) {
+      if (!args) {
+        const current = ctx.currentEffort();
+        ctx.notice(EFFORT_LEVELS.map(l => `${l === current ? "●" : " "} ${l}`).join("\n"));
+        return;
+      }
+      if (!isEffortLevel(args)) {
+        ctx.notice(`Unknown level: ${args}. Levels: ${EFFORT_LEVELS.join(", ")}`);
+        return;
+      }
+      saveSetting("effort", args);
+      await ctx.setEffort(args);
+      ctx.notice(`Effort: ${args}`);
+    },
+    completeArgs(prefix) {
+      return EFFORT_LEVELS.filter(l => l.startsWith(prefix));
+    }
   },
   {
     name: "mcp",

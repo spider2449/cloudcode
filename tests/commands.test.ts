@@ -46,7 +46,9 @@ function mockCtx(): CommandContext {
     listThemes: vi.fn().mockReturnValue("● dark\n  light\n  mono"),
     switchProject: vi.fn(),
     openProjectPicker: vi.fn(),
-    currentCwd: vi.fn().mockReturnValue(process.cwd())
+    currentCwd: vi.fn().mockReturnValue(process.cwd()),
+    setEffort: vi.fn().mockResolvedValue(undefined),
+    currentEffort: vi.fn().mockReturnValue("off")
   };
 }
 
@@ -76,7 +78,7 @@ describe("parseSlash", () => {
 describe("builtins", () => {
   it("registers all v1 commands", () => {
     const names = [...buildRegistry().keys()].sort();
-    expect(names).toEqual(["clear", "compact", "config", "cost", "exit", "help", "init", "mcp", "model", "new", "permissions", "provider", "resume", "set", "skill", "skills", "theme"]);
+    expect(names).toEqual(["clear", "compact", "config", "cost", "effort", "exit", "help", "init", "mcp", "model", "new", "permissions", "provider", "resume", "set", "skill", "skills", "theme"]);
   });
 
   it("/new starts a new session", async () => {
@@ -220,13 +222,46 @@ describe("/theme", () => {
   });
 });
 
+describe("/effort", () => {
+  const run = async (args: string, ctx = mockCtx()) => {
+    const cmd = buildRegistry().get("effort")!;
+    await cmd.run(ctx, args);
+    return ctx;
+  };
+
+  it("lists levels with current marked when no args", async () => {
+    const ctx = mockCtx();
+    vi.mocked(ctx.currentEffort).mockReturnValue("medium");
+    await run("", ctx);
+    expect(ctx.notice).toHaveBeenCalledWith("  off\n  low\n● medium\n  high");
+  });
+
+  it("sets and persists a valid level", async () => {
+    const ctx = await run("high");
+    expect(saveSetting).toHaveBeenCalledWith("effort", "high");
+    expect(ctx.setEffort).toHaveBeenCalledWith("high");
+    expect(ctx.notice).toHaveBeenCalledWith("Effort: high");
+  });
+
+  it("rejects unknown levels", async () => {
+    const ctx = await run("extreme");
+    expect(ctx.setEffort).not.toHaveBeenCalled();
+    expect(ctx.notice).toHaveBeenCalledWith("Unknown level: extreme. Levels: off, low, medium, high");
+  });
+
+  it("completes level names", () => {
+    const cmd = buildRegistry().get("effort")!;
+    expect(cmd.completeArgs!("m", {} as never)).toEqual(["medium"]);
+  });
+});
+
 describe("/config", () => {
   it("lists all keys with persisted values when no arg is given", async () => {
     vi.mocked(loadSettings).mockReturnValue({ provider: "local" });
     const ctx = mockCtx();
     await buildRegistry().get("config")!.run(ctx, "");
     expect(ctx.notice).toHaveBeenCalledWith(
-      "provider = local\nmodel = (unset)\npermissionMode = (unset)\ntheme = dark"
+      "provider = local\nmodel = (unset)\npermissionMode = (unset)\ntheme = dark\neffort = off"
     );
   });
 
@@ -241,7 +276,7 @@ describe("/config", () => {
     const ctx = mockCtx();
     await buildRegistry().get("config")!.run(ctx, "editor vim");
     expect(saveSetting).not.toHaveBeenCalled();
-    expect(ctx.notice).toHaveBeenCalledWith("Unknown key: editor. Keys: provider, model, permissionMode, theme");
+    expect(ctx.notice).toHaveBeenCalledWith("Unknown key: editor. Keys: provider, model, permissionMode, theme, effort");
   });
 
   it("sets provider: persists then switches live", async () => {
@@ -294,6 +329,14 @@ describe("/config", () => {
     await buildRegistry().get("config")!.run(ctx, "theme solarized");
     expect(ctx.setTheme).not.toHaveBeenCalledWith("solarized");
     expect(ctx.notice).toHaveBeenCalledWith("Unknown theme: solarized. Themes: dark, light, mono");
+  });
+
+  it("sets effort", async () => {
+    const cmd = buildRegistry().get("config")!;
+    const ctx = mockCtx();
+    await cmd.run(ctx, "effort low");
+    expect(saveSetting).toHaveBeenCalledWith("effort", "low");
+    expect(ctx.setEffort).toHaveBeenCalledWith("low");
   });
 
   it("completes keys and values", () => {

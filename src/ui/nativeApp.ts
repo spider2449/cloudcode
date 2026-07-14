@@ -26,6 +26,8 @@ import { InlineRenderer, type BottomState } from "./term/render.js";
 import { CLEAR_AND_HOME } from "./term/ansi.js";
 import type { ITerminal } from "./term/terminal.js";
 import type { Key } from "./input.js";
+import { loadSettings } from "../agent/settings.js";
+import type { EffortLevel } from "../engine/effort.js";
 
 export interface AppProps {
   cwd: string;
@@ -60,6 +62,7 @@ export class App {
   private activeTool: string | undefined;
   private providerName: string;
   private model: string | undefined;
+  private effort: EffortLevel = loadSettings().effort ?? "off";
   private servedModel: string | undefined;
   private mode: PermissionMode;
   private permissionQueue: PermissionRequest[] = [];
@@ -217,6 +220,7 @@ export class App {
       providerName: name,
       provider: this.props.providers[name],
       model: this.modelFor(name),
+      effort: this.effort,
       permissionMode: modeOverride ?? this.mode,
       resume,
       cwd: this.props.cwd,
@@ -297,6 +301,8 @@ export class App {
       setModel: async m => { await this.session?.setModel(m); this.model = m; this.servedModel = undefined; this.recompute(); },
       availableModels: () => this.availableModels,
       currentModel: () => this.model,
+      setEffort: async level => { await this.session?.setEffort(level); this.effort = level; },
+      currentEffort: () => this.effort,
       setPermissionMode: async m => {
         const pm = m as PermissionMode;
         await this.session?.setPermissionMode(pm);

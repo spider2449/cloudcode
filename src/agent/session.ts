@@ -9,6 +9,7 @@ import { McpManager } from "../engine/mcpClient.js";
 import { buildSystemPrompt } from "../engine/systemPrompt.js";
 import type { ProviderConfig } from "./providers.js";
 import type { McpServerConfig, McpServerStatusEntry } from "./mcp.js";
+import type { EffortLevel } from "../engine/effort.js";
 
 export type PermissionMode = "default" | "acceptEdits" | "bypassPermissions";
 
@@ -24,6 +25,7 @@ export interface AgentSessionOptions {
   providerName: string;
   provider: ProviderConfig;
   model?: string;
+  effort?: EffortLevel;
   permissionMode: PermissionMode;
   resume?: string;
   cwd: string;
@@ -54,6 +56,7 @@ export class AgentSession {
       systemPrompt: buildSystemPrompt(this.opts.cwd),
       tools: builtinTools(),
       cwd: this.opts.cwd,
+      effort: this.opts.effort,
       permissionMode: this.opts.permissionMode,
       store,
       onMessage: this.opts.onMessage,
@@ -94,6 +97,10 @@ export class AgentSession {
 
   async setModel(model: string): Promise<void> {
     this.loop?.setModel(model);
+  }
+
+  async setEffort(level: EffortLevel): Promise<void> {
+    this.loop?.setEffort(level);
   }
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {
