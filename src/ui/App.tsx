@@ -11,7 +11,7 @@ import { parseSlash } from "../commands/registry.js";
 import type { CommandContext } from "../commands/types.js";
 import { FileIndex } from "../commands/fileIndex.js";
 import type { CompletionContext } from "../commands/completion.js";
-import { toDisplayItems, streamDelta, type DisplayItem } from "./transcript.js";
+import { toDisplayItems, streamDelta, streamThinkingDelta, type DisplayItem } from "./transcript.js";
 import { MessageList } from "./MessageList.js";
 import { InputBox } from "./InputBox.js";
 import { PermissionDialog } from "./PermissionDialog.js";
@@ -94,9 +94,9 @@ export function App(props: AppProps) {
   // once; rendering that as several separate frames (rather than one) is
   // what produces the transient ghost/misplaced frames right as a response
   // completes.
-  type LiveState = { phase: Phase; streamText: string; activeTool?: string };
-  const [live, setLive] = useState<LiveState>({ phase: "idle", streamText: "", activeTool: undefined });
-  const { phase, streamText, activeTool } = live;
+  type LiveState = { phase: Phase; streamText: string; activeTool?: string; thinkingText: string };
+  const [live, setLive] = useState<LiveState>({ phase: "idle", streamText: "", activeTool: undefined, thinkingText: "" });
+  const { phase, streamText, activeTool, thinkingText } = live;
   const patchLive = (patch: Partial<LiveState>) => setLive(prev => ({ ...prev, ...patch }));
   // Remount key for the <Static> transcript; bump whenever items are reset.
   const [transcriptKey, setTranscriptKey] = useState(0);
@@ -117,6 +117,7 @@ export function App(props: AppProps) {
   const startedAtRef = useRef(Date.now());
   const [elapsedMs, setElapsedMs] = useState(0);
   const streamRef = useRef("");
+  const thinkingRef = useRef("");
   const [workStartedAt, setWorkStartedAt] = useState(0);
   const liveRegionRef = useRef<DOMElement>(null);
   const [dynamicRows, setDynamicRows] = useState(0);
@@ -195,12 +196,19 @@ export function App(props: AppProps) {
   function handleMessage(msg: EngineMessage): void {
     const served = (msg as { message?: { model?: string } }).message?.model;
     if (served) setServedModel(served);
+    const thinking = streamThinkingDelta(msg);
+    if (thinking) { thinkingRef.current += thinking; patchLive({ thinkingText: thinkingRef.current }); return; }
     const delta = streamDelta(msg);
-    if (delta) { setStream(streamRef.current + delta); return; }
+    if (delta) {
+      thinkingRef.current = "";
+      streamRef.current = streamRef.current + delta;
+      patchLive({ streamText: streamRef.current, thinkingText: "" });
+      return;
+    }
     const mapped = toDisplayItems(msg);
     if (mapped.length > 0) setItems(prev => [...prev, ...mapped]);
     const patch: Partial<LiveState> = {};
-    if (mapped.some(i => i.kind === "assistant")) { streamRef.current = ""; patch.streamText = ""; patch.activeTool = undefined; }
+    if (mapped.some(i => i.kind === "assistant")) { streamRef.current = ""; thinkingRef.current = ""; patch.streamText = ""; patch.thinkingText = ""; patch.activeTool = undefined; }
     const lastTool = [...mapped].reverse().find(i => i.kind === "tool");
     if (lastTool && lastTool.kind === "tool") patch.activeTool = lastTool.label.split(" ")[0];
     const t = (msg as { type: string }).type;
@@ -210,7 +218,9 @@ export function App(props: AppProps) {
         setItems(prev => [...prev, { kind: "assistant", text }]);
         streamRef.current = "";
       }
+      thinkingRef.current = "";
       patch.streamText = "";
+      patch.thinkingText = "";
       patch.activeTool = undefined;
       patch.phase = "idle";
       const cost = (msg as { total_cost_usd?: number }).total_cost_usd;
@@ -320,7 +330,8 @@ export function App(props: AppProps) {
       setItems(welcomeItems(providerName));
       setTranscriptKey(k => k + 1);
       streamRef.current = "";
-      patchLive({ streamText: "", activeTool: undefined });
+      thinkingRef.current = "";
+      patchLive({ streamText: "", thinkingText: "", activeTool: undefined });
       await restartSession(providerName);
     },
     setModel: async m => { await sessionRef.current?.setModel(m); setModel(m); setServedModel(undefined); },
@@ -461,9 +472,10 @@ export function App(props: AppProps) {
   const inputDisabled = phase === "streaming";
   const streamTailCap = Math.max(3, termSize.rows - 14);
   const streamRowsFloor = streamText !== "" ? textRows(tailForHeight(streamText, streamTailCap, termSize.columns), termSize.columns) : 0;
+  const thinkingRowsFloor = thinkingText !== "" ? textRows(tailForHeight(thinkingText, 6, termSize.columns), termSize.columns) : 0;
   const overlayActive = showResumePicker || showProjectPicker || phase === "permission";
   let liveFloor = liveRegionFloor({
-    streamRows: streamRowsFloor,
+    streamRows: streamRowsFloor + thinkingRowsFloor,
     streaming: phase === "streaming",
     compacting: compactPct !== undefined,
     // InputBox's exact reported row count while visible (see onInputRowsChange
@@ -558,6 +570,13 @@ export function App(props: AppProps) {
               reaches the terminal height, Ink clears and rewrites the whole
               screen on every delta, which breaks scrolling mid-response. The
               full text is committed to the Static transcript on "result". */}
+          {thinkingText !== "" && (
+            <Box>
+              <Text dimColor wrap="wrap">
+                {tailForHeight(thinkingText, 6, termSize.columns)}
+              </Text>
+            </Box>
+          )}
           {streamText !== "" && (
             <Text>
               {/* Reserve rows for everything else in the live region below this

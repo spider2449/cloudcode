@@ -12,6 +12,7 @@ export interface BottomState {
   overlay: OverlayMode;
   streaming: boolean;
   streamingText: string;
+  thinkingText: string;
   activeTool?: string;
   compactPct?: number;
   inputRender: InputBoxRender;
@@ -60,6 +61,11 @@ export class InlineRenderer {
     if (bottom.streamingText !== "") {
       const streamTailCap = Math.max(3, rows - dyn.length - 3);
       dyn.unshift(...tailForHeight(bottom.streamingText, streamTailCap, columns).split("\n"));
+    }
+    if (bottom.thinkingText !== "") {
+      const thinkTailCap = Math.max(2, Math.min(6, rows - dyn.length - 3));
+      dyn.unshift(...tailForHeight(bottom.thinkingText, thinkTailCap, columns)
+        .split("\n").map(l => `\x1b[2m${l}\x1b[22m`));
     }
 
     // Cap the footer so the scroll region always keeps at least 1 row.

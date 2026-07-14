@@ -25,6 +25,16 @@ export function streamDelta(msg: EngineMessage): string | undefined {
   return undefined;
 }
 
+export function streamThinkingDelta(msg: EngineMessage): string | undefined {
+  const m = msg as Record<string, unknown>;
+  if (m.type !== "stream_event") return undefined;
+  const event = m.event as { type?: string; delta?: { type?: string; thinking?: string } } | undefined;
+  if (event?.type === "content_block_delta" && event.delta?.type === "thinking_delta") {
+    return event.delta.thinking;
+  }
+  return undefined;
+}
+
 export function diffLines(name: string, input: Record<string, unknown>, cap = 20): DiffLine[] {
   const lines: DiffLine[] = [];
   if (name === "Edit") {

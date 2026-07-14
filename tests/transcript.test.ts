@@ -75,6 +75,19 @@ describe("streamDelta", () => {
   });
 });
 
+import { streamThinkingDelta } from "../src/ui/transcript.js";
+import { thinkingDelta, textDelta } from "../src/engine/messages.js";
+
+describe("streamThinkingDelta", () => {
+  it("extracts thinking text", () => {
+    expect(streamThinkingDelta(thinkingDelta("hmm"))).toBe("hmm");
+  });
+  it("ignores text deltas and other messages", () => {
+    expect(streamThinkingDelta(textDelta("hi"))).toBeUndefined();
+    expect(streamThinkingDelta({ type: "result", subtype: "error_during_execution", result: "x" } as unknown as EngineMessage)).toBeUndefined();
+  });
+});
+
 describe("diffLines", () => {
   it("maps Edit old/new strings to -/+ lines", () => {
     expect(diffLines("Edit", { old_string: "a\nb", new_string: "c" })).toEqual([
