@@ -26,7 +26,7 @@ import { InlineRenderer, type BottomState } from "./term/render.js";
 import { CLEAR_AND_HOME } from "./term/ansi.js";
 import type { ITerminal } from "./term/terminal.js";
 import type { Key } from "./input.js";
-import { loadSettings } from "../agent/settings.js";
+import { loadSettings, saveSetting } from "../agent/settings.js";
 import type { EffortLevel } from "../engine/effort.js";
 
 export interface AppProps {
@@ -311,6 +311,7 @@ export class App {
       setPermissionMode: async m => {
         const pm = m as PermissionMode;
         await this.session?.setPermissionMode(pm);
+        if (pm !== "bypassPermissions") saveSetting("permissionMode", pm);
         this.mode = pm;
         this.recompute();
       },

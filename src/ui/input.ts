@@ -38,6 +38,7 @@ const UNKNOWN_CSI_RE = /^\x1b\[[0-9;?]*[A-Za-z~]/;
 // impossible: both send the same "\r" byte in a legacy terminal.
 const CSI_U_RE = /^\x1b\[(\d+)(?:;(\d+))?u/;
 const CSI_U_ENTER_KEYCODE = 13;
+const CSI_U_TAB_KEYCODE = 9;
 const CSI_U_SHIFT_BIT = 1; // (modifiers - 1) & CSI_U_SHIFT_BIT
 
 const SEQUENCES: Record<string, Key> = {
@@ -118,8 +119,11 @@ export class KeyDecoder {
       if (keycode === CSI_U_ENTER_KEYCODE) {
         const shifted = ((modifiers - 1) & CSI_U_SHIFT_BIT) !== 0;
         keys.push(shifted ? { t: "shift-enter" } : { t: "enter" });
+      } else if (keycode === CSI_U_TAB_KEYCODE) {
+        const shifted = ((modifiers - 1) & CSI_U_SHIFT_BIT) !== 0;
+        keys.push(shifted ? { t: "backtab" } : { t: "tab" });
       }
-      // Other CSI u key reports (not Enter) aren't otherwise handled; drop them.
+      // Other CSI u key reports (not Enter/Tab) aren't otherwise handled; drop them.
       return csiU[0].length;
     }
 

@@ -113,6 +113,13 @@ describe("KeyDecoder", () => {
     expect(d.feed(b("\x1b[13;2u"))).toEqual([{ t: "shift-enter" }]);
   });
 
+  it("decodes CSI u Tab/Shift+Tab reports from the Kitty keyboard protocol", () => {
+    const d = new KeyDecoder();
+    expect(d.feed(b("\x1b[9u"))).toEqual([{ t: "tab" }]);
+    expect(d.feed(b("\x1b[9;1u"))).toEqual([{ t: "tab" }]);
+    expect(d.feed(b("\x1b[9;2u"))).toEqual([{ t: "backtab" }]);
+  });
+
   it("decodes ESC+CR/LF as Shift+Enter (VS Code integrated terminal's encoding)", () => {
     const d = new KeyDecoder();
     expect(d.feed(b("\x1b\r"))).toEqual([{ t: "shift-enter" }]);

@@ -1,6 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { configDir } from "../agent/providers.js";
+import { loadSettings, saveSetting } from "../agent/settings.js";
 
 export interface Theme {
   user: string;
@@ -18,19 +16,11 @@ export const THEMES: Record<string, Theme> = {
   mono: { user: "white", accent: "white", muted: "gray", error: "white", success: "white", removed: "gray", warning: "white" }
 };
 
-const DEFAULT_FILE = () => join(configDir(), "theme.json");
-
-export function loadThemeName(filePath: string = DEFAULT_FILE()): string {
-  try {
-    const raw = JSON.parse(readFileSync(filePath, "utf8"));
-    if (raw && typeof raw.name === "string" && raw.name in THEMES) return raw.name;
-  } catch {
-    // missing or invalid file: fall through to default
-  }
-  return "dark";
+export function loadThemeName(filePath?: string): string {
+  const { theme } = loadSettings(filePath);
+  return theme && theme in THEMES ? theme : "dark";
 }
 
-export function saveThemeName(name: string, filePath: string = DEFAULT_FILE()): void {
-  mkdirSync(dirname(filePath), { recursive: true });
-  writeFileSync(filePath, JSON.stringify({ name }, null, 2));
+export function saveThemeName(name: string, filePath?: string): void {
+  saveSetting("theme", name, filePath);
 }

@@ -9,6 +9,7 @@ export interface Settings {
   model?: string;
   permissionMode?: PermissionMode;
   effort?: EffortLevel;
+  theme?: string;
 }
 
 // bypassPermissions is deliberately not persistable: a saved bypass would make
@@ -36,6 +37,7 @@ export function loadSettings(filePath: string = DEFAULT_FILE()): Settings {
     out.permissionMode = raw.permissionMode as PermissionMode;
   }
   if (isEffortLevel(raw.effort)) out.effort = raw.effort;
+  if (typeof raw.theme === "string") out.theme = raw.theme;
   return out;
 }
 

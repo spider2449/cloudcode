@@ -25,6 +25,7 @@ import { loadMcpServers, formatMcpStatus } from "../agent/mcp.js";
 import { loadSkills, formatSkillList, type Skill } from "../agent/skills.js";
 import { mergeSkillCommands } from "../commands/skillCommands.js";
 import { THEMES, loadThemeName, saveThemeName } from "./theme.js";
+import { saveSetting } from "../agent/settings.js";
 import { ThemeProvider } from "./ThemeContext.js";
 import { loadWelcome } from "./welcome.js";
 import { tailForHeight } from "./streamTail.js";
@@ -342,6 +343,7 @@ export function App(props: AppProps) {
     setPermissionMode: async m => {
       const pm = m as PermissionMode;
       await sessionRef.current?.setPermissionMode(pm);
+      if (pm !== "bypassPermissions") saveSetting("permissionMode", pm);
       setMode(pm);
     },
     switchProvider: async name => {
