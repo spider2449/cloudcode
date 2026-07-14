@@ -388,10 +388,13 @@ export class App {
     if (slash) {
       const cmd = this.registry.get(slash.name);
       if (!cmd) { this.notice(`Unknown command: /${slash.name}`); this.recompute(); return; }
-      cmd.run(this.ctx, slash.args).catch(err => {
-        this.buffer.append({ kind: "error", text: err instanceof Error ? err.message : String(err) });
-        this.recompute();
-      });
+      cmd.run(this.ctx, slash.args)
+        .catch(err => {
+          this.buffer.append({ kind: "error", text: err instanceof Error ? err.message : String(err) });
+        })
+        // Async commands (e.g. /mcp) append output after the submit-time
+        // repaint, so repaint again once the command settles.
+        .finally(() => this.recompute());
       return;
     }
     this.sendUserMessage(text);

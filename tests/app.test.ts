@@ -7,6 +7,11 @@ vi.mock("../src/agent/models.js", () => ({
   fetchModels: vi.fn().mockResolvedValue(["model-a", "model-b"])
 }));
 vi.mock("../src/engine/api.js", () => ({ makeClient: vi.fn() }));
+vi.mock("../src/agent/mcp.js", async () => {
+  const actual = await vi.importActual<typeof import("../src/agent/mcp.js")>("../src/agent/mcp.js");
+  // Keep tests hermetic: never read the developer's real ~/.cloudcode/mcp.json.
+  return { ...actual, loadMcpServers: vi.fn().mockReturnValue({}) };
+});
 vi.mock("../src/engine/loop.js", async () => {
   const actual = await vi.importActual<typeof import("../src/engine/loop.js")>("../src/engine/loop.js");
   function SpiedEngineLoop(this: unknown, opts: ConstructorParameters<typeof actual.EngineLoop>[0]) {
@@ -109,6 +114,19 @@ describe("App", () => {
       const lines = frame.split("\r\n");
       expect(lines[lines.length - 1]).toContain("/repo");
     }
+  });
+
+  it("/mcp renders its output without requiring further input", async () => {
+    const { app, terminal } = makeApp([textTurn("ok")]);
+    void app.run();
+    // Let the startup repaints (initial frame + 50ms settle repaint) finish
+    // first so only the command itself can put its output on screen.
+    await wait(80);
+    terminal.writes.length = 0;
+    app.submitForTest("/mcp");
+    await wait();
+    const all = terminal.writes.join("");
+    expect(all).toContain("No MCP servers configured");
   });
 
   it("auto-compact fires when context usage reaches 80%", async () => {

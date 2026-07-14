@@ -60,6 +60,31 @@ where `chat_template.jinja` is a tool-capable template matching your model famil
 Verify the setup by POSTing a tool-forcing request to `/v1/messages`: the response
 must contain a `tool_use` content block and `stop_reason: "tool_use"`.
 
+## MCP servers
+
+MCP server configs are loaded from two files at startup and merged (project
+entries win on name conflicts):
+
+- Project: `<cwd>/.mcp.json` — shareable, can be checked into the repo.
+- User: `~/.cloudcode/mcp.json` — personal servers across projects.
+
+Both use Claude Code's `.mcp.json` shape: servers must live under a top-level
+`mcpServers` key, and stdio servers use a string `command` plus an `args` array.
+Files that are missing, invalid JSON, or missing the `mcpServers` key silently
+contribute no servers.
+
+    {
+      "mcpServers": {
+        "thunderbird": {
+          "type": "stdio",
+          "command": "node",
+          "args": ["D:\\path\\to\\mcp-bridge.cjs"]
+        }
+      }
+    }
+
+Check loaded servers and their tools with `/mcp` at runtime.
+
 ## Commands
 
 /help /clear /compact /config /init /model /permissions /provider /resume /set
