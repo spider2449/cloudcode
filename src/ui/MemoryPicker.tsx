@@ -13,7 +13,7 @@ export interface MemoryOption {
 }
 
 export function buildMemoryOptions(cwd: string, base: string = configDir()): MemoryOption[] {
-  const userPath = join(base, "CLAUDE.md");
+  const userPath = join(base, "CLOUDCODE.md");
   const projectPath = join(cwd, "CLAUDE.md");
   const suffix = (p: string) => (existsSync(p) ? "" : " (new)");
   return [

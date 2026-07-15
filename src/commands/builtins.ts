@@ -271,7 +271,7 @@ const commands: Command[] = [
   },
   {
     name: "memory",
-    description: "Edit memory files (user/project CLAUDE.md, auto-memory folder)",
+    description: "Edit memory files (user CLOUDCODE.md, project CLAUDE.md, auto-memory folder)",
     async run(ctx) { ctx.openMemoryPicker(); }
   },
   {

@@ -24,8 +24,8 @@ export function buildSystemPrompt(cwd: string, opts: SystemPromptOptions = {}): 
   const autoMemory = opts.autoMemory ?? loadSettings().autoMemoryEnabled ?? true;
   let prompt = BASE + cwd;
 
-  const userMd = readIfPresent(join(base, "CLAUDE.md"));
-  if (userMd !== "") prompt += `\n\n# User instructions (CLAUDE.md)\n${userMd}`;
+  const userMd = readIfPresent(join(base, "CLOUDCODE.md"));
+  if (userMd !== "") prompt += `\n\n# User instructions (CLOUDCODE.md)\n${userMd}`;
 
   const projectMd = readIfPresent(join(cwd, "CLAUDE.md"));
   if (projectMd !== "") prompt += `\n\n# Project instructions (CLAUDE.md)\n${projectMd}`;

@@ -23,12 +23,12 @@ describe("buildSystemPrompt", () => {
   });
 });
 
-describe("user CLAUDE.md and memory section", () => {
-  it("includes user-level CLAUDE.md from the config base", () => {
+describe("user CLOUDCODE.md and memory section", () => {
+  it("includes user-level CLOUDCODE.md from the config base", () => {
     const base = tmp();
-    writeFileSync(join(base, "CLAUDE.md"), "always answer in haiku");
+    writeFileSync(join(base, "CLOUDCODE.md"), "always answer in haiku");
     const p = buildSystemPrompt(tmp(), { configBase: base });
-    expect(p).toContain("# User instructions (CLAUDE.md)");
+    expect(p).toContain("# User instructions (CLOUDCODE.md)");
     expect(p).toContain("always answer in haiku");
   });
   it("includes the memory section with MEMORY.md content and creates the dir", () => {

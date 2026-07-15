@@ -13,7 +13,7 @@ describe("buildMemoryOptions", () => {
     const base = tmp();
     const cwd = tmp();
     const opts = buildMemoryOptions(cwd, base);
-    expect(opts[0]).toMatchObject({ label: "User memory (new)", path: join(base, "CLAUDE.md"), kind: "file" });
+    expect(opts[0]).toMatchObject({ label: "User memory (new)", path: join(base, "CLOUDCODE.md"), kind: "file" });
     expect(opts[1]).toMatchObject({ label: "Project memory (new)", path: join(cwd, "CLAUDE.md"), kind: "file" });
     expect(opts[2].kind).toBe("folder");
   });
