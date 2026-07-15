@@ -14,6 +14,9 @@ export const CURSOR_SHOW = "\x1b[?25h";
 export const AUTOWRAP_OFF = "\x1b[?7l";
 export const AUTOWRAP_ON = "\x1b[?7h";
 export const CLEAR_AND_HOME = "\x1b[2J\x1b[H";
+// 2J clears only the viewport; 3J also drops the terminal's scrollback so a
+// full transcript reprint doesn't stack a duplicate copy above it.
+export const CLEAR_ALL_AND_HOME = "\x1b[2J\x1b[3J\x1b[H";
 export const SGR_RESET = "\x1b[0m";
 
 // Erase from the cursor to the end of the screen. Used by the inline

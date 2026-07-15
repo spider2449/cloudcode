@@ -154,6 +154,10 @@ describe("App resize handling", () => {
     // must repaint from scratch: clear, then re-lay-out every transcript item
     // at the new width.
     expect(all).toContain("\x1b[2J");
+    // The re-committed transcript scrolls into native scrollback where the
+    // pre-resize copy still lives; without ESC[3J every width resize stacks
+    // one more duplicate transcript in scrollback.
+    expect(all).toContain("\x1b[3J");
     expect(all).toContain("> hello");
     expect(all).toContain("hi there");
   });

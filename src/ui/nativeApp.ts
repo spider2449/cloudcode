@@ -23,7 +23,7 @@ import { Buffer } from "./buffer.js";
 import { InputBox } from "./widgets/inputBox.js";
 import { OverlayManager } from "./widgets/overlay.js";
 import { InlineRenderer, type BottomState } from "./term/render.js";
-import { CLEAR_AND_HOME } from "./term/ansi.js";
+import { CLEAR_AND_HOME, CLEAR_ALL_AND_HOME } from "./term/ansi.js";
 import type { ITerminal } from "./term/terminal.js";
 import type { Key } from "./input.js";
 import { loadSettings, saveSetting } from "../agent/settings.js";
@@ -469,7 +469,7 @@ export class App {
     this.resizeRepaintTimer = setTimeout(() => {
       this.resizeRepaintTimer = undefined;
       if (!this.running) return;
-      this.terminal.write(CLEAR_AND_HOME);
+      this.terminal.write(CLEAR_ALL_AND_HOME);
       this.renderer.invalidate();
       this.buffer.recommitAll();
       this.recompute();
