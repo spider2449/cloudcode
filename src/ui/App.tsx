@@ -270,7 +270,8 @@ export function App(props: AppProps) {
       },
       onSessionId: id => {
         if (firstMessageRef.current) recordSession(id, name);
-      }
+      },
+      onMemorySaved: () => notice("Memory updated.")
     });
     session.start();
     return session;

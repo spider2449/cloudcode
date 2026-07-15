@@ -10,10 +10,19 @@ import { buildSystemPrompt } from "../engine/systemPrompt.js";
 import type { ProviderConfig } from "./providers.js";
 import type { McpServerConfig, McpServerStatusEntry } from "./mcp.js";
 import type { EffortLevel } from "../engine/effort.js";
+import { runExtraction, hasMemoryWrites, countModelMessages, MIN_NEW_MESSAGES } from "../engine/extractMemories.js";
+import { memoryDir } from "../engine/memoryPaths.js";
+import { loadSettings } from "./settings.js";
 
 export type PermissionMode = "default" | "acceptEdits" | "bypassPermissions";
 
 const DEFAULT_MODEL = "claude-sonnet-5";
+
+// Exported for tests: pure decision of whether background extraction should run.
+export function shouldExtract(messages: unknown[], fromIndex: number, dir: string): boolean {
+  if (countModelMessages(messages, fromIndex) < MIN_NEW_MESSAGES) return false;
+  return !hasMemoryWrites(messages, fromIndex, dir);
+}
 
 export interface PermissionRequest {
   toolName: string;
@@ -33,6 +42,7 @@ export interface AgentSessionOptions {
   onMessage(msg: EngineMessage): void;
   onPermissionRequest(req: PermissionRequest): void;
   onSessionId(id: string): void;
+  onMemorySaved?(): void;
 }
 
 export class AgentSession {
@@ -43,6 +53,7 @@ export class AgentSession {
   tools: string[] = [];
   private mcp = new McpManager();
   private mcpReady: Promise<void> | undefined;
+  private extractCursor = 0;
 
   constructor(private opts: AgentSessionOptions) {}
 
@@ -88,7 +99,32 @@ export class AgentSession {
     void this.loop?.runTurn(text, this.abortController.signal).then(() => {
       const added = this.loop?.messages.slice(before) ?? [];
       for (const entry of added) this.sessionFile?.append(entry);
+      this.maybeExtractMemories();
     });
+  }
+
+  // Fire-and-forget background memory extraction. Never blocks or surfaces
+  // errors to the UI. The cursor advances unconditionally so a skipped or
+  // failed range is never retried on the next turn.
+  private maybeExtractMemories(): void {
+    if (loadSettings().autoMemoryEnabled === false) return;
+    const messages = this.loop?.messages ?? [];
+    const dir = memoryDir(this.opts.cwd);
+    const from = this.extractCursor;
+    this.extractCursor = messages.length;
+    if (!shouldExtract(messages, from, dir)) return;
+    void runExtraction({
+      client: makeClient(this.opts.provider),
+      model: this.opts.model ?? this.opts.provider.model ?? DEFAULT_MODEL,
+      memoryDir: dir,
+      messages: [...messages],
+      fromIndex: from
+    }).then(wrote => {
+      if (wrote) {
+        void this.refreshSystemPrompt();
+        this.opts.onMemorySaved?.();
+      }
+    }).catch(() => { /* extraction is best-effort; never surface errors */ });
   }
 
   async interrupt(): Promise<void> {

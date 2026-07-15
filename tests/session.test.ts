@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { join } from "node:path";
 
 vi.mock("../src/engine/api.js", () => ({ makeClient: vi.fn() }));
 
 import { makeClient } from "../src/engine/api.js";
-import { AgentSession } from "../src/agent/session.js";
+import { AgentSession, shouldExtract } from "../src/agent/session.js";
 
 type Event = Record<string, unknown>;
 
@@ -126,5 +127,25 @@ describe("AgentSession", () => {
     session.start();
     expect(await session.mcpStatus()).toEqual([]);
     await session.dispose();
+  });
+});
+
+describe("shouldExtract", () => {
+  const dir = join("tmp-base", "projects", "x", "memory");
+
+  it("runs extraction after a turn and skips when the main agent wrote memories", () => {
+    const noWrites = [
+      { role: "user", content: "I'm a data scientist" },
+      { role: "assistant", content: [{ type: "text", text: "noted" }] },
+      { role: "user", content: "thanks" },
+      { role: "assistant", content: [{ type: "text", text: "np" }] }
+    ];
+    expect(shouldExtract(noWrites, 0, dir)).toBe(true);
+    const withWrite = [
+      ...noWrites.slice(0, 3),
+      { role: "assistant", content: [{ type: "tool_use", id: "1", name: "Write", input: { file_path: join(dir, "a.md") } }] }
+    ];
+    expect(shouldExtract(withWrite, 0, dir)).toBe(false);
+    expect(shouldExtract(noWrites, 2, dir)).toBe(false); // fewer than MIN_NEW_MESSAGES since cursor
   });
 });
