@@ -107,6 +107,10 @@ export class AgentSession {
     this.loop?.setPermissionMode(mode);
   }
 
+  async refreshSystemPrompt(): Promise<void> {
+    this.loop?.setSystemPrompt(buildSystemPrompt(this.opts.cwd));
+  }
+
   async mcpStatus(): Promise<McpServerStatusEntry[]> {
     return this.mcp.status();
   }
