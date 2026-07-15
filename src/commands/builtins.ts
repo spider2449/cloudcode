@@ -270,6 +270,11 @@ const commands: Command[] = [
     }
   },
   {
+    name: "memory",
+    description: "Edit memory files (user/project CLAUDE.md, auto-memory folder)",
+    async run(ctx) { ctx.openMemoryPicker(); }
+  },
+  {
     name: "mcp",
     description: "Show MCP server status and tools",
     async run(ctx) { ctx.notice(await ctx.mcpStatus()); }

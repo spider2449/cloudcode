@@ -18,6 +18,9 @@ import { PermissionDialog } from "./PermissionDialog.js";
 import { StatusBar } from "./StatusBar.js";
 import { fetchModels } from "../agent/models.js";
 import { ResumePicker } from "./ResumePicker.js";
+import { MemoryPicker, buildMemoryOptions } from "./MemoryPicker.js";
+import { openInEditor, openFolder } from "../commands/editor.js";
+import { ensureMemoryDir } from "../engine/memoryPaths.js";
 import { WorkingIndicator } from "./WorkingIndicator.js";
 import { ProgressBar } from "./ProgressBar.js";
 import { useGitStatus } from "./useGitStatus.js";
@@ -112,6 +115,7 @@ export function App(props: AppProps) {
   const [permissionQueue, setPermissionQueue] = useState<PermissionRequest[]>([]);
   const [showResumePicker, setShowResumePicker] = useState(props.openResumeOnStart ?? false);
   const [showProjectPicker, setShowProjectPicker] = useState(false);
+  const [showMemoryPicker, setShowMemoryPicker] = useState(false);
   const [cost, setCost] = useState(0);
   const [tokens, setTokens] = useState(0);
   const [contextPct, setContextPct] = useState<number | undefined>(undefined);
@@ -404,6 +408,7 @@ export function App(props: AppProps) {
     },
     openProjectPicker: () => setShowProjectPicker(true),
     currentCwd: () => props.cwd,
+    openMemoryPicker: () => setShowMemoryPicker(true),
   };
 
   function sendUserMessage(text: string): void {
@@ -473,12 +478,12 @@ export function App(props: AppProps) {
   // which only reports last frame's height). See bottomFill.ts for why this
   // exists: without it, the frame a live-region element first appears in can
   // overflow the terminal and trigger Ink's scrollback-erasing repaint.
-  const inputVisible = !showResumePicker && !showProjectPicker && phase !== "permission";
+  const inputVisible = !showResumePicker && !showProjectPicker && !showMemoryPicker && phase !== "permission";
   const inputDisabled = phase === "streaming";
   const streamTailCap = Math.max(3, termSize.rows - 14);
   const streamRowsFloor = streamText !== "" ? textRows(tailForHeight(streamText, streamTailCap, termSize.columns), termSize.columns) : 0;
   const thinkingRowsFloor = thinkingText !== "" ? textRows(tailForHeight(thinkingText, 6, termSize.columns), termSize.columns) : 0;
-  const overlayActive = showResumePicker || showProjectPicker || phase === "permission";
+  const overlayActive = showResumePicker || showProjectPicker || showMemoryPicker || phase === "permission";
   let liveFloor = liveRegionFloor({
     streamRows: streamRowsFloor + thinkingRowsFloor,
     streaming: phase === "streaming",
@@ -621,10 +626,28 @@ export function App(props: AppProps) {
               onCancel={() => setShowProjectPicker(false)}
             />
           )}
+          {showMemoryPicker && (
+            <MemoryPicker
+              options={buildMemoryOptions(props.cwd)}
+              onCancel={() => setShowMemoryPicker(false)}
+              onPick={o => {
+                setShowMemoryPicker(false);
+                if (o.kind === "folder") {
+                  ensureMemoryDir(o.path);
+                  openFolder(o.path);
+                  notice(`Opened ${o.path}`);
+                  return;
+                }
+                const r = openInEditor(o.path);
+                notice(r.hint);
+                if (r.ok) sessionRef.current?.refreshSystemPrompt();
+              }}
+            />
+          )}
           {phase === "permission" && activePermission && (
             <PermissionDialog request={activePermission} onDecision={decidePermission} />
           )}
-          {!showResumePicker && !showProjectPicker && phase !== "permission" && (
+          {!showResumePicker && !showProjectPicker && !showMemoryPicker && phase !== "permission" && (
             <InputBox
               completionCtx={completionCtx}
               onSubmit={handleSubmit}

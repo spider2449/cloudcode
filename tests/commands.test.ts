@@ -48,7 +48,8 @@ function mockCtx(): CommandContext {
     openProjectPicker: vi.fn(),
     currentCwd: vi.fn().mockReturnValue(process.cwd()),
     setEffort: vi.fn().mockResolvedValue(undefined),
-    currentEffort: vi.fn().mockReturnValue("off")
+    currentEffort: vi.fn().mockReturnValue("off"),
+    openMemoryPicker: vi.fn()
   };
 }
 
@@ -78,7 +79,7 @@ describe("parseSlash", () => {
 describe("builtins", () => {
   it("registers all v1 commands", () => {
     const names = [...buildRegistry().keys()].sort();
-    expect(names).toEqual(["clear", "compact", "config", "cost", "effort", "exit", "help", "init", "mcp", "model", "new", "permissions", "provider", "resume", "set", "skill", "skills", "theme"]);
+    expect(names).toEqual(["clear", "compact", "config", "cost", "effort", "exit", "help", "init", "mcp", "memory", "model", "new", "permissions", "provider", "resume", "set", "skill", "skills", "theme"]);
   });
 
   it("/new starts a new session", async () => {
@@ -353,6 +354,14 @@ describe("/config", () => {
     await buildRegistry().get("config")!.run(ctx, "autoMemory false");
     expect(saveSetting).toHaveBeenCalledWith("autoMemoryEnabled", false);
     expect(ctx.notice).toHaveBeenCalledWith("autoMemory = false (saved)");
+  });
+});
+
+describe("/memory", () => {
+  it("opens the memory picker", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("memory")!.run(ctx, "");
+    expect(ctx.openMemoryPicker).toHaveBeenCalled();
   });
 });
 
