@@ -88,8 +88,19 @@ Check loaded servers and their tools with `/mcp` at runtime.
 ## Commands
 
 /help /clear /compact /config /init /model /permissions /provider /resume /set
-/cost /mcp /skills /skill /theme /exit
+/cost /mcp /skills /skill /theme /memory /exit
 Shift+Tab cycles permission modes. Esc interrupts. Ctrl+C twice exits.
+
+## Memory
+
+Memory is automatically managed and persists between sessions. Use `/memory` to open a picker to edit:
+- **User memory** (`~/.cloudcode/CLAUDE.md`) — user-level instructions that apply to all projects.
+- **Project memory** (`./CLAUDE.md`) — project-specific instructions stored in the project root.
+- **Auto-memory folder** (`~/.cloudcode/projects/<sanitized-project-path>/memory/`) — automatically indexed memory organized by topic.
+
+The auto-memory system creates and maintains memory files under `~/.cloudcode/projects/<sanitized-project-path>/memory/`, with an auto-generated `MEMORY.md` index and per-topic memory files. This can be disabled with `/config autoMemory false` (default: `true`).
+
+User-level instructions (`~/.cloudcode/CLAUDE.md`) are now loaded at startup in addition to the project-level `./CLAUDE.md`, giving you persistent settings and preferences across all projects.
 
 ## UX
 
