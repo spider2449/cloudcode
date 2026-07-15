@@ -22,8 +22,32 @@ describe("truncateEntrypoint", () => {
     const r = truncateEntrypoint(raw);
     expect(r.wasTruncated).toBe(true);
     const body = r.content.slice(0, r.content.indexOf("\n\n> WARNING"));
-    expect(body.length).toBeLessThanOrEqual(MAX_ENTRYPOINT_BYTES);
+    expect(Buffer.byteLength(body, "utf8")).toBeLessThanOrEqual(MAX_ENTRYPOINT_BYTES);
     expect(body.endsWith("x")).toBe(true); // cut at newline, not mid-line padding
+  });
+  it("correctly measures UTF-8 byte count for multi-byte characters", () => {
+    // Each CJK character is ~3 bytes in UTF-8; "你好" = 6 bytes
+    // Create a string with enough repetitions to exceed 25_000 bytes but still under line cap
+    const cjkChar = "你"; // 3 bytes in UTF-8
+    const count = Math.floor(MAX_ENTRYPOINT_BYTES / 3) + 100; // ~8500 chars = ~25500 bytes
+    const raw = Array.from({ length: count }, () => cjkChar).join("");
+    const r = truncateEntrypoint(raw);
+    expect(r.wasTruncated).toBe(true);
+    const body = r.content.slice(0, r.content.indexOf("\n\n> WARNING"));
+    expect(Buffer.byteLength(body, "utf8")).toBeLessThanOrEqual(MAX_ENTRYPOINT_BYTES);
+  });
+  it("truncates when exceeding both line and byte caps simultaneously", () => {
+    // Create content that exceeds both: >200 lines AND >25_000 bytes
+    // Use lines of sufficient length to hit byte cap before line cap alone would
+    const longLine = "x".repeat(200); // 200 bytes per line
+    const raw = Array.from({ length: 250 }, () => longLine).join("\n");
+    // 250 lines * 200 bytes + newlines = 50_000+ bytes, exceeds both caps
+    const r = truncateEntrypoint(raw);
+    expect(r.wasTruncated).toBe(true);
+    expect(r.content).toContain("lines and");
+    expect(r.content).toContain("bytes");
+    const body = r.content.slice(0, r.content.indexOf("\n\n> WARNING"));
+    expect(Buffer.byteLength(body, "utf8")).toBeLessThanOrEqual(MAX_ENTRYPOINT_BYTES);
   });
 });
 

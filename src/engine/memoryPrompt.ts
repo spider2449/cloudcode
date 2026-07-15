@@ -6,18 +6,24 @@ export function truncateEntrypoint(raw: string): { content: string; wasTruncated
   const trimmed = raw.trim();
   const lines = trimmed.split("\n");
   const overLines = lines.length > MAX_ENTRYPOINT_LINES;
-  const overBytes = trimmed.length > MAX_ENTRYPOINT_BYTES;
+  const overBytes = Buffer.byteLength(trimmed, "utf8") > MAX_ENTRYPOINT_BYTES;
   if (!overLines && !overBytes) return { content: trimmed, wasTruncated: false };
   let out = overLines ? lines.slice(0, MAX_ENTRYPOINT_LINES).join("\n") : trimmed;
-  if (out.length > MAX_ENTRYPOINT_BYTES) {
-    const cut = out.lastIndexOf("\n", MAX_ENTRYPOINT_BYTES);
-    out = out.slice(0, cut > 0 ? cut : MAX_ENTRYPOINT_BYTES);
+  if (Buffer.byteLength(out, "utf8") > MAX_ENTRYPOINT_BYTES) {
+    // Find the last newline that keeps us under the byte cap
+    let slicePoint = MAX_ENTRYPOINT_BYTES;
+    while (slicePoint > 0 && Buffer.byteLength(out.slice(0, slicePoint), "utf8") > MAX_ENTRYPOINT_BYTES) {
+      slicePoint--;
+    }
+    const cut = out.lastIndexOf("\n", slicePoint);
+    out = out.slice(0, cut > 0 ? cut : slicePoint);
   }
+  const trimmedBytes = Buffer.byteLength(trimmed, "utf8");
   const reason = overLines && overBytes
-    ? `${lines.length} lines and ${trimmed.length} bytes`
+    ? `${lines.length} lines and ${trimmedBytes} bytes (limit: ${MAX_ENTRYPOINT_LINES} lines, ${MAX_ENTRYPOINT_BYTES} bytes)`
     : overLines
       ? `${lines.length} lines (limit: ${MAX_ENTRYPOINT_LINES})`
-      : `${trimmed.length} bytes (limit: ${MAX_ENTRYPOINT_BYTES}) — index entries are too long`;
+      : `${trimmedBytes} bytes (limit: ${MAX_ENTRYPOINT_BYTES}) — index entries are too long`;
   return {
     content: out + `\n\n> WARNING: MEMORY.md is ${reason}. Only part of it was loaded. Keep index entries to one line under ~150 chars; move detail into topic files.`,
     wasTruncated: true
