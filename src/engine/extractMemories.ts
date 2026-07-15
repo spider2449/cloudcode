@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve, isAbsolute } from "node:path";
 import type { MessagesClient } from "./api.js";
 import type { ContentBlock } from "./messages.js";
 import { readTool } from "./tools/read.js";
@@ -151,7 +151,12 @@ export async function runExtraction(opts: ExtractionOptions): Promise<boolean> {
       if (block.type !== "tool_use") continue;
       const tool = tools.find(t => t.name === block.name);
       const path = String((block.input as { file_path?: unknown }).file_path ?? "");
-      const guarded = (block.name === "Write" || block.name === "Edit") && !isInsideMemoryDir(path, dir);
+      // Resolve the same way the tool itself will (relative to `dir`, the
+      // cwd passed to tool.execute below) so the guard checks the exact
+      // path that will actually be written, not one resolved against a
+      // different base (e.g. process.cwd()).
+      const resolvedPath = isAbsolute(path) ? path : resolve(dir, path);
+      const guarded = (block.name === "Write" || block.name === "Edit") && !isInsideMemoryDir(resolvedPath, dir);
       if (!tool || guarded) {
         results.push({ type: "tool_result", tool_use_id: block.id, content: "Denied: writes are only allowed inside the memory directory.", is_error: true });
         continue;
