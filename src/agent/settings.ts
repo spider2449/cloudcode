@@ -10,6 +10,7 @@ export interface Settings {
   permissionMode?: PermissionMode;
   effort?: EffortLevel;
   theme?: string;
+  autoMemoryEnabled?: boolean;
 }
 
 // bypassPermissions is deliberately not persistable: a saved bypass would make
@@ -38,10 +39,11 @@ export function loadSettings(filePath: string = DEFAULT_FILE()): Settings {
   }
   if (isEffortLevel(raw.effort)) out.effort = raw.effort;
   if (typeof raw.theme === "string") out.theme = raw.theme;
+  if (typeof raw.autoMemoryEnabled === "boolean") out.autoMemoryEnabled = raw.autoMemoryEnabled;
   return out;
 }
 
-export function saveSetting(key: keyof Settings, value: string, filePath: string = DEFAULT_FILE()): void {
+export function saveSetting(key: keyof Settings, value: string | boolean, filePath: string = DEFAULT_FILE()): void {
   const next = { ...loadRaw(filePath), [key]: value };
   mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(filePath, JSON.stringify(next, null, 2));

@@ -261,7 +261,7 @@ describe("/config", () => {
     const ctx = mockCtx();
     await buildRegistry().get("config")!.run(ctx, "");
     expect(ctx.notice).toHaveBeenCalledWith(
-      "provider = local\nmodel = (unset)\npermissionMode = (unset)\ntheme = dark\neffort = off"
+      "provider = local\nmodel = (unset)\npermissionMode = (unset)\ntheme = dark\neffort = off\nautoMemory = true"
     );
   });
 
@@ -276,7 +276,7 @@ describe("/config", () => {
     const ctx = mockCtx();
     await buildRegistry().get("config")!.run(ctx, "editor vim");
     expect(saveSetting).not.toHaveBeenCalled();
-    expect(ctx.notice).toHaveBeenCalledWith("Unknown key: editor. Keys: provider, model, permissionMode, theme, effort");
+    expect(ctx.notice).toHaveBeenCalledWith("Unknown key: editor. Keys: provider, model, permissionMode, theme, effort, autoMemory");
   });
 
   it("sets provider: persists then switches live", async () => {
@@ -346,6 +346,13 @@ describe("/config", () => {
     expect(cmd.completeArgs!("theme m", cctx)).toEqual(["theme mono"]);
     expect(cmd.completeArgs!("provider l", cctx)).toEqual(["provider local"]);
     expect(cmd.completeArgs!("model cla", cctx)).toEqual(["model claude-sonnet-5"]);
+  });
+
+  it("/config autoMemory sets the setting", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("config")!.run(ctx, "autoMemory false");
+    expect(saveSetting).toHaveBeenCalledWith("autoMemoryEnabled", false);
+    expect(ctx.notice).toHaveBeenCalledWith("autoMemory = false (saved)");
   });
 });
 

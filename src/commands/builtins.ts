@@ -15,12 +15,13 @@ import { EFFORT_LEVELS, isEffortLevel } from "../engine/effort.js";
 
 const MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
 
-const CONFIG_KEYS = ["provider", "model", "permissionMode", "theme", "effort"] as const;
+const CONFIG_KEYS = ["provider", "model", "permissionMode", "theme", "effort", "autoMemory"] as const;
 type ConfigKey = (typeof CONFIG_KEYS)[number];
 
 function configValue(key: ConfigKey): string {
   if (key === "theme") return loadThemeName();
   if (key === "effort") return loadSettings().effort ?? "off";
+  if (key === "autoMemory") return String(loadSettings().autoMemoryEnabled ?? true);
   return loadSettings()[key as keyof Omit<Settings, "effort">] ?? "(unset)";
 }
 
@@ -103,6 +104,14 @@ const commands: Command[] = [
           saveSetting("effort", value);
           await ctx.setEffort(value);
           break;
+        case "autoMemory": {
+          if (value !== "true" && value !== "false") {
+            ctx.notice("Valid values: true, false");
+            return;
+          }
+          saveSetting("autoMemoryEnabled", value === "true");
+          break;
+        }
         case "theme":
           if (!(value in THEMES)) {
             ctx.notice(`Unknown theme: ${value}. Themes: ${Object.keys(THEMES).join(", ")}`);
@@ -122,6 +131,7 @@ const commands: Command[] = [
         key === "permissionMode" ? MODES :
         key === "theme" ? Object.keys(THEMES) :
         key === "effort" ? [...EFFORT_LEVELS] :
+        key === "autoMemory" ? ["true", "false"] :
         key === "model" ? cctx.availableModels() : [];
       return values.filter(v => v.startsWith(valuePrefix)).map(v => `${key} ${v}`);
     }
