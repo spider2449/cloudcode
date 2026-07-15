@@ -1,6 +1,6 @@
-# Memory System Research Notes (from claude-source-leaked)
+# Memory System Research Notes
 
-Research for adding `/memory` to cloudcode. Source: `D:\spider\working\claude-source-leaked`.
+Research for adding `/memory` to cloudcode.
 Date: 2026-07-15.
 
 ## Overview — two distinct memory systems
