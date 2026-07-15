@@ -48,7 +48,8 @@ function mockCtx(): CommandContext {
     openProjectPicker: vi.fn(),
     currentCwd: vi.fn().mockReturnValue(process.cwd()),
     setEffort: vi.fn().mockResolvedValue(undefined),
-    currentEffort: vi.fn().mockReturnValue("off")
+    currentEffort: vi.fn().mockReturnValue("off"),
+    openMemoryPicker: vi.fn()
   };
 }
 
@@ -78,7 +79,7 @@ describe("parseSlash", () => {
 describe("builtins", () => {
   it("registers all v1 commands", () => {
     const names = [...buildRegistry().keys()].sort();
-    expect(names).toEqual(["clear", "compact", "config", "cost", "effort", "exit", "help", "init", "mcp", "model", "new", "permissions", "provider", "resume", "set", "skill", "skills", "theme"]);
+    expect(names).toEqual(["clear", "compact", "config", "cost", "effort", "exit", "help", "init", "mcp", "memory", "model", "new", "permissions", "provider", "resume", "set", "skill", "skills", "theme"]);
   });
 
   it("/new starts a new session", async () => {
@@ -261,7 +262,7 @@ describe("/config", () => {
     const ctx = mockCtx();
     await buildRegistry().get("config")!.run(ctx, "");
     expect(ctx.notice).toHaveBeenCalledWith(
-      "provider = local\nmodel = (unset)\npermissionMode = (unset)\ntheme = dark\neffort = off"
+      "provider = local\nmodel = (unset)\npermissionMode = (unset)\ntheme = dark\neffort = off\nautoMemory = true"
     );
   });
 
@@ -276,7 +277,7 @@ describe("/config", () => {
     const ctx = mockCtx();
     await buildRegistry().get("config")!.run(ctx, "editor vim");
     expect(saveSetting).not.toHaveBeenCalled();
-    expect(ctx.notice).toHaveBeenCalledWith("Unknown key: editor. Keys: provider, model, permissionMode, theme, effort");
+    expect(ctx.notice).toHaveBeenCalledWith("Unknown key: editor. Keys: provider, model, permissionMode, theme, effort, autoMemory");
   });
 
   it("sets provider: persists then switches live", async () => {
@@ -346,6 +347,21 @@ describe("/config", () => {
     expect(cmd.completeArgs!("theme m", cctx)).toEqual(["theme mono"]);
     expect(cmd.completeArgs!("provider l", cctx)).toEqual(["provider local"]);
     expect(cmd.completeArgs!("model cla", cctx)).toEqual(["model claude-sonnet-5"]);
+  });
+
+  it("/config autoMemory sets the setting", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("config")!.run(ctx, "autoMemory false");
+    expect(saveSetting).toHaveBeenCalledWith("autoMemoryEnabled", false);
+    expect(ctx.notice).toHaveBeenCalledWith("autoMemory = false (saved)");
+  });
+});
+
+describe("/memory", () => {
+  it("opens the memory picker", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("memory")!.run(ctx, "");
+    expect(ctx.openMemoryPicker).toHaveBeenCalled();
   });
 });
 

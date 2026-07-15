@@ -263,3 +263,32 @@ describe("EngineLoop thinking", () => {
     expect(thinkingMsgs).toHaveLength(1);
   });
 });
+
+describe("EngineLoop.setSystemPrompt", () => {
+  it("setSystemPrompt changes the system text sent on the next turn", async () => {
+    const requests: unknown[] = [];
+    const loop = new EngineLoop({
+      client: capturingClient([textTurn("hi"), textTurn("bye")], requests),
+      model: "test-model",
+      systemPrompt: "old prompt",
+      tools: [echoTool],
+      cwd: process.cwd(),
+      permissionMode: "bypassPermissions",
+      store: new PermissionStore(mkdtempSync(join(tmpdir(), "cc-loop-"))),
+      onMessage: () => {},
+      requestPermission: async () => true
+    });
+    // First turn should use the initial system prompt
+    await loop.runTurn("hi", new AbortController().signal);
+    const firstReq = requests[0] as { system: Array<{ text: string }> };
+    expect(firstReq.system[0].text).toBe("old prompt");
+
+    // Now change the system prompt
+    loop.setSystemPrompt("new prompt");
+
+    // Second turn should use the new system prompt
+    await loop.runTurn("bye", new AbortController().signal);
+    const secondReq = requests[1] as { system: Array<{ text: string }> };
+    expect(secondReq.system[0].text).toBe("new prompt");
+  });
+});

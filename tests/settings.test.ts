@@ -64,3 +64,15 @@ describe("settings persistence", () => {
     expect(loadSettings(file).effort).toBeUndefined();
   });
 });
+
+describe("autoMemoryEnabled", () => {
+  it("round-trips booleans and ignores non-booleans", () => {
+    const file = join(dir(), "settings.json");
+    saveSetting("autoMemoryEnabled", false, file);
+    expect(loadSettings(file).autoMemoryEnabled).toBe(false);
+    saveSetting("autoMemoryEnabled", true, file);
+    expect(loadSettings(file).autoMemoryEnabled).toBe(true);
+    writeFileSync(file, JSON.stringify({ autoMemoryEnabled: "yes" }));
+    expect(loadSettings(file).autoMemoryEnabled).toBeUndefined();
+  });
+});

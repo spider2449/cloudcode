@@ -57,16 +57,22 @@ export class EngineLoop {
   private model: string;
   private mode: PermissionMode;
   private effort: EffortLevel;
+  private systemPrompt: string;
 
   constructor(private opts: EngineOptions) {
     this.model = opts.model;
     this.mode = opts.permissionMode;
     this.tools = opts.tools;
     this.effort = opts.effort ?? "off";
+    this.systemPrompt = opts.systemPrompt;
   }
 
   setModel(model: string): void {
     this.model = model;
+  }
+
+  setSystemPrompt(text: string): void {
+    this.systemPrompt = text;
   }
 
   setPermissionMode(mode: PermissionMode): void {
@@ -159,7 +165,7 @@ export class EngineLoop {
     const budget = this.effort === "off" ? undefined : EFFORT_BUDGETS[this.effort];
     const req = {
       model: this.model,
-      system: [{ type: "text" as const, text: this.opts.systemPrompt, cache_control: { type: "ephemeral" as const } }],
+      system: [{ type: "text" as const, text: this.systemPrompt, cache_control: { type: "ephemeral" as const } }],
       messages: withCacheControlOnLastBlock(this.messages),
       tools: this.tools.map(t => ({ name: t.name, description: t.description, input_schema: t.input_schema })),
       max_tokens: budget === undefined ? MAX_TOKENS : budget + MAX_TOKENS,

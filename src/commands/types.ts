@@ -29,6 +29,7 @@ export interface CommandContext {
   switchProject(path: string): void;
   openProjectPicker(): void;
   currentCwd(): string;
+  openMemoryPicker(): void;
 }
 
 export interface Command {
