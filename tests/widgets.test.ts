@@ -26,37 +26,73 @@ describe("formatElapsed", () => {
 });
 
 describe("renderStatusBar", () => {
+  const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+
   it("joins segments with the middle dot in provider/model/mode order", () => {
-    const row = renderStatusBar(
+    const text = renderStatusBar(
       { provider: "anthropic", model: "sonnet", mode: "default", cwd: "/repo" },
       theme, 80
-    );
-    expect(row).toContain("anthropic/sonnet");
-    expect(row).toContain("default");
-    expect(row).toContain("/repo");
-    expect(row).toContain(" · ");
+    ).join("\n");
+    expect(text).toContain("anthropic/sonnet");
+    expect(text).toContain("default");
+    expect(text).toContain("/repo");
+    expect(text).toContain(" · ");
   });
 
   it("shows served-model arrow when servedModel differs from requested model", () => {
-    const row = renderStatusBar(
+    const text = renderStatusBar(
       { provider: "anthropic", model: "sonnet", servedModel: "sonnet-5", mode: "default", cwd: "/repo" },
       theme, 80
-    );
-    expect(row).toContain("sonnet→sonnet-5");
+    ).join("\n");
+    expect(text).toContain("sonnet→sonnet-5");
   });
 
   it("includes git branch with a dirty marker when dirty", () => {
-    const row = renderStatusBar(
+    const text = renderStatusBar(
       { provider: "a", mode: "default", cwd: "/r", gitBranch: "main", gitDirty: true },
       theme, 80
-    );
-    expect(row).toContain("⎇ main*");
+    ).join("\n");
+    expect(text).toContain("⎇ main*");
   });
 
   it("omits token/cost/elapsed segments when not provided or zero", () => {
-    const row = renderStatusBar({ provider: "a", mode: "default", cwd: "/r" }, theme, 80);
-    expect(row).not.toContain("tok");
-    expect(row).not.toContain("$");
+    const text = renderStatusBar({ provider: "a", mode: "default", cwd: "/r" }, theme, 80).join("\n");
+    expect(text).not.toContain("tok");
+    expect(text).not.toContain("$");
+  });
+
+  it("stays on one row when all segments fit the width", () => {
+    const rows = renderStatusBar({ provider: "a", mode: "default", cwd: "/r" }, theme, 80);
+    expect(rows).toHaveLength(1);
+  });
+
+  it("wraps at segment boundaries onto extra rows when the width is narrow", () => {
+    const rows = renderStatusBar(
+      { provider: "anthropic", model: "sonnet", mode: "acceptEdits", gitBranch: "master", gitDirty: true, elapsedMs: 55_000, cwd: "D:\\spider\\working\\cloudcode\\release" },
+      theme, 44
+    );
+    expect(rows.length).toBeGreaterThan(1);
+    for (const row of rows) {
+      const visible = stripAnsi(row);
+      expect(visible.length).toBeLessThanOrEqual(44);
+      // Segments are kept whole: rows never end or start mid-separator.
+      expect(visible.startsWith("· ")).toBe(false);
+      expect(visible.endsWith(" ·")).toBe(false);
+    }
+    // Nothing is lost: every segment appears somewhere.
+    const all = rows.map(stripAnsi).join("\n");
+    for (const seg of ["anthropic/sonnet", "acceptEdits", "⎇ master*", "55s", "D:\\spider\\working\\cloudcode\\release"]) {
+      expect(all).toContain(seg);
+    }
+  });
+
+  it("truncates a single segment wider than the terminal with an ellipsis on its own row", () => {
+    const rows = renderStatusBar(
+      { provider: "a", mode: "default", cwd: "X".repeat(60) },
+      theme, 20
+    );
+    for (const row of rows) expect(stripAnsi(row).length).toBeLessThanOrEqual(20);
+    expect(rows.map(stripAnsi).join("\n")).toContain("…");
   });
 });
 

@@ -154,10 +154,39 @@ describe("InlineRenderer", () => {
     expect(r.finalize()).toBe("\x1b[r\r\n");
   });
 
+  it("hard-wraps over-width streaming/thinking lines so no footer row exceeds the terminal width", () => {
+    // Legacy conhost ignores DECAWM-off (CSI ?7l): an over-width row wraps at
+    // the bottom of the screen, scrolls the viewport, and strands stale copies
+    // of the footer in the transcript. Footer rows must therefore never be
+    // wider than the terminal.
+    const r = new InlineRenderer();
+    const buf = new Buffer();
+    const longLine = "Q".repeat(200); // 200 > 80 columns
+    const out = r.frame(buf, baseBottom({ streaming: true, streamingText: longLine, thinkingText: longLine }), theme, size);
+    const footer = out.slice(out.lastIndexOf("\x1b[0J"));
+    for (const row of footer.split("\r\n")) {
+      const visible = row.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "");
+      expect(visible.length).toBeLessThanOrEqual(size.columns);
+    }
+    // The wrapped text is still fully present, split across rows, not clipped away.
+    const visibleAll = footer.replace(/\x1b\[[0-9;]*[A-Za-z]/g, "");
+    expect((visibleAll.match(/Q/g) ?? []).length).toBe(400);
+  });
+
   it("renders thinkingText dim above the stream text", () => {
     const r = new InlineRenderer();
     const buf = new Buffer();
     const out = r.frame(buf, baseBottom({ thinkingText: "pondering...", streamingText: "" }), theme, size);
-    expect(out).toContain("\x1b[2mpondering...\x1b[22m");
+    expect(out).toContain("\x1b[2m");
+    expect(out).toContain("pondering...");
+    expect(out).toContain("\x1b[22m");
+  });
+
+  it("prefixes the thinking preview with a hollow circle in the theme's thinking color (magenta in the dark theme)", () => {
+    const r = new InlineRenderer();
+    const buf = new Buffer();
+    const out = r.frame(buf, baseBottom({ thinkingText: "pondering...", streamingText: "" }), theme, size);
+    expect(out).toContain("○ pondering...");
+    expect(out).toContain("\x1b[35m");
   });
 });

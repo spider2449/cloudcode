@@ -12,8 +12,16 @@ describe("theme presets", () => {
   it("dark preserves the original colors", () => {
     expect(THEMES.dark).toEqual({
       user: "blue", accent: "cyan", muted: "gray",
-      error: "red", success: "green", removed: "red", warning: "yellow"
+      error: "red", success: "green", removed: "red", warning: "yellow",
+      thinking: "magenta"
     });
+  });
+
+  it("every theme defines a thinking color distinct from its user color", () => {
+    for (const theme of Object.values(THEMES)) {
+      expect(theme.thinking).toBeTruthy();
+      expect(theme.thinking).not.toBe(theme.user);
+    }
   });
 });
 

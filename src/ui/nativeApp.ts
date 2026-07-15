@@ -449,6 +449,33 @@ export class App {
     this.ctx.openResumePicker();
   }
 
+  private lastPaintColumns = 0;
+  private resizeRepaintTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /**
+   * On a width change the terminal reflows the transcript rows that were
+   * committed to scrollback at the old width, leaving garbled history and
+   * stale footer imprints on screen that no footer repaint can fix. The only
+   * correct recovery is a clear-and-reprint of the whole transcript at the
+   * new width. Resize events arrive in storms while the user drags the window
+   * edge, so the expensive full repaint is debounced until the size settles;
+   * the footer alone is repainted immediately so it tracks the live size.
+   */
+  private handleResize(): void {
+    const widthChanged = this.terminal.size().columns !== this.lastPaintColumns;
+    this.recompute();
+    if (!widthChanged) return;
+    if (this.resizeRepaintTimer) clearTimeout(this.resizeRepaintTimer);
+    this.resizeRepaintTimer = setTimeout(() => {
+      this.resizeRepaintTimer = undefined;
+      if (!this.running) return;
+      this.terminal.write(CLEAR_AND_HOME);
+      this.renderer.invalidate();
+      this.buffer.recommitAll();
+      this.recompute();
+    }, 150);
+  }
+
   tick(): void {
     if (this.phase === "idle" && this.compactPct === undefined) return;
     this.workIndFrame += 1;
@@ -539,6 +566,7 @@ export class App {
       workStartedAt: this.workStartedAt
     };
     this.terminal.write(this.renderer.frame(this.buffer, bottom, this.theme, size));
+    this.lastPaintColumns = size.columns;
   }
 
   async run(): Promise<void> {
@@ -546,7 +574,7 @@ export class App {
     this.session = this.createSession(this.props.initialProvider, this.props.resume);
     this.git.start();
     this.tickTimer = setInterval(() => this.tick(), 1000);
-    this.terminal.onResize(() => this.recompute());
+    this.terminal.onResize(() => this.handleResize());
     this.terminal.onKeys(keys => this.handleKeys(keys));
     this.terminal.onLine(line => this.handleSubmit(line));
     this.recompute();
@@ -562,6 +590,7 @@ export class App {
 
   private stop(): void {
     if (this.tickTimer) clearInterval(this.tickTimer);
+    if (this.resizeRepaintTimer) clearTimeout(this.resizeRepaintTimer);
     this.git.stop();
     this.terminal.write(this.renderer.finalize());
     this.running = false;

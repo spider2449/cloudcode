@@ -57,14 +57,22 @@ function colorize(text: string, colorName: string | undefined): string {
   return code ? `${code}${text}${SGR_RESET}` : text;
 }
 
+// Prefixes a block's first wrapped row with `dot + " "` and indents every
+// continuation row by the same width, so wrapped text stays aligned under
+// the dot instead of running back to column 0.
+function prefixBlock(rows: string[], dot: string): string[] {
+  const indent = " ".repeat(dot.length + 1);
+  return rows.map((row, i) => (i === 0 ? `${dot} ${row}` : `${indent}${row}`));
+}
+
 export function layoutItem(item: DisplayItem, theme: Theme, width: number): string[] {
   switch (item.kind) {
     case "user":
       return wrapText(colorize("> " + item.text, theme.user), width);
     case "assistant":
-      return wrapText(renderMarkdown(item.text), width);
+      return prefixBlock(wrapText(renderMarkdown(item.text), Math.max(1, width - 2)), "●");
     case "tool":
-      return wrapText(colorize("⏺ " + item.label, theme.accent), width);
+      return wrapText(colorize("● " + item.label, theme.accent), width);
     case "notice":
       return wrapText(colorize(item.text, theme.muted), width);
     case "welcome":

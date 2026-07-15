@@ -140,6 +140,53 @@ describe("App", () => {
   });
 });
 
+describe("App resize handling", () => {
+  it("clears the screen and re-commits the full transcript after a width resize", async () => {
+    const { app, terminal } = makeApp([textTurn("hi there")]);
+    void app.run();
+    app.submitForTest("hello");
+    await wait(80);
+    terminal.writes.length = 0;
+    terminal.resize({ rows: 24, columns: 60 });
+    await wait(250);
+    const all = terminal.writes.join("");
+    // The terminal reflows once-committed rows on width change, so the app
+    // must repaint from scratch: clear, then re-lay-out every transcript item
+    // at the new width.
+    expect(all).toContain("\x1b[2J");
+    expect(all).toContain("> hello");
+    expect(all).toContain("hi there");
+  });
+
+  it("a height-only resize repaints the footer without clearing the screen", async () => {
+    const { app, terminal } = makeApp([textTurn("hi there")]);
+    void app.run();
+    app.submitForTest("hello");
+    await wait(80);
+    terminal.writes.length = 0;
+    terminal.resize({ rows: 30, columns: 80 });
+    await wait(250);
+    const all = terminal.writes.join("");
+    expect(all).not.toContain("\x1b[2J");
+    expect(all).toContain("/repo"); // status bar repainted
+  });
+
+  it("a resize storm coalesces into a single full repaint", async () => {
+    const { app, terminal } = makeApp([textTurn("hi there")]);
+    void app.run();
+    app.submitForTest("hello");
+    await wait(80);
+    terminal.writes.length = 0;
+    terminal.resize({ rows: 24, columns: 70 });
+    terminal.resize({ rows: 24, columns: 65 });
+    terminal.resize({ rows: 24, columns: 60 });
+    await wait(300);
+    const all = terminal.writes.join("");
+    const clears = all.split("\x1b[2J").length - 1;
+    expect(clears).toBe(1);
+  });
+});
+
 describe("App key routing", () => {
   it("Ctrl-C once shows a warning notice, twice within 2s exits", async () => {
     const { app, terminal } = makeApp([textTurn("ok")]);

@@ -41,10 +41,10 @@ describe("layoutItem", () => {
     expect(rows.join("\n")).toContain("> hi");
   });
 
-  it("formats a tool item with the accent-colored bullet prefix", () => {
+  it("formats a tool item with the accent-colored circle-dot prefix", () => {
     const item: DisplayItem = { kind: "tool", label: "Read foo.ts" };
     const rows = layoutItem(item, theme, 80);
-    expect(rows.join("\n")).toContain("⏺ Read foo.ts");
+    expect(rows.join("\n")).toContain("● Read foo.ts");
   });
 
   it("formats a result item as one summary row", () => {
@@ -71,5 +71,18 @@ describe("layoutItem", () => {
     const rows = layoutItem(item, theme, 20);
     expect(rows.length).toBeGreaterThan(1);
     for (const r of rows) expect(stripAnsi(r).length).toBeLessThanOrEqual(20);
+  });
+
+  it("prefixes an assistant message with a circle dot and indents wrapped continuation lines", () => {
+    const item: DisplayItem = { kind: "assistant", text: "word ".repeat(30).trim() };
+    const rows = layoutItem(item, theme, 20).map(stripAnsi);
+    expect(rows[0].startsWith("● ")).toBe(true);
+    for (const r of rows.slice(1)) expect(r.startsWith("  ")).toBe(true);
+  });
+
+  it("a single-line assistant message only gets the dot, no continuation indent needed", () => {
+    const item: DisplayItem = { kind: "assistant", text: "hi there" };
+    const rows = layoutItem(item, theme, 80).map(stripAnsi);
+    expect(rows).toEqual(["● hi there"]);
   });
 });

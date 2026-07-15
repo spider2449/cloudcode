@@ -29,7 +29,7 @@ export function formatElapsed(ms: number): string {
   return `${s}s`;
 }
 
-export function renderStatusBar(p: StatusBarProps, theme: Theme, width: number): string {
+export function renderStatusBar(p: StatusBarProps, theme: Theme, width: number): string[] {
   const segments: string[] = [];
   const modelLabel =
     p.servedModel && p.model && p.servedModel !== p.model ? `${p.model}→${p.servedModel}` : p.servedModel ?? p.model;
@@ -42,10 +42,20 @@ export function renderStatusBar(p: StatusBarProps, theme: Theme, width: number):
   if (p.costUsd && p.costUsd > 0) segments.push(`$${p.costUsd.toFixed(4)}`);
   if (p.elapsedMs != null && p.elapsedMs > 0) segments.push(formatElapsed(p.elapsedMs));
   segments.push(p.cwd);
-  // Truncate to the terminal width: with autowrap off, an overlong row is
-  // truncated by the terminal; truncate here with an ellipsis so it degrades cleanly.
-  let text = segments.join(" · ");
-  if (text.length > width) text = text.slice(0, Math.max(0, width - 1)) + "…";
+  // Pack whole segments onto rows of at most `width` columns instead of
+  // truncating: overflowing segments wrap onto extra rows. No emitted row may
+  // ever exceed the terminal width (legacy conhost ignores DECAWM-off), so a
+  // single segment wider than the whole terminal is ellipsis-truncated.
+  const SEP = " · ";
+  const rows: string[] = [];
+  let current = "";
+  for (let segment of segments) {
+    if (segment.length > width) segment = segment.slice(0, Math.max(0, width - 1)) + "…";
+    if (current === "") current = segment;
+    else if (current.length + SEP.length + segment.length <= width) current += SEP + segment;
+    else { rows.push(current); current = segment; }
+  }
+  if (current !== "") rows.push(current);
   const code = sgr(theme.muted);
-  return code ? `${code}${text}${SGR_RESET}` : text;
+  return code ? rows.map(r => `${code}${r}${SGR_RESET}`) : rows;
 }

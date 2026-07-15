@@ -5,7 +5,8 @@ import { renderProgress } from "../widgets/progress.js";
 import type { InputBoxRender } from "../widgets/inputBox.js";
 import type { OverlayMode } from "../widgets/overlay.js";
 import { tailForHeight } from "../streamTail.js";
-import { ERASE_DOWN, cursorTo, setScrollRegion, RESET_SCROLL_REGION } from "./ansi.js";
+import { wrapText } from "../layout.js";
+import { ERASE_DOWN, cursorTo, setScrollRegion, RESET_SCROLL_REGION, sgr, SGR_RESET } from "./ansi.js";
 import type { Theme } from "../theme.js";
 
 export interface BottomState {
@@ -47,7 +48,7 @@ export class InlineRenderer {
 
     // Footer content, built bottom-up (same assembly as before).
     const dyn: string[] = [];
-    dyn.push(renderStatusBar(bottom.statusBarProps, theme, columns));
+    dyn.push(...renderStatusBar(bottom.statusBarProps, theme, columns));
     if (bottom.overlay !== "none") {
       dyn.unshift(...bottom.overlayRows);
     } else {
@@ -58,14 +59,19 @@ export class InlineRenderer {
     }
     if (bottom.compactPct !== undefined) dyn.unshift(renderProgress("Compacting", bottom.compactPct, theme, 20));
     if (bottom.streaming) dyn.unshift(renderWorkInd(bottom.workIndFrame, bottom.activeTool ? `Running ${bottom.activeTool}` : "Thinking", Date.now() - bottom.workStartedAt, theme));
+    // Tail lines are hard-wrapped to the terminal width instead of relying on
+    // autowrap-off (CSI ?7l): legacy conhost ignores DECAWM, so an over-width
+    // row written at the bottom of the screen wraps, scrolls the viewport, and
+    // strands stale footer copies in the transcript region.
     if (bottom.streamingText !== "") {
       const streamTailCap = Math.max(3, rows - dyn.length - 3);
-      dyn.unshift(...tailForHeight(bottom.streamingText, streamTailCap, columns).split("\n"));
+      dyn.unshift(...wrapText(tailForHeight(bottom.streamingText, streamTailCap, columns), columns));
     }
     if (bottom.thinkingText !== "") {
       const thinkTailCap = Math.max(2, Math.min(6, rows - dyn.length - 3));
-      dyn.unshift(...tailForHeight(bottom.thinkingText, thinkTailCap, columns)
-        .split("\n").map(l => `\x1b[2m${l}\x1b[22m`));
+      const thinkingCode = sgr(theme.thinking);
+      const lines = wrapText(tailForHeight(bottom.thinkingText, thinkTailCap, Math.max(1, columns - 2)), Math.max(1, columns - 2));
+      dyn.unshift(...lines.map((l, i) => `\x1b[2m${thinkingCode}${i === 0 ? "○ " : "  "}${l}${SGR_RESET}\x1b[22m`));
     }
 
     // Cap the footer so the scroll region always keeps at least 1 row.
