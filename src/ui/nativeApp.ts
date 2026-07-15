@@ -28,6 +28,9 @@ import type { ITerminal } from "./term/terminal.js";
 import type { Key } from "./input.js";
 import { loadSettings, saveSetting } from "../agent/settings.js";
 import type { EffortLevel } from "../engine/effort.js";
+import { buildMemoryOptions } from "./MemoryPicker.js";
+import { openInEditor, openFolder } from "../commands/editor.js";
+import { ensureMemoryDir } from "../engine/memoryPaths.js";
 
 export interface AppProps {
   cwd: string;
@@ -374,6 +377,24 @@ export class App {
             const result = resolveProjectPath(p, this.props.cwd);
             if (!result.ok) { this.notice(result.error); return; }
             this.ctx.switchProject(result.path);
+          },
+          () => { this.overlay.close(); this.recompute(); }
+        );
+        this.recompute();
+      },
+      openMemoryPicker: () => {
+        this.overlay.openMemory(
+          buildMemoryOptions(this.props.cwd),
+          o => {
+            if (o.kind === "folder") {
+              ensureMemoryDir(o.path);
+              openFolder(o.path);
+              this.notice(`Opened ${o.path}`);
+              return;
+            }
+            const r = openInEditor(o.path);
+            this.notice(r.hint);
+            if (r.ok) void this.session?.refreshSystemPrompt();
           },
           () => { this.overlay.close(); this.recompute(); }
         );

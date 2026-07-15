@@ -5,8 +5,9 @@ import { visibleWindow, MAX_ROWS } from "./menu.js";
 import { toolLabel } from "../transcript.js";
 import { sgr, SGR_RESET } from "../term/ansi.js";
 import type { Theme } from "../theme.js";
+import type { MemoryOption } from "../MemoryPicker.js";
 
-export type OverlayMode = "none" | "resume" | "project" | "permission";
+export type OverlayMode = "none" | "resume" | "project" | "permission" | "memory";
 
 interface PermOption {
   label: string;
@@ -50,11 +51,19 @@ interface ProjectState {
   onCancel: () => void;
 }
 
+interface MemoryState {
+  options: MemoryOption[];
+  index: number;
+  onPick: (o: MemoryOption) => void;
+  onCancel: () => void;
+}
+
 export class OverlayManager {
   private _mode: OverlayMode = "none";
   private resumeState: ResumeState | undefined;
   private projectState: ProjectState | undefined;
   private permissionState: PermissionState | undefined;
+  private memoryState: MemoryState | undefined;
 
   get mode(): OverlayMode {
     return this._mode;
@@ -80,17 +89,36 @@ export class OverlayManager {
     this.permissionState = { request, options: hasFilePath ? FILE_OPTIONS : BASE_OPTIONS, selected: 0, onDecision };
   }
 
+  openMemory(options: MemoryOption[], onPick: (o: MemoryOption) => void, onCancel: () => void): void {
+    this._mode = "memory";
+    this.memoryState = { options, index: 0, onPick, onCancel };
+  }
+
   close(): void {
     this._mode = "none";
     this.resumeState = undefined;
     this.projectState = undefined;
     this.permissionState = undefined;
+    this.memoryState = undefined;
   }
 
   handleKey(k: Key, input?: string): void {
     if (this._mode === "resume") this.handleResumeKey(k);
     else if (this._mode === "project") this.handleProjectKey(k, input);
     else if (this._mode === "permission") this.handlePermissionKey(k, input);
+    else if (this._mode === "memory") this.handleMemoryKey(k);
+  }
+
+  private handleMemoryKey(k: Key): void {
+    const s = this.memoryState;
+    if (!s) return;
+    if (k.t === "esc") { const cb = s.onCancel; this.close(); cb(); return; }
+    if (k.t === "up") { s.index = Math.max(0, s.index - 1); return; }
+    if (k.t === "down") { s.index = Math.min(s.options.length - 1, s.index + 1); return; }
+    if (k.t === "enter") {
+      const opt = s.options[s.index];
+      if (opt) { const cb = s.onPick; this.close(); cb(opt); }
+    }
   }
 
   private filteredProjects(s: ProjectState): string[] {
@@ -155,7 +183,23 @@ export class OverlayManager {
     if (this._mode === "resume") return this.renderResume(theme, width);
     if (this._mode === "project") return this.renderProject(theme, width);
     if (this._mode === "permission") return this.renderPermission(theme, width);
+    if (this._mode === "memory") return this.renderMemory(theme, width);
     return [];
+  }
+
+  private renderMemory(theme: Theme, width: number): string[] {
+    const s = this.memoryState;
+    if (!s) return [];
+    const warning = sgr(theme.warning);
+    const rows: string[] = [
+      "╭" + "─".repeat(Math.max(0, width - 2)) + "╮",
+      `${warning}Memory (↑/↓, Enter, Esc)${SGR_RESET}`
+    ];
+    s.options.forEach((o, i) => {
+      rows.push(i === s.index ? `\x1b[7m${o.label}\x1b[27m` : o.label);
+    });
+    rows.push("╰" + "─".repeat(Math.max(0, width - 2)) + "╯");
+    return rows;
   }
 
   private renderPermission(theme: Theme, width: number): string[] {

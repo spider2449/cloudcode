@@ -174,3 +174,59 @@ describe("OverlayManager permission sub-mode", () => {
     expect(rows.join("\n")).toContain("Edit /a/b.ts");
   });
 });
+
+describe("OverlayManager memory sub-mode", () => {
+  const options = [
+    { label: "User memory", path: "/home/.cloudcode/CLAUDE.md", kind: "file" as const },
+    { label: "Project memory (new)", path: "/repo/CLAUDE.md", kind: "file" as const },
+    { label: "Open auto-memory folder", path: "/home/.cloudcode/projects/repo/memory", kind: "folder" as const }
+  ];
+
+  it("openMemory switches mode to memory and isOpen becomes true", () => {
+    const mgr = new OverlayManager();
+    mgr.openMemory(options, () => {}, () => {});
+    expect(mgr.mode).toBe("memory");
+    expect(mgr.isOpen).toBe(true);
+  });
+
+  it("renders all option labels", () => {
+    const mgr = new OverlayManager();
+    mgr.openMemory(options, () => {}, () => {});
+    const rendered = mgr.render(theme, 80).join("\n");
+    expect(rendered).toContain("User memory");
+    expect(rendered).toContain("Project memory (new)");
+    expect(rendered).toContain("Open auto-memory folder");
+  });
+
+  it("Enter picks the currently highlighted option and closes the overlay", () => {
+    const onPick = vi.fn();
+    const mgr = new OverlayManager();
+    mgr.openMemory(options, onPick, () => {});
+    mgr.handleKey({ t: "down" });
+    mgr.handleKey({ t: "enter" });
+    expect(onPick).toHaveBeenCalledWith(options[1]);
+    expect(mgr.mode).toBe("none");
+  });
+
+  it("Esc cancels without picking", () => {
+    const onPick = vi.fn();
+    const onCancel = vi.fn();
+    const mgr = new OverlayManager();
+    mgr.openMemory(options, onPick, onCancel);
+    mgr.handleKey({ t: "esc" });
+    expect(onPick).not.toHaveBeenCalled();
+    expect(onCancel).toHaveBeenCalled();
+    expect(mgr.mode).toBe("none");
+  });
+
+  it("down arrow does not move past the last option", () => {
+    const onPick = vi.fn();
+    const mgr = new OverlayManager();
+    mgr.openMemory(options, onPick, () => {});
+    mgr.handleKey({ t: "down" });
+    mgr.handleKey({ t: "down" });
+    mgr.handleKey({ t: "down" });
+    mgr.handleKey({ t: "enter" });
+    expect(onPick).toHaveBeenCalledWith(options[2]);
+  });
+});
