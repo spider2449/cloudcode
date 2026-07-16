@@ -4,6 +4,7 @@ import type { Key } from "../input.js";
 import { renderMenu } from "./menu.js";
 import { sgr, SGR_RESET } from "../term/ansi.js";
 import type { Theme } from "../theme.js";
+import { charWidth } from "../width.js";
 
 export interface InputBoxRender {
   borderRows: string[];
@@ -152,10 +153,16 @@ export class InputBox {
   private wrap(text: string, width: number): string[] {
     const out: string[] = [];
     for (const line of text.split("\n")) {
-      let rest = line;
-      if (rest.length === 0) { out.push(""); continue; }
-      while (rest.length > width) { out.push(rest.slice(0, width)); rest = rest.slice(width); }
-      out.push(rest);
+      if (line.length === 0) { out.push(""); continue; }
+      let row = "";
+      let w = 0;
+      for (const ch of line) {
+        const cw = charWidth(ch.codePointAt(0)!);
+        if (w + cw > width) { out.push(row); row = ""; w = 0; }
+        row += ch;
+        w += cw;
+      }
+      out.push(row);
     }
     return out;
   }

@@ -1,5 +1,6 @@
 import { sgr, SGR_RESET } from "../term/ansi.js";
 import type { Theme } from "../theme.js";
+import { stringWidth, truncateToWidth } from "../width.js";
 
 export interface StatusBarProps {
   provider: string;
@@ -50,9 +51,9 @@ export function renderStatusBar(p: StatusBarProps, theme: Theme, width: number):
   const rows: string[] = [];
   let current = "";
   for (let segment of segments) {
-    if (segment.length > width) segment = segment.slice(0, Math.max(0, width - 1)) + "…";
+    if (stringWidth(segment) > width) segment = truncateToWidth(segment, width);
     if (current === "") current = segment;
-    else if (current.length + SEP.length + segment.length <= width) current += SEP + segment;
+    else if (stringWidth(current) + SEP.length + stringWidth(segment) <= width) current += SEP + segment;
     else { rows.push(current); current = segment; }
   }
   if (current !== "") rows.push(current);
