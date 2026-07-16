@@ -112,18 +112,46 @@ describe("InlineRenderer", () => {
     expect(out).toContain(`\x1b[1;3r`);
   });
 
-  it("growing footer height evacuates newly-reclaimed rows into scrollback before shrinking the region", () => {
+  it("growing footer height with no content on screen redraws without scrolling (no blank-line burst)", () => {
     const r = new InlineRenderer();
     const buf = new Buffer();
     // First frame: footer is 4 lines, scrollBottom = 20.
     r.frame(buf, baseBottom(), theme, size);
     // Second frame: streaming adds a work-indicator line, footer becomes 5 lines, scrollBottom = 19.
     const second = r.frame(buf, baseBottom({ streaming: true, activeTool: "Bash" }), theme, size);
-    // Evacuation: 1 blank line scrolled at the OLD scroll bottom (row 20) before the region shrinks.
+    // No content was ever committed, so nothing needs to be scrolled into
+    // scrollback: the old evacuate burst (`\x1b[20;1H\r\n`) must not appear.
+    expect(second).not.toContain(`\x1b[${SCROLL_BOTTOM};1H\r\n`);
+    expect(second).toContain(`\x1b[1;${SCROLL_BOTTOM - 1}r`);
+  });
+
+  it("growing footer height with more on-screen content than the new region holds still evacuates the excess into scrollback", () => {
+    const r = new InlineRenderer();
+    const buf = new Buffer();
+    // Commit enough rows to fill the entire first scroll region (20 rows),
+    // so all of it is "on screen" and none of it can fit once the region
+    // shrinks by 1 row on the second frame.
+    for (let i = 0; i < SCROLL_BOTTOM; i++) buf.append({ kind: "notice", text: `row ${i}` });
+    r.frame(buf, baseBottom(), theme, size);
+    const second = r.frame(buf, baseBottom({ streaming: true, activeTool: "Bash" }), theme, size);
+    // More content is on screen (20 rows) than the new region can hold (19
+    // rows), so the excess row must still be evacuated via a real scroll.
     const evacuateIdx = second.indexOf(`\x1b[${SCROLL_BOTTOM};1H\r\n`);
     const newRegionIdx = second.indexOf(`\x1b[1;${SCROLL_BOTTOM - 1}r`);
     expect(evacuateIdx).toBeGreaterThanOrEqual(0);
     expect(newRegionIdx).toBeGreaterThan(evacuateIdx);
+  });
+
+  it("growing footer height with partial on-screen content (fits new region) redraws it at the new bottom-anchored position, not via scrolling", () => {
+    const r = new InlineRenderer();
+    const buf = new Buffer();
+    buf.append({ kind: "notice", text: "ONLY_ROW" });
+    r.frame(buf, baseBottom(), theme, size); // commits "ONLY_ROW", scrollBottom = 20
+    const second = r.frame(buf, baseBottom({ streaming: true, activeTool: "Bash" }), theme, size); // scrollBottom = 19
+    // 1 row of real content fits easily inside a 19-row region: redrawn
+    // directly, no scroll burst, and it must still be present on screen.
+    expect(second).not.toContain(`\x1b[${SCROLL_BOTTOM};1H\r\n`);
+    expect(second).toContain("ONLY_ROW");
   });
 
   it("shrinking footer height blanks the rows freed back to the message region", () => {

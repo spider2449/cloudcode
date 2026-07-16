@@ -37,6 +37,14 @@ export class InlineRenderer {
   private lastScrollBottom = -1;
   private lastRows = -1;
   private lastColumns = -1;
+  // Cumulative count of transcript rows printed since the region was last
+  // invalidated, and a bounded cache of their text, used to redraw
+  // currently-visible content directly (no terminal scrolling) when the
+  // footer grows and everything on screen still fits the new, smaller
+  // region -- see the shrink branch in frame() below.
+  private printedRows = 0;
+  private recentRows: string[] = [];
+  private static readonly RECENT_ROWS_CAP = 1000;
 
   frame(
     buffer: Buffer,
@@ -83,11 +91,32 @@ export class InlineRenderer {
     const sizeChanged = rows !== this.lastRows || columns !== this.lastColumns;
 
     if (!firstFrame && !sizeChanged && scrollBottom < this.lastScrollBottom) {
-      // Footer is growing: evacuate the rows about to become footer into
-      // native scrollback by scrolling the OLD region before shrinking it,
-      // so already-committed transcript lines aren't silently overwritten.
-      const evacuate = this.lastScrollBottom - scrollBottom;
-      out += cursorTo(this.lastScrollBottom, 1) + "\r\n".repeat(evacuate);
+      const onScreen = Math.min(this.printedRows, this.lastScrollBottom);
+      if (onScreen <= scrollBottom) {
+        // Every row of transcript content currently on screen fits inside
+        // the new, smaller region: redraw it directly at its new
+        // bottom-anchored position via absolute cursor addressing instead
+        // of relocating it with a terminal scroll. Scrolling to reposition
+        // content unavoidably scrolls everything *between* the content and
+        // the old region's top edge too -- and when the region was mostly
+        // blank (little committed yet, common early in a response), that
+        // blank filler gets pushed into native scrollback as a large,
+        // highly visible burst of empty lines. A direct redraw has no such
+        // side effect and produces the identical end visual state.
+        out += cursorTo(1, 1) + ERASE_DOWN;
+        if (onScreen > 0) {
+          const tail = this.recentRows.slice(-onScreen);
+          out += cursorTo(scrollBottom - onScreen + 1, 1) + tail.join("\r\n") + "\r\n";
+        }
+      } else {
+        // More content is currently visible than the new region can hold:
+        // the excess rows have never been scrolled into native scrollback
+        // (they've only ever been drawn on screen), so they must be
+        // relocated via a real scroll -- there is no way to preserve them
+        // in scrollback other than actually scrolling the terminal.
+        const evacuate = this.lastScrollBottom - scrollBottom;
+        out += cursorTo(this.lastScrollBottom, 1) + "\r\n".repeat(evacuate);
+      }
     }
 
     if (firstFrame || sizeChanged || scrollBottom !== this.lastScrollBottom) {
@@ -103,6 +132,13 @@ export class InlineRenderer {
     }
 
     const staticRows = buffer.takeCommitRows(columns, theme);
+    if (staticRows.length > 0) {
+      this.printedRows += staticRows.length;
+      this.recentRows.push(...staticRows);
+      if (this.recentRows.length > InlineRenderer.RECENT_ROWS_CAP) {
+        this.recentRows = this.recentRows.slice(-InlineRenderer.RECENT_ROWS_CAP);
+      }
+    }
     out += cursorTo(scrollBottom, 1) + staticRows.map(r => r + "\r\n").join("");
     out += cursorTo(scrollBottom + 1, 1) + ERASE_DOWN + footer.join("\r\n");
     return out;
@@ -112,12 +148,16 @@ export class InlineRenderer {
     this.lastScrollBottom = -1;
     this.lastRows = -1;
     this.lastColumns = -1;
+    this.printedRows = 0;
+    this.recentRows = [];
   }
 
   finalize(): string {
     this.lastScrollBottom = -1;
     this.lastRows = -1;
     this.lastColumns = -1;
+    this.printedRows = 0;
+    this.recentRows = [];
     return RESET_SCROLL_REGION + "\r\n";
   }
 }
