@@ -1,0 +1,15 @@
+  ___ _    ___  _   _ ___   ___ ___  ___  ___
+ / __| |  / _ \| | | |   \ / __/ _ \|   \| __|
+| (__| |_| (_) | |_| | |) | (_| (_) | |) | _|
+ \___|____\___/ \___/|___/ \___\___/|___/|___|
+
+Welcome to cloudcode v{version}
+Provider: {provider}   Model: {model}
+
+Tips:
+  /help      show available commands
+  /model     switch model
+  /resume    pick up a previous session
+  Shift+Tab  cycle permission modes
+
+Type a prompt to begin.
