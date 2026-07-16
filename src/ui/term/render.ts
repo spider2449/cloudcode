@@ -8,6 +8,22 @@ import { tailForHeight } from "../streamTail.js";
 import { wrapText } from "../layout.js";
 import { ERASE_DOWN, cursorTo, setScrollRegion, RESET_SCROLL_REGION, sgr, SGR_RESET } from "./ansi.js";
 import type { Theme } from "../theme.js";
+import { appendFileSync } from "node:fs";
+
+// Opt-in internal-state trace for diagnosing the redraw-in-place mechanism
+// (Tasks 9a/9b/9c) directly, instead of inferring printedRows/onScreen from
+// raw escape codes. Set CLOUDCODE_DEBUG_LOG to a file path (same variable
+// terminal.ts's raw-output capture uses) to also get one line per frame()
+// call showing the exact size/region/cache state at each step.
+function traceLog(line: string): void {
+  const path = process.env.CLOUDCODE_DEBUG_LOG;
+  if (!path) return;
+  try {
+    appendFileSync(path, `[${Date.now()}] RENDER ${line}\n`);
+  } catch {
+    // ignore
+  }
+}
 
 export interface BottomState {
   overlay: OverlayMode;
@@ -91,6 +107,12 @@ export class InlineRenderer {
     const columnsChanged = columns !== this.lastColumns;
     const rowsChanged = rows !== this.lastRows;
 
+    traceLog(
+      `entry rows=${rows} columns=${columns} lastRows=${this.lastRows} lastColumns=${this.lastColumns} ` +
+      `lastScrollBottom=${this.lastScrollBottom} scrollBottom=${scrollBottom} printedRows=${this.printedRows} ` +
+      `recentRows.length=${this.recentRows.length} firstFrame=${firstFrame} columnsChanged=${columnsChanged} rowsChanged=${rowsChanged}`
+    );
+
     if (columnsChanged) {
       // Cached row strings were wrapped for the OLD column width and would
       // render incorrectly (wrong wrap points) if redrawn at the new one.
@@ -106,6 +128,7 @@ export class InlineRenderer {
 
     if (!firstFrame && !columnsChanged && scrollBottom !== this.lastScrollBottom) {
       const onScreen = Math.min(this.printedRows, Math.max(0, this.lastScrollBottom - 1));
+      traceLog(`redraw-check onScreen=${onScreen} scrollBottom-1=${scrollBottom - 1} branch=${onScreen <= scrollBottom - 1 ? "redraw" : "evacuate"}`);
       if (onScreen <= scrollBottom - 1) {
         // Every row of transcript content currently on screen fits inside
         // the new region (whether it grew or shrank): redraw it directly
@@ -159,6 +182,7 @@ export class InlineRenderer {
       if (this.recentRows.length > InlineRenderer.RECENT_ROWS_CAP) {
         this.recentRows = this.recentRows.slice(-InlineRenderer.RECENT_ROWS_CAP);
       }
+      traceLog(`commit staticRows.length=${staticRows.length} printedRows(after)=${this.printedRows} recentRows.length(after)=${this.recentRows.length}`);
     }
     out += cursorTo(scrollBottom, 1) + staticRows.map(r => r + "\r\n").join("");
     out += cursorTo(scrollBottom + 1, 1) + ERASE_DOWN + footer.join("\r\n");
@@ -166,6 +190,7 @@ export class InlineRenderer {
   }
 
   invalidate(): void {
+    traceLog("invalidate() called");
     this.lastScrollBottom = -1;
     this.lastRows = -1;
     this.lastColumns = -1;
