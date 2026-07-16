@@ -158,7 +158,21 @@ export class InputBox {
       let w = 0;
       for (const ch of line) {
         const cw = charWidth(ch.codePointAt(0)!);
-        if (w + cw > width) { out.push(row); row = ""; w = 0; }
+        if (w + cw > width) {
+          if (w === 0) {
+            // The row is already empty and this single character alone
+            // exceeds `width` (e.g. a wide CJK/emoji char in a 1-column
+            // width). There is no way to make it fit narrower, so hard-cut:
+            // emit this one character as its own row (even though it
+            // overflows) and move on, matching wrapText's resolution in
+            // layout.ts for the same unavoidable edge case.
+            out.push(ch);
+            continue;
+          }
+          out.push(row);
+          row = "";
+          w = 0;
+        }
         row += ch;
         w += cw;
       }

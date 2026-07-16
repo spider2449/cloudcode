@@ -23,4 +23,16 @@ describe("InputBox CJK wrapping", () => {
       expect(stringWidth(row)).toBeLessThanOrEqual(16); // innerWidth = width - 4
     }
   });
+
+  it("does not hang or throw when a wide char alone exceeds innerWidth", () => {
+    const box = new InputBox(ctx, new History());
+    box.handleKey({ t: "printable", ch: "中" }, false);
+    // width = 5 => innerWidth = Math.max(1, 5 - 4) = 1, narrower than the
+    // 2-column-wide CJK character; there is no way to avoid an over-width
+    // row here, but wrap() must still terminate and return the character.
+    const r = box.render(theme, 5, false);
+    expect(() => box.render(theme, 5, false)).not.toThrow();
+    const joined = r.contentRows.join("");
+    expect(joined).toContain("中");
+  });
 });
