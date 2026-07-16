@@ -102,10 +102,19 @@ export class EngineLoop {
         usage = turn.usage ?? usage;
         addCost(turn.usage);
         this.messages.push({ role: "assistant", content: turn.blocks });
-        this.opts.onMessage(assistantMessage(turn.blocks));
-        if (turn.stopReason !== "tool_use") break;
+        if (turn.stopReason !== "tool_use") {
+          // No tool calls this turn: emit the whole batch as one assistant
+          // message, same as before.
+          this.opts.onMessage(assistantMessage(turn.blocks));
+          break;
+        }
+        // Tool calls present: emit each block's label/diff immediately
+        // followed by its own result, so the transcript groups
+        // tool-label -> diff -> result per tool instead of batching all
+        // labels first and all results after (see Task 6 review finding).
         const results = [];
         for (const block of turn.blocks) {
+          this.opts.onMessage(assistantMessage([block]));
           if (block.type !== "tool_use") continue;
           const result = await this.runTool(block);
           results.push(result);
