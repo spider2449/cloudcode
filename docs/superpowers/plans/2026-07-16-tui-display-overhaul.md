@@ -1269,6 +1269,120 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
+### Task 9b: Fix blank gap on footer shrink-back (region growth) (`src/ui/term/render.ts`)
+
+**Context:** Task 9a fixed the blank-line-burst on footer *growth* (region shrinking). Manual re-verification found the same visible symptom (a large blank gap in the transcript) still occurs in the opposite transition: when streaming ends and the footer shrinks back to idle size (region *grows*), reproduced directly via a script driving `InlineRenderer.frame()` through a realistic tool-calls → streaming → final-commit sequence. Root cause: the growth branch (`scrollBottom > this.lastScrollBottom`) only erases the newly-reclaimed rows (`cursorTo(this.lastScrollBottom + 1, 1) + ERASE_DOWN`) and resizes the region — it never repositions existing on-screen content to stay adjacent to the new, larger region's bottom. Content committed earlier (e.g. tool call labels) stays exactly where Task 9a's shrink-redraw left it, near the old small `scrollBottom`; the next commit (the full response) prints at the far-away new `scrollBottom`, leaving a visible gap of blank, erased rows in between.
+
+**Design:** Unify the shrink and grow paths under the SAME mechanism Task 9a already built: whenever `scrollBottom` changes at all (either direction) and all on-screen content fits under the invariant (`onScreen <= scrollBottom - 1`), clear the viewport and redraw the cached tail directly at the new bottom-anchored position — this correctly repositions content on growth too, not just shrink. The scroll-evacuate fallback remains reachable only on shrink (growth can never have more on-screen content than the larger region can hold, since `onScreen` was already bounded by the smaller old region's own capacity).
+
+**Files:**
+- Modify: `src/ui/term/render.ts`
+- Modify: `tests/render.test.ts`
+
+**Interfaces:** No signature changes. No new fields (reuses `printedRows`/`recentRows` from Task 9a).
+
+- [ ] **Step 1: Add a failing test for the growth case**
+
+Add to `tests/render.test.ts`:
+
+```ts
+  it("footer shrinking back to idle (region growing) repositions existing content adjacent to new commits, not stranded with a gap", () => {
+    const r = new InlineRenderer();
+    const buf = new Buffer();
+    buf.append({ kind: "tool", label: "Bash dir /b" });
+    r.frame(buf, baseBottom(), theme, size); // idle, scrollBottom=20, "Bash dir /b" ends at row 19
+    r.frame(buf, baseBottom({ streaming: true, activeTool: "Bash" }), theme, size); // shrink to 19
+    // Streaming ends: footer shrinks back to idle (4 lines), scrollBottom
+    // grows back to 20, and the full response commits in the same frame.
+    buf.append({ kind: "assistant", text: "final answer" });
+    const third = r.frame(buf, baseBottom(), theme, size);
+    // The tool label must be redrawn adjacent to (immediately above) the
+    // new content's blank separator, not left behind with erased blank
+    // rows in between. Assert both are present and no more than the
+    // expected 1 blank separator row (Task 5 spacing) sits between them.
+    const toolIdx = third.indexOf("Bash dir /b");
+    const answerIdx = third.indexOf("final answer");
+    expect(toolIdx).toBeGreaterThanOrEqual(0);
+    expect(answerIdx).toBeGreaterThan(toolIdx);
+    const between = third.slice(toolIdx, answerIdx);
+    // No more than 2 CRLFs between them: end of the tool line, and the one
+    // intentional blank separator row before the assistant item.
+    expect((between.match(/\r\n/g) ?? []).length).toBeLessThanOrEqual(2);
+  });
+```
+
+- [ ] **Step 2: Run it, confirm it fails against the current implementation**
+
+Run: `npx vitest run tests/render.test.ts -t "shrinking back to idle"`
+Expected: FAIL — the tool label and the final answer are separated by many more than 2 CRLFs (the erased-but-unfilled gap), or the tool label isn't found before the answer at all in the expected tight arrangement.
+
+- [ ] **Step 3: Unify the shrink/grow branches in `src/ui/term/render.ts`**
+
+Replace the two separate blocks (the shrink-evacuate-or-redraw block from Task 9a, AND the grow-only "erase stale footer bytes" block) with one unified block:
+
+```ts
+    if (!firstFrame && !sizeChanged && scrollBottom !== this.lastScrollBottom) {
+      const onScreen = Math.min(this.printedRows, Math.max(0, this.lastScrollBottom - 1));
+      if (onScreen <= scrollBottom - 1) {
+        // Every row of transcript content currently on screen fits inside
+        // the new region (whether it grew or shrank): redraw it directly
+        // at its new bottom-anchored position via absolute cursor
+        // addressing instead of leaving it in place or relocating it with
+        // a terminal scroll. Two distinct bugs are avoided this way: (a)
+        // shrinking via a raw scroll bakes mostly-blank filler into
+        // scrollback as a visible burst of empty lines when little content
+        // has been committed yet; (b) growing without repositioning leaves
+        // existing content stranded near the old (smaller) scrollBottom
+        // while new commits print at the far-away new one, opening a
+        // visible gap of blank, erased rows in between.
+        out += cursorTo(1, 1) + ERASE_DOWN;
+        if (onScreen > 0) {
+          const tail = this.recentRows.slice(-onScreen);
+          out += cursorTo(scrollBottom - onScreen, 1) + tail.join("\r\n") + "\r\n";
+        }
+      } else {
+        // Only reachable when shrinking: more content is on screen than
+        // the new (smaller) region can hold. Growing a region can never
+        // hit this branch, since onScreen was already bounded by the
+        // smaller old region's own capacity. The excess rows have never
+        // been scrolled into native scrollback (only ever drawn on
+        // screen), so they must be relocated via a real scroll.
+        const evacuate = this.lastScrollBottom - scrollBottom;
+        out += cursorTo(this.lastScrollBottom, 1) + "\r\n".repeat(evacuate);
+      }
+    }
+
+    if (firstFrame || sizeChanged || scrollBottom !== this.lastScrollBottom) {
+      out += setScrollRegion(1, scrollBottom);
+      this.lastScrollBottom = scrollBottom;
+      this.lastRows = rows;
+      this.lastColumns = columns;
+    }
+```
+
+(This removes the old grow-only `if (!firstFrame && scrollBottom > this.lastScrollBottom) { cursorTo(this.lastScrollBottom + 1, 1) + ERASE_DOWN }` block entirely — the unified redraw-in-place branch now handles growth too, via its own `cursorTo(1,1) + ERASE_DOWN`.)
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `npx vitest run tests/render.test.ts`
+Expected: all tests pass, including the new growth test and every test from Task 9a (resting-row, survival, boundary, the original blank-line-burst tests). If any Task 9a test asserted the OLD grow-only erase behavior specifically (search for tests using `baseBottom()` after a streaming frame, i.e. shrink-then-grow-back sequences), update it to match the new unified redraw — but the shrink-only tests (footer growing, i.e. region shrinking) must be unaffected since that branch's logic didn't change.
+
+- [ ] **Step 5: Run the full suite and typecheck**
+
+Run: `npx vitest run` — must match baseline exactly.
+Run: `npx tsc --noEmit -p tsconfig.json` — must be clean.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/ui/term/render.ts tests/render.test.ts
+git commit -m "fix(ui): reposition existing transcript content when the footer shrinks back too
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+```
+
+---
+
 ### Task 9: Full suite, build, and manual verification
 
 **Files:**
