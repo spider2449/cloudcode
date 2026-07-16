@@ -162,16 +162,22 @@ describe("App resize handling", () => {
     expect(all).toContain("hi there");
   });
 
-  it("a height-only resize repaints the footer without clearing the screen", async () => {
+  it("a height-only resize also gets the debounced full clear+reprint (stale footer copies bake into scrollback when the window shrinks)", async () => {
     const { app, terminal } = makeApp([textTurn("hi there")]);
     void app.run();
     app.submitForTest("hello");
     await wait(80);
     terminal.writes.length = 0;
+    // When a terminal window gets shorter, the host pushes the viewport
+    // top -- including previously painted footer rows -- into scrollback,
+    // where no escape sequence can erase them. Only the scrollback-clearing
+    // full reprint cleans those baked copies, so it must fire for height
+    // changes too, not just width changes.
     terminal.resize({ rows: 30, columns: 80 });
     await wait(250);
     const all = terminal.writes.join("");
-    expect(all).not.toContain("\x1b[2J");
+    expect(all).toContain("\x1b[3J");
+    expect(all).toContain("> hello"); // transcript re-committed, not lost
     expect(all).toContain("/repo"); // status bar repainted
   });
 
