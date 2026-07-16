@@ -4,6 +4,7 @@ import type { Key } from "../input.js";
 import { renderMenu } from "./menu.js";
 import { sgr, SGR_RESET } from "../term/ansi.js";
 import type { Theme } from "../theme.js";
+import { charWidth } from "../width.js";
 
 export interface InputBoxRender {
   borderRows: string[];
@@ -152,10 +153,30 @@ export class InputBox {
   private wrap(text: string, width: number): string[] {
     const out: string[] = [];
     for (const line of text.split("\n")) {
-      let rest = line;
-      if (rest.length === 0) { out.push(""); continue; }
-      while (rest.length > width) { out.push(rest.slice(0, width)); rest = rest.slice(width); }
-      out.push(rest);
+      if (line.length === 0) { out.push(""); continue; }
+      let row = "";
+      let w = 0;
+      for (const ch of line) {
+        const cw = charWidth(ch.codePointAt(0)!);
+        if (w + cw > width) {
+          if (w === 0) {
+            // The row is already empty and this single character alone
+            // exceeds `width` (e.g. a wide CJK/emoji char in a 1-column
+            // width). There is no way to make it fit narrower, so hard-cut:
+            // emit this one character as its own row (even though it
+            // overflows) and move on, matching wrapText's resolution in
+            // layout.ts for the same unavoidable edge case.
+            out.push(ch);
+            continue;
+          }
+          out.push(row);
+          row = "";
+          w = 0;
+        }
+        row += ch;
+        w += cw;
+      }
+      out.push(row);
     }
     return out;
   }

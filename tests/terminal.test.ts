@@ -46,3 +46,35 @@ describe("FakeTerminal", () => {
     expect(() => { t.cleanup(); t.cleanup(); }).not.toThrow();
   });
 });
+
+// Real Terminal: resize listener management. A stale App keeping its resize
+// callback registered after a project switch was the root cause of dueling
+// frame writes (blank regions, ghost content, stale footers) on every
+// window resize -- see the 2026-07-16 TUI overhaul plan, Task 9d.
+import { Terminal } from "../src/ui/term/terminal.js";
+
+describe("Terminal resize listener", () => {
+  it("onResize replaces the previous callback instead of stacking listeners", () => {
+    const before = process.stdout.listenerCount("resize");
+    const t = new Terminal();
+    const calls: string[] = [];
+    t.onResize(() => calls.push("first"));
+    t.onResize(() => calls.push("second"));
+    process.stdout.emit("resize");
+    expect(calls).toEqual(["second"]);
+    // At most one listener was added regardless of how many onResize calls.
+    expect(process.stdout.listenerCount("resize")).toBe(before + 1);
+    t.cleanup();
+  });
+
+  it("cleanup() removes the resize listener entirely", () => {
+    const before = process.stdout.listenerCount("resize");
+    const t = new Terminal();
+    let fired = 0;
+    t.onResize(() => { fired += 1; });
+    t.cleanup();
+    process.stdout.emit("resize");
+    expect(fired).toBe(0);
+    expect(process.stdout.listenerCount("resize")).toBe(before);
+  });
+});

@@ -56,6 +56,27 @@ const SEQUENCES: Record<string, Key> = {
 
 const ESC_TIMEOUT_MS = 25;
 
+/**
+ * Fallback paste detection for terminals without bracketed paste (legacy
+ * conhost: classic cmd.exe / powershell.exe windows). A human cannot produce
+ * multiple keys in a single stdin read — keyboard auto-repeat delivers one
+ * char per chunk — so a chunk that decodes to 2+ keys consisting solely of
+ * printable characters, Enter and Tab is a paste. Coalescing it prevents
+ * each pasted newline from submitting a message. Chunks containing any other
+ * key (escape sequences, ctrl chords) are left untouched.
+ */
+export function coalescePaste(keys: Key[]): Key[] {
+  if (keys.length < 2) return keys;
+  let text = "";
+  for (const k of keys) {
+    if (k.t === "printable") text += k.ch;
+    else if (k.t === "enter") text += "\n";
+    else if (k.t === "tab") text += "\t";
+    else return keys;
+  }
+  return [{ t: "paste", text }];
+}
+
 export class KeyDecoder {
   private pending = "";
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -70,7 +91,7 @@ export class KeyDecoder {
   feed(chunk: Buffer): Key[] {
     this.clearTimer();
     this.pending += this.utf8.write(chunk);
-    return this.drain();
+    return coalescePaste(this.drain());
   }
 
   private clearTimer(): void {
@@ -153,7 +174,12 @@ export class KeyDecoder {
     }
 
     const ch = s[0];
-    if (ch === "\r" || ch === "\n") { keys.push({ t: "enter" }); return 1; }
+    if (ch === "\r") {
+      // Swallow the LF of a CRLF pair so pastes don't produce double enters.
+      keys.push({ t: "enter" });
+      return s[1] === "\n" ? 2 : 1;
+    }
+    if (ch === "\n") { keys.push({ t: "enter" }); return 1; }
     if (ch === "\t") { keys.push({ t: "tab" }); return 1; }
     if (ch === "\x7f") { keys.push({ t: "backspace" }); return 1; }
     const code = ch.charCodeAt(0);

@@ -54,6 +54,19 @@ const toolUseTurn = () => [
   { type: "message_stop" }
 ];
 
+// A single turn issuing two separate tool calls, each with its own clean
+// content_block_start/delta/stop sequence.
+const twoToolUseTurn = () => [
+  { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "tu_a", name: "EchoTool", input: {} } },
+  { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "{\"x\":1}" } },
+  { type: "content_block_stop", index: 0 },
+  { type: "content_block_start", index: 1, content_block: { type: "tool_use", id: "tu_b", name: "EchoTool", input: {} } },
+  { type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: "{\"y\":2}" } },
+  { type: "content_block_stop", index: 1 },
+  { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { input_tokens: 10, output_tokens: 5 } },
+  { type: "message_stop" }
+];
+
 // Some non-Anthropic providers drop or reorder content_block_stop events.
 // Two tool_use blocks back to back where the first's stop event never
 // arrives - the loop must still recover the first block's input instead of
@@ -153,6 +166,30 @@ describe("EngineLoop", () => {
     // Note: content is `echo:${JSON.stringify(input)}` and gets JSON.stringify'd again
     // when serializing loop.messages, so inner quotes are escaped in the flattened string.
     expect(flat).toContain("echo:{\\\"x\\\":1}");
+  });
+
+  it("interleaves each tool's onMessage emissions with its own result, for a turn with 2+ tool calls", async () => {
+    const received: unknown[] = [];
+    const loop = makeLoop([twoToolUseTurn(), textTurn("done")], received);
+    await loop.runTurn("go", new AbortController().signal);
+    // Reduce the onMessage stream to a sequence of tags identifying each
+    // tool_use block (by id) and each tool_result (by tool_use_id), in the
+    // order onMessage was called.
+    const tags = received
+      .map(m => {
+        const rec = m as Record<string, unknown>;
+        if (rec.type === "assistant") {
+          const content = (rec.message as { content: Array<Record<string, unknown>> }).content;
+          if (content.length === 1 && content[0].type === "tool_use") return `tool:${content[0].id}`;
+          return undefined;
+        }
+        if (rec.type === "tool_result") return `result:${rec.tool_use_id}`;
+        return undefined;
+      })
+      .filter((t): t is string => t !== undefined);
+    // Each tool's label must be immediately followed by its own result,
+    // before the next tool's label appears.
+    expect(tags).toEqual(["tool:tu_a", "result:tu_a", "tool:tu_b", "result:tu_b"]);
   });
 
   it("recovers a tool_use block's input when its content_block_stop is dropped by the provider", async () => {

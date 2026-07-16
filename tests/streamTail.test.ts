@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { tailForHeight } from "../src/ui/streamTail.js";
+import { stringWidth } from "../src/ui/width.js";
 
 describe("tailForHeight", () => {
   it("returns short text unchanged", () => {
@@ -27,5 +28,16 @@ describe("tailForHeight", () => {
   it("returns at least the last line even if it alone exceeds max rows", () => {
     const long = "y".repeat(50);
     expect(tailForHeight(`a\n${long}`, 2, 10)).toBe(long);
+  });
+});
+
+describe("tailForHeight CJK rows", () => {
+  it("counts a CJK line as its column width, not char count", () => {
+    // 10 CJK chars = 20 columns = 2 rows at width 10.
+    const text = ["第一行的中文內容啊啊", "second"].join("\n");
+    // maxRows 2: the CJK line alone already fills 2 rows, so only the last
+    // line(s) fitting must be kept.
+    const out = tailForHeight(text, 2, 10);
+    expect(out).toBe("second");
   });
 });

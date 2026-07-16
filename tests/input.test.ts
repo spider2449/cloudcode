@@ -62,7 +62,7 @@ describe("KeyDecoder", () => {
   it("decodes multiple keys delivered in one chunk", () => {
     const d = new KeyDecoder();
     const keys = d.feed(b("hi\r"));
-    expect(keys).toEqual([{ t: "printable", ch: "h" }, { t: "printable", ch: "i" }, { t: "enter" }]);
+    expect(keys).toEqual([{ t: "paste", text: "hi\n" }]);
   });
 
   it("decodes a bracketed paste payload as one event", () => {

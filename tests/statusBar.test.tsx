@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import React from "react";
 import { render } from "ink-testing-library";
 import { StatusBar, formatTokens, formatElapsed } from "../src/ui/StatusBar.js";
+import { renderStatusBar } from "../src/ui/widgets/statusBar.js";
+import { stringWidth } from "../src/ui/width.js";
 
 describe("formatTokens", () => {
   it("formats small counts plainly", () => expect(formatTokens(950)).toBe("950 tok"));
@@ -75,5 +77,16 @@ describe("StatusBar", () => {
     );
     expect(lastFrame()).toContain("⎇ dev");
     expect(lastFrame()).not.toContain("dev*");
+  });
+});
+
+describe("status bar CJK width", () => {
+  it("packs segments by columns so no row exceeds the width", () => {
+    const rows = renderStatusBar(
+      { provider: "p", mode: "default", cwd: "D:\\專案\\中文路徑名稱很長很長" },
+      { muted: undefined } as never,
+      20
+    );
+    for (const r of rows) expect(stringWidth(r)).toBeLessThanOrEqual(20);
   });
 });

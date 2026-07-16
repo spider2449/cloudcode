@@ -449,22 +449,29 @@ export class App {
     this.ctx.openResumePicker();
   }
 
-  private lastPaintColumns = 0;
   private resizeRepaintTimer: ReturnType<typeof setTimeout> | undefined;
 
   /**
-   * On a width change the terminal reflows the transcript rows that were
-   * committed to scrollback at the old width, leaving garbled history and
-   * stale footer imprints on screen that no footer repaint can fix. The only
-   * correct recovery is a clear-and-reprint of the whole transcript at the
-   * new width. Resize events arrive in storms while the user drags the window
-   * edge, so the expensive full repaint is debounced until the size settles;
-   * the footer alone is repainted immediately so it tracks the live size.
+   * Any resize leaves debris that no in-place footer repaint can fix. On a
+   * width change the terminal reflows the transcript rows that were
+   * committed to scrollback at the old width, garbling history. On a height
+   * shrink the host pushes the viewport top -- including previously painted
+   * footer rows -- into scrollback, baking stale footer copies there, where
+   * no escape sequence can reach them. The only correct recovery for both
+   * is a scrollback-clearing reprint of the whole transcript at the settled
+   * size. Resize events arrive in storms while the user drags the window
+   * edge, so the expensive full repaint is debounced until the size
+   * settles; each in-storm frame is still repainted immediately so the
+   * footer tracks the live size.
    */
   private handleResize(): void {
-    const widthChanged = this.terminal.size().columns !== this.lastPaintColumns;
+    // A stopped App must be fully inert: without this guard, an instance
+    // whose resize callback outlives stop() (e.g. across a project switch)
+    // keeps repainting on every resize with its stale, empty renderer state,
+    // clearing the screen and stamping an outdated footer over the live
+    // App's frames.
+    if (!this.running) return;
     this.recompute();
-    if (!widthChanged) return;
     if (this.resizeRepaintTimer) clearTimeout(this.resizeRepaintTimer);
     this.resizeRepaintTimer = setTimeout(() => {
       this.resizeRepaintTimer = undefined;
@@ -566,7 +573,6 @@ export class App {
       workStartedAt: this.workStartedAt
     };
     this.terminal.write(this.renderer.frame(this.buffer, bottom, this.theme, size));
-    this.lastPaintColumns = size.columns;
   }
 
   async run(): Promise<void> {

@@ -1,3 +1,5 @@
+import { stringWidth } from "./width.js";
+
 // While a response streams in, the text lives in Ink's dynamic region and is
 // repainted on every delta. Once that region reaches the terminal height, Ink
 // clears and rewrites the whole screen each render, which destroys the user's
@@ -11,7 +13,7 @@ export function tailForHeight(text: string, maxRows: number, columns: number): s
   let rows = 0;
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i];
-    rows += Math.max(1, Math.ceil(line.length / width));
+    rows += Math.max(1, Math.ceil(stringWidth(line) / width));
     if (rows > maxRows && kept.length > 0) break;
     kept.unshift(line);
     if (rows >= maxRows) break;

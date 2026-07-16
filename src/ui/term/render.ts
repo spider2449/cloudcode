@@ -8,6 +8,22 @@ import { tailForHeight } from "../streamTail.js";
 import { wrapText } from "../layout.js";
 import { ERASE_DOWN, cursorTo, setScrollRegion, RESET_SCROLL_REGION, sgr, SGR_RESET } from "./ansi.js";
 import type { Theme } from "../theme.js";
+import { appendFileSync } from "node:fs";
+
+// Opt-in internal-state trace for diagnosing the redraw-in-place mechanism
+// (Tasks 9a/9b/9c) directly, instead of inferring printedRows/onScreen from
+// raw escape codes. Set CLOUDCODE_DEBUG_LOG to a file path (same variable
+// terminal.ts's raw-output capture uses) to also get one line per frame()
+// call showing the exact size/region/cache state at each step.
+function traceLog(line: string): void {
+  const path = process.env.CLOUDCODE_DEBUG_LOG;
+  if (!path) return;
+  try {
+    appendFileSync(path, `[${Date.now()}] RENDER ${line}\n`);
+  } catch {
+    // ignore
+  }
+}
 
 export interface BottomState {
   overlay: OverlayMode;
@@ -37,6 +53,14 @@ export class InlineRenderer {
   private lastScrollBottom = -1;
   private lastRows = -1;
   private lastColumns = -1;
+  // Cumulative count of transcript rows printed since the region was last
+  // invalidated, and a bounded cache of their text, used to redraw
+  // currently-visible content directly (no terminal scrolling) when the
+  // footer grows and everything on screen still fits the new, smaller
+  // region -- see the shrink branch in frame() below.
+  private printedRows = 0;
+  private recentRows: string[] = [];
+  private static readonly RECENT_ROWS_CAP = 1000;
 
   frame(
     buffer: Buffer,
@@ -80,22 +104,71 @@ export class InlineRenderer {
 
     let out = "";
     const firstFrame = this.lastScrollBottom < 0;
-    const sizeChanged = rows !== this.lastRows || columns !== this.lastColumns;
+    const columnsChanged = columns !== this.lastColumns;
+    const rowsChanged = rows !== this.lastRows;
 
-    if (!firstFrame && !sizeChanged && scrollBottom < this.lastScrollBottom) {
-      // Footer is growing: evacuate the rows about to become footer into
-      // native scrollback by scrolling the OLD region before shrinking it,
-      // so already-committed transcript lines aren't silently overwritten.
-      const evacuate = this.lastScrollBottom - scrollBottom;
-      out += cursorTo(this.lastScrollBottom, 1) + "\r\n".repeat(evacuate);
+    traceLog(
+      `entry rows=${rows} columns=${columns} lastRows=${this.lastRows} lastColumns=${this.lastColumns} ` +
+      `lastScrollBottom=${this.lastScrollBottom} scrollBottom=${scrollBottom} printedRows=${this.printedRows} ` +
+      `recentRows.length=${this.recentRows.length} firstFrame=${firstFrame} columnsChanged=${columnsChanged} rowsChanged=${rowsChanged}`
+    );
+
+    if (columnsChanged) {
+      // Cached row strings were wrapped for the OLD column width and would
+      // render incorrectly (wrong wrap points) if redrawn at the new one.
+      // nativeApp.ts's handleResize already detects width changes and
+      // performs a debounced full buffer.recommitAll() + screen clear to
+      // re-lay-out the whole transcript correctly at the new width; until
+      // that lands, drop the stale cache rather than risk redrawing
+      // garbled content -- the brief blank interval this creates is the
+      // same interim tradeoff the app already makes for width changes.
+      this.printedRows = 0;
+      this.recentRows = [];
     }
 
-    if (firstFrame || sizeChanged || scrollBottom !== this.lastScrollBottom) {
-      if (!firstFrame && scrollBottom > this.lastScrollBottom) {
-        // Footer is shrinking (or the window grew): the rows being freed
-        // back to the message region still hold stale footer bytes.
-        out += cursorTo(this.lastScrollBottom + 1, 1) + ERASE_DOWN;
+    if (!firstFrame && !columnsChanged && scrollBottom !== this.lastScrollBottom) {
+      const onScreen = Math.min(this.printedRows, Math.max(0, this.lastScrollBottom - 1));
+      traceLog(`redraw-check onScreen=${onScreen} scrollBottom-1=${scrollBottom - 1} branch=${onScreen <= scrollBottom - 1 ? "redraw" : "evacuate"}`);
+      if (onScreen <= scrollBottom - 1) {
+        // Every row of transcript content currently on screen fits inside
+        // the new region (whether it grew or shrank): redraw it directly
+        // at its new bottom-anchored position via absolute cursor
+        // addressing instead of leaving it in place or relocating it with
+        // a terminal scroll. Two distinct bugs are avoided this way: (a)
+        // shrinking via a raw scroll bakes mostly-blank filler into
+        // scrollback as a visible burst of empty lines when little content
+        // has been committed yet; (b) growing without repositioning leaves
+        // existing content stranded near the old (smaller) scrollBottom
+        // while new commits print at the far-away new one, opening a
+        // visible gap of blank, erased rows in between. This now also
+        // covers real terminal resizes (a window dragged taller/shorter),
+        // not just footer-only changes at a fixed terminal size -- a rows-
+        // only resize doesn't invalidate recentRows' wrap width, so the
+        // same mechanism that fixed the footer-growth/shrink-back bugs
+        // applies unchanged here. Without this, on-screen content stays
+        // frozen at its old screen position while the region boundary
+        // silently moves underneath it, and a resize *storm* (many resize
+        // events per drag) repeats that mismatch on every tick -- producing
+        // visible gaps, duplicated/ghost content, and stacked stale footer
+        // rows.
+        out += cursorTo(1, 1) + ERASE_DOWN;
+        if (onScreen > 0) {
+          const tail = this.recentRows.slice(-onScreen);
+          out += cursorTo(scrollBottom - onScreen, 1) + tail.join("\r\n") + "\r\n";
+        }
+      } else {
+        // Only reachable when shrinking: more content is on screen than
+        // the new (smaller) region can hold. Growing a region can never
+        // hit this branch, since onScreen was already bounded by the
+        // smaller old region's own capacity. The excess rows have never
+        // been scrolled into native scrollback (only ever drawn on
+        // screen), so they must be relocated via a real scroll.
+        const evacuate = this.lastScrollBottom - scrollBottom;
+        out += cursorTo(this.lastScrollBottom, 1) + "\r\n".repeat(evacuate);
       }
+    }
+
+    if (firstFrame || columnsChanged || rowsChanged || scrollBottom !== this.lastScrollBottom) {
       out += setScrollRegion(1, scrollBottom);
       this.lastScrollBottom = scrollBottom;
       this.lastRows = rows;
@@ -103,21 +176,34 @@ export class InlineRenderer {
     }
 
     const staticRows = buffer.takeCommitRows(columns, theme);
+    if (staticRows.length > 0) {
+      this.printedRows += staticRows.length;
+      this.recentRows.push(...staticRows);
+      if (this.recentRows.length > InlineRenderer.RECENT_ROWS_CAP) {
+        this.recentRows = this.recentRows.slice(-InlineRenderer.RECENT_ROWS_CAP);
+      }
+      traceLog(`commit staticRows.length=${staticRows.length} printedRows(after)=${this.printedRows} recentRows.length(after)=${this.recentRows.length}`);
+    }
     out += cursorTo(scrollBottom, 1) + staticRows.map(r => r + "\r\n").join("");
     out += cursorTo(scrollBottom + 1, 1) + ERASE_DOWN + footer.join("\r\n");
     return out;
   }
 
   invalidate(): void {
+    traceLog("invalidate() called");
     this.lastScrollBottom = -1;
     this.lastRows = -1;
     this.lastColumns = -1;
+    this.printedRows = 0;
+    this.recentRows = [];
   }
 
   finalize(): string {
     this.lastScrollBottom = -1;
     this.lastRows = -1;
     this.lastColumns = -1;
+    this.printedRows = 0;
+    this.recentRows = [];
     return RESET_SCROLL_REGION + "\r\n";
   }
 }

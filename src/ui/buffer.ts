@@ -2,6 +2,8 @@ import type { DisplayItem } from "./transcript.js";
 import { layoutItem } from "./layout.js";
 import type { Theme } from "./theme.js";
 
+const SPACED_KINDS = new Set(["user", "assistant", "welcome"]);
+
 /**
  * Holds transcript items and tracks which of them have already been
  * committed (printed once into the terminal's normal scrollback).
@@ -34,11 +36,16 @@ export class Buffer {
     this.committed = 0;
   }
 
-  /** Lay out all not-yet-committed items and mark them committed. */
+  /** Lay out all not-yet-committed items and mark them committed. Emits one
+   * blank separator row before user/assistant/welcome blocks (except the
+   * first item) so the transcript has vertical rhythm; tool groups stay
+   * tight. Spacing is index-based, so a resize recommit reproduces it. */
   takeCommitRows(width: number, theme: Theme): string[] {
     const rows: string[] = [];
     for (; this.committed < this.items.length; this.committed++) {
-      rows.push(...layoutItem(this.items[this.committed], theme, width));
+      const item = this.items[this.committed];
+      if (this.committed > 0 && SPACED_KINDS.has(item.kind)) rows.push("");
+      rows.push(...layoutItem(item, theme, width));
     }
     return rows;
   }
