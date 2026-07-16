@@ -34,6 +34,8 @@ export class Terminal implements ITerminal {
   isTTY: boolean;
   private decoder: KeyDecoder | undefined;
   private keysCb: ((keys: Key[]) => void) | undefined;
+  private resizeCb: (() => void) | undefined;
+  private resizeListener: (() => void) | undefined;
   private cleaned = false;
 
   constructor() {
@@ -67,11 +69,21 @@ export class Terminal implements ITerminal {
     this.keysCb = cb;
   }
 
+  // Stores a single callback (like onKeys) instead of stacking a new
+  // process-level listener per call: each App created against this Terminal
+  // (e.g. across project switches in cli.tsx's loop) registers its own
+  // handler, and a stale App's listener surviving its stop() means a dead
+  // instance keeps repainting on every resize -- clearing the screen and
+  // stamping its outdated footer over the live App's frames.
   onResize(cb: () => void): void {
-    process.stdout.on("resize", () => {
-      if (process.env.CLOUDCODE_DEBUG_LOG) debugLog(`RESIZE ${JSON.stringify(this.size())}`);
-      cb();
-    });
+    this.resizeCb = cb;
+    if (!this.resizeListener) {
+      this.resizeListener = () => {
+        if (process.env.CLOUDCODE_DEBUG_LOG) debugLog(`RESIZE ${JSON.stringify(this.size())}`);
+        this.resizeCb?.();
+      };
+      process.stdout.on("resize", this.resizeListener);
+    }
   }
 
   onLine(cb: (line: string) => void): void {
@@ -83,6 +95,11 @@ export class Terminal implements ITerminal {
   cleanup(): void {
     if (this.cleaned) return;
     this.cleaned = true;
+    if (this.resizeListener) {
+      process.stdout.removeListener("resize", this.resizeListener);
+      this.resizeListener = undefined;
+      this.resizeCb = undefined;
+    }
     if (this.isTTY) {
       process.stdin.setRawMode(false);
       process.stdin.pause();

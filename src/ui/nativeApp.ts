@@ -462,6 +462,12 @@ export class App {
    * the footer alone is repainted immediately so it tracks the live size.
    */
   private handleResize(): void {
+    // A stopped App must be fully inert: without this guard, an instance
+    // whose resize callback outlives stop() (e.g. across a project switch)
+    // keeps repainting on every resize with its stale, empty renderer state,
+    // clearing the screen and stamping an outdated footer over the live
+    // App's frames.
+    if (!this.running) return;
     const widthChanged = this.terminal.size().columns !== this.lastPaintColumns;
     this.recompute();
     if (!widthChanged) return;

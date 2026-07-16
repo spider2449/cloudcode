@@ -255,4 +255,20 @@ describe("App key routing", () => {
     await wait(5);
     expect(terminal.writes[terminal.writes.length - 1]).toContain("> x");
   });
+  it("a stopped App never writes to the terminal on a later resize (stale-instance guard)", async () => {
+    const { app, terminal } = makeApp([textTurn("ok")]);
+    void app.run();
+    await wait(5);
+    app.submitForTest("/exit");
+    await wait(5);
+    expect(app.isRunningForTest()).toBe(false);
+    terminal.writes.length = 0;
+    // A dead App instance reacting to resize was the root cause of dueling
+    // frames after a project switch: the old App cleared the screen and
+    // painted its stale footer over the live App's output on every resize
+    // tick. Once stopped, an App must be inert.
+    terminal.resize({ rows: 30, columns: 80 });
+    await wait(5);
+    expect(terminal.writes).toEqual([]);
+  });
 });
