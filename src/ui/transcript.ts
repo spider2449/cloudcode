@@ -38,14 +38,72 @@ export function streamThinkingDelta(msg: EngineMessage): string | undefined {
   return undefined;
 }
 
+// Classic LCS table walk producing a unified-style line diff.
+function lcsDiff(oldLines: string[], newLines: string[]): DiffLine[] {
+  const m = oldLines.length;
+  const n = newLines.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
+  for (let i = m - 1; i >= 0; i--) {
+    for (let j = n - 1; j >= 0; j--) {
+      dp[i][j] = oldLines[i] === newLines[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const out: DiffLine[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < m && j < n) {
+    if (oldLines[i] === newLines[j]) { out.push({ sign: " ", text: oldLines[i] }); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) out.push({ sign: "-", text: oldLines[i++] });
+    else out.push({ sign: "+", text: newLines[j++] });
+  }
+  while (i < m) out.push({ sign: "-", text: oldLines[i++] });
+  while (j < n) out.push({ sign: "+", text: newLines[j++] });
+  return out;
+}
+
+// Collapse unchanged runs longer than 2*ctx+1 to ctx lines on each side with
+// a "…" marker between; leading/trailing runs keep only ctx lines.
+function collapseContext(lines: DiffLine[], ctx = 2): DiffLine[] {
+  const out: DiffLine[] = [];
+  let run: DiffLine[] = [];
+  const flush = (leading: boolean, trailing: boolean) => {
+    if (run.length === 0) return;
+    const limit = ctx;
+    if (leading) {
+      if (run.length > limit) out.push({ sign: " ", text: "…" }, ...run.slice(run.length - limit));
+      else out.push(...run);
+    } else if (trailing) {
+      out.push(...run.slice(0, limit));
+      if (run.length > limit) out.push({ sign: " ", text: "…" });
+    } else if (run.length > 2 * limit + 1) {
+      out.push(...run.slice(0, limit), { sign: " ", text: "…" }, ...run.slice(run.length - limit));
+    } else {
+      out.push(...run);
+    }
+    run = [];
+  };
+  let seenChange = false;
+  for (const l of lines) {
+    if (l.sign === " ") { run.push(l); continue; }
+    flush(!seenChange, false);
+    seenChange = true;
+    out.push(l);
+  }
+  flush(false, true);
+  return out;
+}
+
 export function diffLines(name: string, input: Record<string, unknown>, cap = 20): DiffLine[] {
   const lines: DiffLine[] = [];
   if (name === "Edit") {
-    if (typeof input.old_string === "string" && input.old_string !== "") {
-      for (const l of input.old_string.split("\n")) lines.push({ sign: "-", text: l });
-    }
-    if (typeof input.new_string === "string" && input.new_string !== "") {
-      for (const l of input.new_string.split("\n")) lines.push({ sign: "+", text: l });
+    const oldStr = typeof input.old_string === "string" ? input.old_string : "";
+    const newStr = typeof input.new_string === "string" ? input.new_string : "";
+    if (oldStr !== "" && newStr !== "") {
+      lines.push(...collapseContext(lcsDiff(oldStr.split("\n"), newStr.split("\n"))));
+    } else {
+      // Fallback: pure insertion or deletion keeps the simple dump format.
+      if (oldStr !== "") for (const l of oldStr.split("\n")) lines.push({ sign: "-", text: l });
+      if (newStr !== "") for (const l of newStr.split("\n")) lines.push({ sign: "+", text: l });
     }
   } else if (name === "Write") {
     if (typeof input.content === "string" && input.content !== "") {
