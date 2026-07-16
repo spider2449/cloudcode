@@ -90,41 +90,38 @@ export class InlineRenderer {
     const firstFrame = this.lastScrollBottom < 0;
     const sizeChanged = rows !== this.lastRows || columns !== this.lastColumns;
 
-    if (!firstFrame && !sizeChanged && scrollBottom < this.lastScrollBottom) {
+    if (!firstFrame && !sizeChanged && scrollBottom !== this.lastScrollBottom) {
       const onScreen = Math.min(this.printedRows, Math.max(0, this.lastScrollBottom - 1));
       if (onScreen <= scrollBottom - 1) {
         // Every row of transcript content currently on screen fits inside
-        // the new, smaller region: redraw it directly at its new
-        // bottom-anchored position via absolute cursor addressing instead
-        // of relocating it with a terminal scroll. Scrolling to reposition
-        // content unavoidably scrolls everything *between* the content and
-        // the old region's top edge too -- and when the region was mostly
-        // blank (little committed yet, common early in a response), that
-        // blank filler gets pushed into native scrollback as a large,
-        // highly visible burst of empty lines. A direct redraw has no such
-        // side effect and produces the identical end visual state.
+        // the new region (whether it grew or shrank): redraw it directly
+        // at its new bottom-anchored position via absolute cursor
+        // addressing instead of leaving it in place or relocating it with
+        // a terminal scroll. Two distinct bugs are avoided this way: (a)
+        // shrinking via a raw scroll bakes mostly-blank filler into
+        // scrollback as a visible burst of empty lines when little content
+        // has been committed yet; (b) growing without repositioning leaves
+        // existing content stranded near the old (smaller) scrollBottom
+        // while new commits print at the far-away new one, opening a
+        // visible gap of blank, erased rows in between.
         out += cursorTo(1, 1) + ERASE_DOWN;
         if (onScreen > 0) {
           const tail = this.recentRows.slice(-onScreen);
           out += cursorTo(scrollBottom - onScreen, 1) + tail.join("\r\n") + "\r\n";
         }
       } else {
-        // More content is currently visible than the new region can hold:
-        // the excess rows have never been scrolled into native scrollback
-        // (they've only ever been drawn on screen), so they must be
-        // relocated via a real scroll -- there is no way to preserve them
-        // in scrollback other than actually scrolling the terminal.
+        // Only reachable when shrinking: more content is on screen than
+        // the new (smaller) region can hold. Growing a region can never
+        // hit this branch, since onScreen was already bounded by the
+        // smaller old region's own capacity. The excess rows have never
+        // been scrolled into native scrollback (only ever drawn on
+        // screen), so they must be relocated via a real scroll.
         const evacuate = this.lastScrollBottom - scrollBottom;
         out += cursorTo(this.lastScrollBottom, 1) + "\r\n".repeat(evacuate);
       }
     }
 
     if (firstFrame || sizeChanged || scrollBottom !== this.lastScrollBottom) {
-      if (!firstFrame && scrollBottom > this.lastScrollBottom) {
-        // Footer is shrinking (or the window grew): the rows being freed
-        // back to the message region still hold stale footer bytes.
-        out += cursorTo(this.lastScrollBottom + 1, 1) + ERASE_DOWN;
-      }
       out += setScrollRegion(1, scrollBottom);
       this.lastScrollBottom = scrollBottom;
       this.lastRows = rows;

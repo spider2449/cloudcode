@@ -216,18 +216,45 @@ describe("InlineRenderer", () => {
     expect(second).toContain(`\x1b[${SCROLL_BOTTOM};1H\r\n`);
   });
 
-  it("shrinking footer height blanks the rows freed back to the message region", () => {
+  it("shrinking footer height (region growing back) redraws the on-screen content at the new position, not via a stale-footer erase", () => {
     const r = new InlineRenderer();
     const buf = new Buffer();
     // First frame: streaming, footer is 5 lines, scrollBottom = 19.
     r.frame(buf, baseBottom({ streaming: true, activeTool: "Bash" }), theme, size);
     // Second frame: streaming stops, footer shrinks back to 4 lines, scrollBottom = 20.
     const second = r.frame(buf, baseBottom(), theme, size);
-    const oldFooterStart = SCROLL_BOTTOM - 1 + 1; // 20
-    const blankIdx = second.indexOf(`\x1b[${oldFooterStart};1H\x1b[0J`);
+    // With no content on screen, the unified redraw-in-place branch clears
+    // the viewport from the top (row 1) rather than only erasing the freed
+    // footer rows -- this is what lets it also reposition existing content
+    // when there is some (see the "footer shrinking back to idle" test).
+    const redrawIdx = second.indexOf(`\x1b[1;1H\x1b[0J`);
     const newRegionIdx = second.indexOf(`\x1b[1;${SCROLL_BOTTOM}r`);
-    expect(blankIdx).toBeGreaterThanOrEqual(0);
+    expect(redrawIdx).toBeGreaterThanOrEqual(0);
     expect(newRegionIdx).toBeGreaterThanOrEqual(0);
+  });
+
+  it("footer shrinking back to idle (region growing) repositions existing content adjacent to new commits, not stranded with a gap", () => {
+    const r = new InlineRenderer();
+    const buf = new Buffer();
+    buf.append({ kind: "tool", label: "Bash dir /b" });
+    r.frame(buf, baseBottom(), theme, size); // idle, scrollBottom=20, "Bash dir /b" ends at row 19
+    r.frame(buf, baseBottom({ streaming: true, activeTool: "Bash" }), theme, size); // shrink to 19
+    // Streaming ends: footer shrinks back to idle (4 lines), scrollBottom
+    // grows back to 20, and the full response commits in the same frame.
+    buf.append({ kind: "assistant", text: "final answer" });
+    const third = r.frame(buf, baseBottom(), theme, size);
+    // The tool label must be redrawn adjacent to (immediately above) the
+    // new content's blank separator, not left behind with erased blank
+    // rows in between. Assert both are present and no more than the
+    // expected 1 blank separator row (Task 5 spacing) sits between them.
+    const toolIdx = third.indexOf("Bash dir /b");
+    const answerIdx = third.indexOf("final answer");
+    expect(toolIdx).toBeGreaterThanOrEqual(0);
+    expect(answerIdx).toBeGreaterThan(toolIdx);
+    const between = third.slice(toolIdx, answerIdx);
+    // No more than 2 CRLFs between them: end of the tool line, and the one
+    // intentional blank separator row before the assistant item.
+    expect((between.match(/\r\n/g) ?? []).length).toBeLessThanOrEqual(2);
   });
 
   it("invalidate() forces the next frame to redefine the region unconditionally", () => {
