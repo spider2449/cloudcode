@@ -1383,6 +1383,159 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
+### Task 9c: Apply content repositioning across real terminal resizes, not just footer-only changes (`src/ui/term/render.ts`)
+
+**Context:** Found via a raw-output capture (`CLOUDCODE_DEBUG_LOG`, added in this task's commit history) of a real session where the user resized their terminal window. Tasks 9a/9b's redraw-in-place fix is guarded by `!sizeChanged`, where `sizeChanged = rows !== this.lastRows || columns !== this.lastColumns` — meaning it **never runs during an actual window resize**, only when the footer grows/shrinks while the physical terminal stays the same size (e.g. streaming text changing). During a real resize, the code falls straight through to a bare `setScrollRegion(1, scrollBottom)` with no content repositioning at all, leaving existing on-screen content frozen in its old screen position while the scroll region boundary silently moves underneath it. A window height drag typically fires many resize events in quick succession (confirmed in the captured log: 9 resize events in under a second), each one repeating this raw boundary move — producing exactly the symptoms reported: content gaps, duplicate/ghost tool labels, and stacked stale footer border rows.
+
+**Design:** Rows-only resizes (window dragged taller/shorter, columns unchanged) don't invalidate `recentRows`' cached content — those strings were wrapped at the still-current column width, so the existing redraw-in-place/evacuate mechanism applies unchanged; only the guard needs relaxing from "any size change" to "columns changed." A columns change *does* invalidate the cache (cached rows were wrapped for the old width) — `nativeApp.ts`'s `handleResize` already schedules a debounced full `buffer.recommitAll()` + clear specifically for that case, so on a columns change this task drops the stale cache (`printedRows = 0; recentRows = []`) rather than attempting to reposition content that would render at the wrong width, accepting a brief, self-correcting blank interval until the debounced full repaint lands (the same interim tradeoff the app already makes for width changes elsewhere).
+
+**Files:**
+- Modify: `src/ui/term/render.ts`
+- Modify: `tests/render.test.ts`
+
+**Interfaces:** No signature changes. No new fields.
+
+- [ ] **Step 1: Add failing tests**
+
+Add to `tests/render.test.ts`:
+
+```ts
+  it("a rows-only resize (window dragged taller, columns unchanged) repositions on-screen content instead of leaving it stranded", () => {
+    const r = new InlineRenderer();
+    const buf = new Buffer();
+    buf.append({ kind: "notice", text: "STAYS_VISIBLE" });
+    r.frame(buf, baseBottom(), theme, size); // rows=24, columns=80, scrollBottom=20; content ends at row 19
+    // Window dragged taller: rows 24 -> 30, columns unchanged. This must be
+    // treated the same as any other footer-relative scrollBottom change,
+    // not skipped just because it came from a real resize event.
+    const resized = r.frame(buf, baseBottom(), theme, { rows: 30, columns: 80 });
+    // New scrollBottom = 30 - 4 = 26. Content must be redrawn (repositioned),
+    // not left at its old row with the region boundary just moved past it.
+    expect(resized).toContain("STAYS_VISIBLE");
+    expect(resized).toContain(`\x1b[1;1H\x1b[0J`); // the redraw-in-place signature
+    expect(resized).toContain(`\x1b[1;26r`); // new region
+  });
+
+  it("repeated rows-only resize events in quick succession (a drag) do not strand or duplicate content", () => {
+    const r = new InlineRenderer();
+    const buf = new Buffer();
+    buf.append({ kind: "notice", text: "SOLE_ROW" });
+    r.frame(buf, baseBottom(), theme, size); // rows=24
+    let last = "";
+    for (const rows of [26, 28, 30, 32, 30, 28, 26, 24]) {
+      last = r.frame(buf, baseBottom(), theme, { rows, columns: 80 });
+    }
+    // The final frame must still show the content -- it must survive a
+    // whole resize storm, not just a single resize step.
+    expect(last).toContain("SOLE_ROW");
+    // It must appear exactly once in the final frame's output (not
+    // duplicated by a stale earlier redraw plus a fresh one).
+    expect((last.match(/SOLE_ROW/g) ?? []).length).toBe(1);
+  });
+
+  it("a columns change drops the stale row cache instead of redrawing content wrapped for the old width", () => {
+    const r = new InlineRenderer();
+    const buf = new Buffer();
+    buf.append({ kind: "notice", text: "WIDE_CONTENT" });
+    r.frame(buf, baseBottom(), theme, size); // columns=80
+    // Columns change: cached rows were wrapped for width 80 and are invalid
+    // at width 120. The redraw-in-place branch must NOT fire for this
+    // frame (nativeApp.ts's debounced full recommit handles the correct
+    // re-wrap shortly after); this frame should not emit the redraw
+    // signature at all.
+    const resized = r.frame(buf, baseBottom(), theme, { rows: size.rows, columns: 120 });
+    expect(resized).not.toContain(`\x1b[1;1H\x1b[0J`);
+    expect(resized).toContain(`\x1b[1;${SCROLL_BOTTOM}r`); // region still gets set
+  });
+```
+
+- [ ] **Step 2: Run, confirm failure**
+
+Run: `npx vitest run tests/render.test.ts -t "resize"`
+Expected: the first two new tests FAIL (current `!sizeChanged` guard skips the redraw entirely on any resize, so `STAYS_VISIBLE`/`SOLE_ROW` end up frozen at their old row instead of repositioned, and the redraw signature `\x1b[1;1H\x1b[0J` is absent). The third test may pass trivially already (no redraw happens on ANY size change today) — that's fine, it documents the intended columns-change behavior going forward.
+
+- [ ] **Step 3: Implement the fix in `src/ui/term/render.ts`**
+
+Replace the `sizeChanged` line and the redraw/evacuate block's guard, and the final `setScrollRegion` trigger condition:
+
+```ts
+    let out = "";
+    const firstFrame = this.lastScrollBottom < 0;
+    const columnsChanged = columns !== this.lastColumns;
+    const rowsChanged = rows !== this.lastRows;
+
+    if (columnsChanged) {
+      // Cached row strings were wrapped for the OLD column width and would
+      // render incorrectly (wrong wrap points) if redrawn at the new one.
+      // nativeApp.ts's handleResize already detects width changes and
+      // performs a debounced full buffer.recommitAll() + screen clear to
+      // re-lay-out the whole transcript correctly at the new width; until
+      // that lands, drop the stale cache rather than risk redrawing
+      // garbled content -- the brief blank interval this creates is the
+      // same interim tradeoff the app already makes for width changes.
+      this.printedRows = 0;
+      this.recentRows = [];
+    }
+
+    if (!firstFrame && !columnsChanged && scrollBottom !== this.lastScrollBottom) {
+      const onScreen = Math.min(this.printedRows, Math.max(0, this.lastScrollBottom - 1));
+      if (onScreen <= scrollBottom - 1) {
+        // Every row of transcript content currently on screen fits inside
+        // the new region: redraw it directly at its new bottom-anchored
+        // position via absolute cursor addressing instead of leaving it in
+        // place or relocating it with a terminal scroll. This now also
+        // covers real terminal resizes (a window dragged taller/shorter),
+        // not just footer-only changes at a fixed terminal size -- a rows-
+        // only resize doesn't invalidate recentRows' wrap width, so the
+        // same mechanism that fixed the footer-growth/shrink-back bugs
+        // applies unchanged here. Without this, on-screen content stays
+        // frozen at its old screen position while the region boundary
+        // silently moves underneath it, and a resize *storm* (many resize
+        // events per drag) repeats that mismatch on every tick -- producing
+        // visible gaps, duplicated/ghost content, and stacked stale footer
+        // rows.
+        out += cursorTo(1, 1) + ERASE_DOWN;
+        if (onScreen > 0) {
+          const tail = this.recentRows.slice(-onScreen);
+          out += cursorTo(scrollBottom - onScreen, 1) + tail.join("\r\n") + "\r\n";
+        }
+      } else {
+        const evacuate = this.lastScrollBottom - scrollBottom;
+        out += cursorTo(this.lastScrollBottom, 1) + "\r\n".repeat(evacuate);
+      }
+    }
+
+    if (firstFrame || columnsChanged || rowsChanged || scrollBottom !== this.lastScrollBottom) {
+      out += setScrollRegion(1, scrollBottom);
+      this.lastScrollBottom = scrollBottom;
+      this.lastRows = rows;
+      this.lastColumns = columns;
+    }
+```
+
+(Everything below this — the `staticRows`/`printedRows`/`recentRows` bookkeeping and the final commit + footer print — is unchanged.)
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `npx vitest run tests/render.test.ts`
+Expected: all tests pass, including every test from Tasks 9a/9b and the three new ones.
+
+- [ ] **Step 5: Run the full suite and typecheck**
+
+Run: `npx vitest run` — must match baseline exactly.
+Run: `npx tsc --noEmit -p tsconfig.json` — must be clean.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/ui/term/render.ts tests/render.test.ts
+git commit -m "fix(ui): reposition on-screen content across real terminal resizes too
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+```
+
+---
+
 ### Task 9: Full suite, build, and manual verification
 
 **Files:**
