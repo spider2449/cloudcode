@@ -1,6 +1,24 @@
 import { createInterface } from "node:readline";
+import { appendFileSync } from "node:fs";
 import { KeyDecoder, type Key } from "../input.js";
 import { BRACKETED_PASTE_ON, BRACKETED_PASTE_OFF, CURSOR_HIDE, CURSOR_SHOW, AUTOWRAP_OFF, AUTOWRAP_ON, RESET_SCROLL_REGION, KITTY_KEYBOARD_ON, KITTY_KEYBOARD_OFF } from "./ansi.js";
+
+// Opt-in raw-output capture for diagnosing rendering bugs that only show up
+// on a real terminal (resize storms, redraw artifacts) and can't be
+// reproduced from a description alone. Set CLOUDCODE_DEBUG_LOG to a file
+// path to append every write() call (escape codes visible, not interpreted)
+// plus resize events, each tagged with a millisecond timestamp so frames
+// can be correlated. Logging failures are swallowed: diagnostics must never
+// crash the app they're diagnosing.
+function debugLog(line: string): void {
+  const path = process.env.CLOUDCODE_DEBUG_LOG;
+  if (!path) return;
+  try {
+    appendFileSync(path, `[${Date.now()}] ${line}\n`);
+  } catch {
+    // ignore
+  }
+}
 
 export interface ITerminal {
   isTTY: boolean;
@@ -41,6 +59,7 @@ export class Terminal implements ITerminal {
   }
 
   write(s: string): void {
+    if (process.env.CLOUDCODE_DEBUG_LOG) debugLog(`WRITE ${JSON.stringify(s)}`);
     process.stdout.write(s);
   }
 
@@ -49,7 +68,10 @@ export class Terminal implements ITerminal {
   }
 
   onResize(cb: () => void): void {
-    process.stdout.on("resize", cb);
+    process.stdout.on("resize", () => {
+      if (process.env.CLOUDCODE_DEBUG_LOG) debugLog(`RESIZE ${JSON.stringify(this.size())}`);
+      cb();
+    });
   }
 
   onLine(cb: (line: string) => void): void {
