@@ -257,6 +257,54 @@ describe("InlineRenderer", () => {
     expect((between.match(/\r\n/g) ?? []).length).toBeLessThanOrEqual(2);
   });
 
+  it("a rows-only resize (window dragged taller, columns unchanged) repositions on-screen content instead of leaving it stranded", () => {
+    const r = new InlineRenderer();
+    const buf = new Buffer();
+    buf.append({ kind: "notice", text: "STAYS_VISIBLE" });
+    r.frame(buf, baseBottom(), theme, size); // rows=24, columns=80, scrollBottom=20; content ends at row 19
+    // Window dragged taller: rows 24 -> 30, columns unchanged. This must be
+    // treated the same as any other footer-relative scrollBottom change,
+    // not skipped just because it came from a real resize event.
+    const resized = r.frame(buf, baseBottom(), theme, { rows: 30, columns: 80 });
+    // New scrollBottom = 30 - 4 = 26. Content must be redrawn (repositioned),
+    // not left at its old row with the region boundary just moved past it.
+    expect(resized).toContain("STAYS_VISIBLE");
+    expect(resized).toContain(`\x1b[1;1H\x1b[0J`); // the redraw-in-place signature
+    expect(resized).toContain(`\x1b[1;26r`); // new region
+  });
+
+  it("repeated rows-only resize events in quick succession (a drag) do not strand or duplicate content", () => {
+    const r = new InlineRenderer();
+    const buf = new Buffer();
+    buf.append({ kind: "notice", text: "SOLE_ROW" });
+    r.frame(buf, baseBottom(), theme, size); // rows=24
+    let last = "";
+    for (const rows of [26, 28, 30, 32, 30, 28, 26, 24]) {
+      last = r.frame(buf, baseBottom(), theme, { rows, columns: 80 });
+    }
+    // The final frame must still show the content -- it must survive a
+    // whole resize storm, not just a single resize step.
+    expect(last).toContain("SOLE_ROW");
+    // It must appear exactly once in the final frame's output (not
+    // duplicated by a stale earlier redraw plus a fresh one).
+    expect((last.match(/SOLE_ROW/g) ?? []).length).toBe(1);
+  });
+
+  it("a columns change drops the stale row cache instead of redrawing content wrapped for the old width", () => {
+    const r = new InlineRenderer();
+    const buf = new Buffer();
+    buf.append({ kind: "notice", text: "WIDE_CONTENT" });
+    r.frame(buf, baseBottom(), theme, size); // columns=80
+    // Columns change: cached rows were wrapped for width 80 and are invalid
+    // at width 120. The redraw-in-place branch must NOT fire for this
+    // frame (nativeApp.ts's debounced full recommit handles the correct
+    // re-wrap shortly after); this frame should not emit the redraw
+    // signature at all.
+    const resized = r.frame(buf, baseBottom(), theme, { rows: size.rows, columns: 120 });
+    expect(resized).not.toContain(`\x1b[1;1H\x1b[0J`);
+    expect(resized).toContain(`\x1b[1;${SCROLL_BOTTOM}r`); // region still gets set
+  });
+
   it("invalidate() forces the next frame to redefine the region unconditionally", () => {
     const r = new InlineRenderer();
     const buf = new Buffer();

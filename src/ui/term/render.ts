@@ -88,9 +88,23 @@ export class InlineRenderer {
 
     let out = "";
     const firstFrame = this.lastScrollBottom < 0;
-    const sizeChanged = rows !== this.lastRows || columns !== this.lastColumns;
+    const columnsChanged = columns !== this.lastColumns;
+    const rowsChanged = rows !== this.lastRows;
 
-    if (!firstFrame && !sizeChanged && scrollBottom !== this.lastScrollBottom) {
+    if (columnsChanged) {
+      // Cached row strings were wrapped for the OLD column width and would
+      // render incorrectly (wrong wrap points) if redrawn at the new one.
+      // nativeApp.ts's handleResize already detects width changes and
+      // performs a debounced full buffer.recommitAll() + screen clear to
+      // re-lay-out the whole transcript correctly at the new width; until
+      // that lands, drop the stale cache rather than risk redrawing
+      // garbled content -- the brief blank interval this creates is the
+      // same interim tradeoff the app already makes for width changes.
+      this.printedRows = 0;
+      this.recentRows = [];
+    }
+
+    if (!firstFrame && !columnsChanged && scrollBottom !== this.lastScrollBottom) {
       const onScreen = Math.min(this.printedRows, Math.max(0, this.lastScrollBottom - 1));
       if (onScreen <= scrollBottom - 1) {
         // Every row of transcript content currently on screen fits inside
@@ -103,7 +117,17 @@ export class InlineRenderer {
         // has been committed yet; (b) growing without repositioning leaves
         // existing content stranded near the old (smaller) scrollBottom
         // while new commits print at the far-away new one, opening a
-        // visible gap of blank, erased rows in between.
+        // visible gap of blank, erased rows in between. This now also
+        // covers real terminal resizes (a window dragged taller/shorter),
+        // not just footer-only changes at a fixed terminal size -- a rows-
+        // only resize doesn't invalidate recentRows' wrap width, so the
+        // same mechanism that fixed the footer-growth/shrink-back bugs
+        // applies unchanged here. Without this, on-screen content stays
+        // frozen at its old screen position while the region boundary
+        // silently moves underneath it, and a resize *storm* (many resize
+        // events per drag) repeats that mismatch on every tick -- producing
+        // visible gaps, duplicated/ghost content, and stacked stale footer
+        // rows.
         out += cursorTo(1, 1) + ERASE_DOWN;
         if (onScreen > 0) {
           const tail = this.recentRows.slice(-onScreen);
@@ -121,7 +145,7 @@ export class InlineRenderer {
       }
     }
 
-    if (firstFrame || sizeChanged || scrollBottom !== this.lastScrollBottom) {
+    if (firstFrame || columnsChanged || rowsChanged || scrollBottom !== this.lastScrollBottom) {
       out += setScrollRegion(1, scrollBottom);
       this.lastScrollBottom = scrollBottom;
       this.lastRows = rows;
