@@ -1,5 +1,5 @@
 import type { EngineMessage, ContentBlock, Usage } from "./messages.js";
-import { textDelta, thinkingDelta, assistantMessage, errorResult } from "./messages.js";
+import { textDelta, thinkingDelta, assistantMessage, errorResult, toolResultMessage } from "./messages.js";
 import type { ToolDef } from "./tools/types.js";
 import type { MessagesClient } from "./api.js";
 import type { PermissionMode } from "../agent/session.js";
@@ -107,7 +107,9 @@ export class EngineLoop {
         const results = [];
         for (const block of turn.blocks) {
           if (block.type !== "tool_use") continue;
-          results.push(await this.runTool(block));
+          const result = await this.runTool(block);
+          results.push(result);
+          this.opts.onMessage(toolResultMessage(result.tool_use_id, result.content, result.is_error === true));
         }
         this.messages.push({ role: "user", content: results });
       }

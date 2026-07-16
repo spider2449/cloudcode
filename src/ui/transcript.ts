@@ -11,7 +11,8 @@ export type DisplayItem =
   | { kind: "welcome"; logo: string; body: string }
   | { kind: "error"; text: string }
   | { kind: "result"; costUsd?: number; durationMs?: number }
-  | { kind: "diff"; lines: DiffLine[] };
+  | { kind: "diff"; lines: DiffLine[] }
+  | { kind: "toolResult"; text: string; extra: number; isError: boolean };
 
 export function truncate(s: string, max = 80): string {
   return stringWidth(s) > max ? truncateToWidth(s, max) : s;
@@ -69,6 +70,18 @@ export function toolLabel(name: string, input: Record<string, unknown>): string 
   return `${name} ${detail}`;
 }
 
+function toolResultPreview(content: unknown): { text: string; extra: number } {
+  const s =
+    typeof content === "string" ? content
+    : Array.isArray(content)
+      ? content.map(b => (typeof b === "object" && b !== null && typeof (b as { text?: unknown }).text === "string" ? (b as { text: string }).text : "")).join("\n")
+    : content == null ? ""
+    : JSON.stringify(content);
+  const lines = s.split("\n").filter(l => l.trim() !== "");
+  if (lines.length === 0) return { text: "(no output)", extra: 0 };
+  return { text: lines[0].trim(), extra: lines.length - 1 };
+}
+
 export function toDisplayItems(msg: EngineMessage): DisplayItem[] {
   const m = msg as Record<string, unknown>;
   if (m.type === "assistant") {
@@ -87,6 +100,10 @@ export function toDisplayItems(msg: EngineMessage): DisplayItem[] {
       }
     }
     return items;
+  }
+  if (m.type === "tool_result") {
+    const preview = toolResultPreview(m.content);
+    return [{ kind: "toolResult", text: preview.text, extra: preview.extra, isError: m.is_error === true }];
   }
   if (m.type === "result") {
     if (m.subtype === "success") {

@@ -2,7 +2,7 @@ import type { DisplayItem } from "./transcript.js";
 import { renderMarkdown } from "./markdown.js";
 import { sgr, SGR_RESET } from "./term/ansi.js";
 import type { Theme } from "./theme.js";
-import { charWidth, stringWidth } from "./width.js";
+import { charWidth, stringWidth, truncateToWidth } from "./width.js";
 
 const ANSI_RE = /\x1b\[[0-9;]*m/g;
 
@@ -137,6 +137,11 @@ export function layoutItem(item: DisplayItem, theme: Theme, width: number): stri
         }
       }
       return rows;
+    }
+    case "toolResult": {
+      const suffix = item.extra > 0 ? ` (+${item.extra} lines)` : "";
+      const line = truncateToWidth(`  ⎿ ${item.text}${suffix}`, Math.max(1, width));
+      return [colorize(line, item.isError ? theme.error : theme.muted)];
     }
     case "result": {
       const parts = [
