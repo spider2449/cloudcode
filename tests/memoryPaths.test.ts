@@ -24,6 +24,17 @@ describe("memoryDir / memoryEntrypoint", () => {
     expect(dir).toBe(join(base, "projects", "C--work-app", "memory"));
     expect(memoryEntrypoint("C:\\work\\app", base)).toBe(join(dir, "MEMORY.md"));
   });
+
+  it("rejects a non-absolute cwd instead of silently building a garbage project directory", () => {
+    const base = tmp();
+    // A bare CLI flag fragment (e.g. "-p", "--repo") is not a real project
+    // path; sanitizePath would otherwise pass it through untouched (no
+    // separators to replace) and create a bogus ~/.cloudcode/projects/-p/
+    // folder. memoryDir must refuse instead of building a path for it.
+    expect(() => memoryDir("-p", base)).toThrow();
+    expect(() => memoryDir("--repo", base)).toThrow();
+    expect(() => memoryEntrypoint("-p", base)).toThrow();
+  });
 });
 
 describe("isInsideMemoryDir", () => {
