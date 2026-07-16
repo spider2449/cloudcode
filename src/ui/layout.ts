@@ -13,7 +13,8 @@ export function stripAnsi(text: string): string {
 const ANSI_TOKEN_RE = /^\x1b\[[0-9;]*m/;
 
 function visibleWidth(s: string): number {
-  return stringWidth(stripAnsi(s));
+  // stringWidth() already strips ANSI internally; no need to strip here too.
+  return stringWidth(s);
 }
 
 // Wraps at `width` visible terminal columns (CJK chars count 2), keeping
@@ -64,11 +65,26 @@ export function wrapText(text: string, width: number): string[] {
         if (breakAt > 0) {
           out.push(row.slice(0, breakAt).replace(/ +$/, ""));
           row = row.slice(breakAt).replace(/^ +/, "");
-        } else {
-          out.push(row);
-          row = "";
+          rowW = stringWidth(row);
+          breakAt = -1;
+          continue; // retry the same character on the fresh row
         }
-        rowW = stringWidth(stripAnsi(row));
+        if (rowW === 0) {
+          // The row is already empty and this single character alone
+          // exceeds `w` (e.g. a wide CJK/emoji char in a 1-column width).
+          // There is no way to make progress by breaking earlier, so hard-cut:
+          // emit this one character as its own row (even though it overflows)
+          // and advance past it, instead of looping forever on the same char.
+          out.push(ch);
+          i += ch.length;
+          row = "";
+          rowW = 0;
+          breakAt = -1;
+          continue;
+        }
+        out.push(row);
+        row = "";
+        rowW = 0;
         breakAt = -1;
         continue; // retry the same character on the fresh row
       }

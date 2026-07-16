@@ -33,4 +33,18 @@ describe("wrapText (column-aware)", () => {
     // "ab中文" = 2 + 4 = 6 columns; width 5 → "ab中" (4 cols, next char won't fit)
     expect(wrapText("ab中文", 5)).toEqual(["ab中", "文"]);
   });
+  it("hard-cuts a single wide char that alone exceeds the width, without hanging", () => {
+    // A CJK char is 2 columns wide; width 1 can never fit it. Must not loop
+    // forever, and must not drop the character.
+    const start = Date.now();
+    const rows = wrapText("中", 1);
+    expect(Date.now() - start).toBeLessThan(1000);
+    expect(rows).toEqual(["中"]);
+  });
+  it("hard-cuts multiple over-wide chars each onto their own row at width 1", () => {
+    const start = Date.now();
+    const rows = wrapText("中文", 1);
+    expect(Date.now() - start).toBeLessThan(1000);
+    expect(rows).toEqual(["中", "文"]);
+  });
 });
