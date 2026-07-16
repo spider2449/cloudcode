@@ -42,6 +42,8 @@ export function itemRows(item: DisplayItem, columns: number): number {
       );
     case "result":
       return 1;
+    case "toolResult":
+      return 1;
     default: {
       // Exhaustiveness guard: a future DisplayItem kind that isn't handled
       // above fails typecheck here instead of silently returning undefined.
