@@ -1,4 +1,5 @@
 import type { EngineMessage } from "../engine/messages.js";
+import { stringWidth, truncateToWidth } from "./width.js";
 
 export type DiffLine = { sign: "+" | "-" | " "; text: string };
 
@@ -13,7 +14,7 @@ export type DisplayItem =
   | { kind: "diff"; lines: DiffLine[] };
 
 export function truncate(s: string, max = 80): string {
-  return s.length > max ? s.slice(0, max - 1) + "…" : s;
+  return stringWidth(s) > max ? truncateToWidth(s, max) : s;
 }
 
 export function streamDelta(msg: EngineMessage): string | undefined {

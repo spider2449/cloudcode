@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { charWidth, stringWidth, truncateToWidth } from "../src/ui/width.js";
+import { truncate } from "../src/ui/transcript.js";
 
 describe("charWidth", () => {
   it("gives ASCII width 1", () => {
@@ -59,5 +60,18 @@ describe("truncateToWidth", () => {
   it("never splits a wide char in half", () => {
     // "a" + "中" would be 3 columns; max 4 minus ellipsis leaves 3 → fits "a中"
     expect(truncateToWidth("a中文文", 4)).toBe("a中…");
+  });
+});
+
+describe("transcript truncate (column-aware)", () => {
+  it("truncates CJK by columns", () => {
+    // 50 CJK chars = 100 columns > 80 → must cut well before 50 chars.
+    const s = "中".repeat(50);
+    const out = truncate(s);
+    expect(out.endsWith("…")).toBe(true);
+    expect(stringWidth(out)).toBeLessThanOrEqual(80);
+  });
+  it("respects an explicit max width", () => {
+    expect(truncate("abcdefgh", 5)).toBe("abcd…");
   });
 });
