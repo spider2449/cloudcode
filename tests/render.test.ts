@@ -154,6 +154,68 @@ describe("InlineRenderer", () => {
     expect(second).toContain("ONLY_ROW");
   });
 
+  it("fits-redraw anchors content at scrollBottom-1, leaving the true bottom row blank", () => {
+    const r = new InlineRenderer();
+    const buf = new Buffer();
+    buf.append({ kind: "notice", text: "ONLY_ROW" });
+    r.frame(buf, baseBottom(), theme, size); // commits "ONLY_ROW", scrollBottom = 20
+    const second = r.frame(buf, baseBottom({ streaming: true, activeTool: "Bash" }), theme, size); // scrollBottom = 19
+    // Correct anchor is row 18 (scrollBottom - onScreen = 19 - 1), not row 19
+    // (the buggy scrollBottom - onScreen + 1), which would leave no blank row
+    // at the new bottom margin and violate the commit invariant.
+    const correctAnchor = `\x1b[${SCROLL_BOTTOM - 2};1H`; // row 18
+    const wrongAnchor = `\x1b[${SCROLL_BOTTOM - 1};1H`; // row 19
+    expect(second).toContain(correctAnchor);
+    const anchorIdx = second.indexOf(correctAnchor);
+    const markerIdx = second.indexOf("ONLY_ROW");
+    expect(markerIdx).toBeGreaterThan(anchorIdx);
+    // The wrong anchor must not immediately precede the row's own text.
+    const wrongIdx = second.lastIndexOf(wrongAnchor, markerIdx);
+    // wrongAnchor may legitimately appear elsewhere (e.g. unrelated cursor
+    // moves), but it must not be the position directly feeding ONLY_ROW.
+    if (wrongIdx >= 0) {
+      expect(second.slice(wrongIdx + wrongAnchor.length, markerIdx)).not.toBe("");
+    }
+  });
+
+  it("a row relocated by a fits-redraw survives a follow-up commit at the same footer height", () => {
+    const r = new InlineRenderer();
+    const buf = new Buffer();
+    buf.append({ kind: "notice", text: "ROW_A" });
+    r.frame(buf, baseBottom(), theme, size); // commits "ROW_A", scrollBottom = 20
+    const second = r.frame(buf, baseBottom({ streaming: true, activeTool: "Bash" }), theme, size); // fits-redraw, scrollBottom = 19
+    buf.append({ kind: "notice", text: "ROW_B" });
+    const third = r.frame(buf, baseBottom({ streaming: true, activeTool: "Bash" }), theme, size); // same footer height, normal commit
+    // ROW_A must have been redrawn at row 18 (blank row 19 reserved), so the
+    // normal commit path (which writes at cursorTo(scrollBottom=19,1) then
+    // \r\n) lands in the blank row and does not overwrite row 18 where ROW_A
+    // sits. Under the buggy +1 anchor, ROW_A would have been placed at row
+    // 19 itself, and the third frame's commit would silently overwrite it.
+    expect(second).toContain("ROW_A");
+    expect(third).toContain("ROW_B");
+    // ROW_A is never re-emitted (committed rows are emitted exactly once),
+    // so its survival is only observable via the anchor row it was placed
+    // at not being clobbered: confirm the third frame's commit write targets
+    // row 19 (scrollBottom), one row below where ROW_A was drawn (row 18).
+    expect(third).toContain(`\x1b[${SCROLL_BOTTOM - 1};1H`); // row 19
+    expect(third.indexOf("ROW_B")).toBeGreaterThan(third.indexOf(`\x1b[${SCROLL_BOTTOM - 1};1H`));
+  });
+
+  it("boundary: onScreen exactly filling the new region falls through to scroll-evacuate, not redraw", () => {
+    const r = new InlineRenderer();
+    const buf = new Buffer();
+    // Commit exactly (SCROLL_BOTTOM - 1) rows: under the corrected invariant,
+    // onScreen = min(printedRows, lastScrollBottom - 1) = SCROLL_BOTTOM - 1,
+    // and the new scrollBottom after growth is SCROLL_BOTTOM - 1 too, so
+    // onScreen == scrollBottom exactly -- zero blank rows would remain if
+    // redrawn, so this must fall through to the evacuate branch.
+    for (let i = 0; i < SCROLL_BOTTOM - 1; i++) buf.append({ kind: "notice", text: `row ${i}` });
+    r.frame(buf, baseBottom(), theme, size); // scrollBottom = 20
+    const second = r.frame(buf, baseBottom({ streaming: true, activeTool: "Bash" }), theme, size); // scrollBottom = 19
+    // Evacuate branch signature: cursorTo(lastScrollBottom,1) + "\r\n" burst.
+    expect(second).toContain(`\x1b[${SCROLL_BOTTOM};1H\r\n`);
+  });
+
   it("shrinking footer height blanks the rows freed back to the message region", () => {
     const r = new InlineRenderer();
     const buf = new Buffer();

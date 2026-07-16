@@ -91,8 +91,8 @@ export class InlineRenderer {
     const sizeChanged = rows !== this.lastRows || columns !== this.lastColumns;
 
     if (!firstFrame && !sizeChanged && scrollBottom < this.lastScrollBottom) {
-      const onScreen = Math.min(this.printedRows, this.lastScrollBottom);
-      if (onScreen <= scrollBottom) {
+      const onScreen = Math.min(this.printedRows, Math.max(0, this.lastScrollBottom - 1));
+      if (onScreen <= scrollBottom - 1) {
         // Every row of transcript content currently on screen fits inside
         // the new, smaller region: redraw it directly at its new
         // bottom-anchored position via absolute cursor addressing instead
@@ -106,7 +106,7 @@ export class InlineRenderer {
         out += cursorTo(1, 1) + ERASE_DOWN;
         if (onScreen > 0) {
           const tail = this.recentRows.slice(-onScreen);
-          out += cursorTo(scrollBottom - onScreen + 1, 1) + tail.join("\r\n") + "\r\n";
+          out += cursorTo(scrollBottom - onScreen, 1) + tail.join("\r\n") + "\r\n";
         }
       } else {
         // More content is currently visible than the new region can hold:
