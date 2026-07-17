@@ -407,13 +407,12 @@ describe("InlineRenderer", () => {
     expect((visibleAll.match(/Q/g) ?? []).length).toBe(400);
   });
 
-  it("renders thinkingText dim above the stream text", () => {
+  it("renders thinkingText above the stream text in the theme's thinking color", () => {
     const r = new InlineRenderer();
     const buf = new Buffer();
     const out = r.frame(buf, baseBottom({ thinkingText: "pondering...", streamingText: "" }), theme, size);
-    expect(out).toContain("\x1b[2m");
     expect(out).toContain("pondering...");
-    expect(out).toContain("\x1b[22m");
+    expect(out).not.toContain("\x1b[2m");
   });
 
   it("prefixes the thinking preview with a hollow circle in the theme's thinking color (magenta in the dark theme)", () => {

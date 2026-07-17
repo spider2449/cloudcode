@@ -117,8 +117,10 @@ export function layoutItem(item: DisplayItem, theme: Theme, width: number): stri
   switch (item.kind) {
     case "user":
       return wrapText(colorize("> " + item.text, theme.user), width);
-    case "assistant":
-      return prefixBlock(wrapText(renderMarkdown(item.text), Math.max(1, width - 2)), "●");
+    case "assistant": {
+      const innerWidth = Math.max(1, width - 2);
+      return prefixBlock(wrapText(renderMarkdown(item.text, innerWidth), innerWidth), "●");
+    }
     case "tool":
       return wrapText(colorize("● " + item.label, theme.accent), width);
     case "notice":

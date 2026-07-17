@@ -99,7 +99,7 @@ export class InlineRenderer {
       const thinkTailCap = Math.max(2, Math.min(6, rows - dyn.length - 3));
       const thinkingCode = sgr(theme.thinking);
       const lines = wrapText(tailForHeight(bottom.thinkingText, thinkTailCap, Math.max(1, columns - 2)), Math.max(1, columns - 2));
-      dyn.unshift(...lines.map((l, i) => `\x1b[2m${thinkingCode}${i === 0 ? "○ " : "  "}${l}${SGR_RESET}\x1b[22m`));
+      dyn.unshift(...lines.map((l, i) => `${thinkingCode}${i === 0 ? "○ " : "  "}${l}${SGR_RESET}`));
     }
 
     // Cap the footer so the scroll region always keeps at least 1 row.
