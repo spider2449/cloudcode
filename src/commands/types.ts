@@ -1,6 +1,7 @@
 import type { PermissionMode } from "../agent/session.js";
 import type { CompletionContext } from "./completion.js";
 import type { EffortLevel } from "../engine/effort.js";
+import type { ContextSnapshot } from "../engine/loop.js";
 
 export interface CommandContext {
   notice(text: string): void;
@@ -14,6 +15,7 @@ export interface CommandContext {
   switchProvider(name: string): Promise<void>;
   openResumePicker(): void;
   costSummary(): string;
+  contextInfo(): { snapshot: ContextSnapshot | undefined; model: string; contextWindow: number };
   providerNames(): string[];
   exit(): void;
   listPermissionRules(): string;

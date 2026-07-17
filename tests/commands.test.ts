@@ -33,6 +33,11 @@ function mockCtx(): CommandContext {
     switchProvider: vi.fn().mockResolvedValue(undefined),
     openResumePicker: vi.fn(),
     costSummary: vi.fn().mockReturnValue("$0.01"),
+    contextInfo: vi.fn().mockReturnValue({
+      snapshot: { systemTokens: 1000, toolsTokens: 3000, messagesTokens: 6000, inputTokens: 20000 },
+      model: "claude-sonnet-5",
+      contextWindow: 200_000
+    }),
     providerNames: vi.fn().mockReturnValue(["anthropic", "local"]),
     exit: vi.fn(),
     listPermissionRules: vi.fn().mockReturnValue("✓ Write /p/src"),

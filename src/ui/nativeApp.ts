@@ -367,6 +367,11 @@ export class App {
         this.recompute();
       },
       costSummary: () => `Session cost: $${this.cost.toFixed(4)}`,
+      contextInfo: () => ({
+        snapshot: this.session?.contextSnapshot(),
+        model: this.modelFor(this.providerName) ?? "unknown",
+        contextWindow: this.contextWindowFor(this.providerName)
+      }),
       providerNames: () => Object.keys(this.props.providers),
       exit: () => { void this.session?.dispose(); this.stop(); },
       listPermissionRules: () => {

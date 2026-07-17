@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { EngineMessage } from "../engine/messages.js";
-import { EngineLoop } from "../engine/loop.js";
+import { EngineLoop, type ContextSnapshot } from "../engine/loop.js";
 import { makeClient } from "../engine/api.js";
 import { builtinTools } from "../engine/registry.js";
 import { PermissionStore } from "./permissionStore.js";
@@ -154,6 +154,10 @@ export class AgentSession {
   async compact(onProgress?: (pct: number) => void): Promise<number | undefined> {
     if (!this.loop) return undefined;
     return this.loop.compact(makeClient(this.opts.provider), this.opts.model ?? this.opts.provider.model ?? DEFAULT_MODEL, onProgress);
+  }
+
+  contextSnapshot(): ContextSnapshot | undefined {
+    return this.loop?.contextSnapshot();
   }
 
   async dispose(): Promise<void> {
