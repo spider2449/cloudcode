@@ -35,8 +35,10 @@ function contextReport(info: ReturnType<CommandContext["contextInfo"]>): string 
     ["Messages", Math.round(snapshot.messagesTokens * scale)],
     ["Free space", Math.max(0, contextWindow - total)]
   ];
-  const pct = (n: number) => `${Math.min(100, Math.max(0, (n / contextWindow) * 100)).toFixed(1)}%`;
-  const totalPct = Math.min(100, Math.round((total / contextWindow) * 100));
+  const pct = (n: number) => contextWindow > 0
+    ? `${Math.min(100, Math.max(0, (n / contextWindow) * 100)).toFixed(1)}%`
+    : "0.0%";
+  const totalPct = contextWindow > 0 ? Math.min(100, Math.round((total / contextWindow) * 100)) : 0;
   const suffix = real === undefined ? " (estimated)" : "";
   const header = `Context usage — ${model} (${fmtK(total)} / ${fmtK(contextWindow)} tokens (${totalPct}%))${suffix}`;
   const body = rows
