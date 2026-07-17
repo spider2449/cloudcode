@@ -82,7 +82,11 @@ export function loadCustomThemes(dir: string = join(configDir(), "themes")): str
       // Validate the light variant too so a mode switch can't crash later.
       resolveThemeJson(json, "light");
     } catch (err) {
-      delete THEMES[name];
+      if (BUILTIN_THEME_JSONS[name]) {
+        registerTheme(name, BUILTIN_THEME_JSONS[name], BUILTIN_MODES[name]);
+      } else {
+        delete THEMES[name];
+      }
       warnings.push(`Skipped theme ${entry}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }

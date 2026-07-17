@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { InlineRenderer, type BottomState } from "../src/ui/term/render.js";
 import { Buffer } from "../src/ui/buffer.js";
 import { THEMES } from "../src/ui/theme.js";
+import { setColorDepth, detectColorDepth } from "../src/ui/term/ansi.js";
 
 const theme = THEMES.dark;
 const size = { rows: 24, columns: 80 };
@@ -416,11 +417,17 @@ describe("InlineRenderer", () => {
   });
 
   it("prefixes the thinking preview with a hollow circle in the theme's thinking color (magenta in the dark theme)", () => {
-    const r = new InlineRenderer();
-    const buf = new Buffer();
-    const out = r.frame(buf, baseBottom({ thinkingText: "pondering...", streamingText: "" }), theme, size);
-    expect(out).toContain("○ pondering...");
-    expect(out).toContain("\x1b[35m");
+    const previousDepth = detectColorDepth();
+    setColorDepth("16");
+    try {
+      const r = new InlineRenderer();
+      const buf = new Buffer();
+      const out = r.frame(buf, baseBottom({ thinkingText: "pondering...", streamingText: "" }), theme, size);
+      expect(out).toContain("○ pondering...");
+      expect(out).toContain("\x1b[35m");
+    } finally {
+      setColorDepth(previousDepth);
+    }
   });
 
   it("renders queuedRows above the input box rows", () => {

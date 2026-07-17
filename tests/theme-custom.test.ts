@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { THEMES, loadCustomThemes } from "../src/ui/theme.js";
+import { THEMES, loadCustomThemes, toAppTheme } from "../src/ui/theme.js";
+import { resolveThemeJson } from "../src/ui/themeJson.js";
+import { BUILTIN_THEME_JSONS, BUILTIN_MODES } from "../src/ui/themes/index.js";
 
 const themeDir = () => mkdtempSync(join(tmpdir(), "cc-themes-"));
 
@@ -48,6 +50,18 @@ describe("loadCustomThemes", () => {
     const warnings = loadCustomThemes(dir);
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain("dangling.json");
+  });
+
+  it("restores the built-in theme when a same-named custom theme is invalid", () => {
+    const dir = themeDir();
+    writeFileSync(join(dir, "dark.json"), "not json{{");
+    const warnings = loadCustomThemes(dir);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("dark.json");
+    expect(THEMES.dark).toBeDefined();
+    const expectedDark = toAppTheme(resolveThemeJson(BUILTIN_THEME_JSONS.dark, BUILTIN_MODES.dark ?? "dark"));
+    expect(THEMES.dark).toEqual(expectedDark);
+    expect(THEMES.dark.accent).toMatch(/^#[0-9a-f]{6}$/i);
   });
 
   it("ignores non-json files", () => {
