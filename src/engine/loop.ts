@@ -51,6 +51,15 @@ interface StreamedTurn {
   usage: Usage | undefined;
 }
 
+export interface ContextSnapshot {
+  systemTokens: number;
+  toolsTokens: number;
+  messagesTokens: number;
+  inputTokens?: number;
+}
+
+const estimate = (text: string) => Math.ceil(text.length / 4);
+
 export class EngineLoop {
   messages: unknown[] = [];
   tools: ToolDef[];
@@ -58,6 +67,7 @@ export class EngineLoop {
   private mode: PermissionMode;
   private effort: EffortLevel;
   private systemPrompt: string;
+  private lastSnapshot: ContextSnapshot | undefined;
 
   constructor(private opts: EngineOptions) {
     this.model = opts.model;
@@ -188,6 +198,12 @@ export class EngineLoop {
       max_tokens: budget === undefined ? MAX_TOKENS : budget + MAX_TOKENS,
       ...(budget === undefined ? {} : { thinking: { type: "enabled" as const, budget_tokens: budget } })
     };
+    this.lastSnapshot = {
+      systemTokens: estimate(this.systemPrompt),
+      toolsTokens: estimate(JSON.stringify(req.tools)),
+      messagesTokens: estimate(JSON.stringify(req.messages)),
+      inputTokens: this.lastSnapshot?.inputTokens
+    };
     for await (const event of this.opts.client.create(req, signal)) {
       const type = event.type as string;
       if (type === "content_block_start") {
@@ -224,7 +240,22 @@ export class EngineLoop {
       }
     }
     finalizePendingToolInput();
+    if (usage && this.lastSnapshot) {
+      this.lastSnapshot.inputTokens =
+        (usage.input_tokens ?? 0) +
+        (usage.cache_read_input_tokens ?? 0) +
+        (usage.cache_creation_input_tokens ?? 0);
+    }
     return { blocks, stopReason, usage };
+  }
+
+  contextSnapshot(): ContextSnapshot {
+    if (this.lastSnapshot) return this.lastSnapshot;
+    return {
+      systemTokens: estimate(this.systemPrompt),
+      toolsTokens: estimate(JSON.stringify(this.tools.map(t => ({ name: t.name, description: t.description, input_schema: t.input_schema })))),
+      messagesTokens: estimate(JSON.stringify(this.messages))
+    };
   }
 
   private async runTool(block: { id: string; name: string; input: Record<string, unknown> }, signal: AbortSignal) {

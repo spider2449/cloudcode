@@ -391,3 +391,40 @@ describe("EngineLoop.setSystemPrompt", () => {
     expect(secondReq.system[0].text).toBe("new prompt");
   });
 });
+
+describe("contextSnapshot", () => {
+  it("estimates from current state before any turn", () => {
+    const store = new PermissionStore(mkdtempSync(join(tmpdir(), "ctx-")));
+    const loop = new EngineLoop({
+      client: fakeClient([]), model: "m", systemPrompt: "abcd".repeat(10),
+      tools: [echoTool], cwd: "/tmp", permissionMode: "bypassPermissions",
+      store, onMessage: () => {}, requestPermission: async () => true
+    });
+    const snap = loop.contextSnapshot();
+    expect(snap.systemTokens).toBe(10); // 40 chars / 4
+    expect(snap.toolsTokens).toBeGreaterThan(0);
+    expect(snap.messagesTokens).toBe(Math.ceil(JSON.stringify([]).length / 4));
+    expect(snap.inputTokens).toBeUndefined();
+  });
+
+  it("records real input tokens after a turn, including cache fields", async () => {
+    const store = new PermissionStore(mkdtempSync(join(tmpdir(), "ctx-")));
+    const events = [
+      { type: "message_start", message: { usage: { input_tokens: 100, cache_read_input_tokens: 900, cache_creation_input_tokens: 50, output_tokens: 0 } } },
+      { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+      { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "hi" } },
+      { type: "content_block_stop", index: 0 },
+      { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 5 } },
+      { type: "message_stop" }
+    ];
+    const loop = new EngineLoop({
+      client: fakeClient([events]), model: "m", systemPrompt: "sys",
+      tools: [], cwd: "/tmp", permissionMode: "bypassPermissions",
+      store, onMessage: () => {}, requestPermission: async () => true
+    });
+    await loop.runTurn("hello", new AbortController().signal);
+    const snap = loop.contextSnapshot();
+    expect(snap.inputTokens).toBe(1050); // 100 + 900 + 50
+    expect(snap.messagesTokens).toBeGreaterThan(0);
+  });
+});
