@@ -5,7 +5,7 @@ import { AgentSession, type PermissionMode, type PermissionRequest } from "../ag
 import { History } from "../agent/history.js";
 import type { ProviderConfig } from "../agent/providers.js";
 import { SessionIndex } from "../agent/sessionIndex.js";
-import { PermissionStore } from "../agent/permissionStore.js";
+import { PermissionStore, commandPrefix } from "../agent/permissionStore.js";
 import { buildRegistry, } from "../commands/builtins.js";
 import { parseSlash } from "../commands/registry.js";
 import type { CommandContext } from "../commands/types.js";
@@ -387,7 +387,7 @@ export function App(props: AppProps) {
     listPermissionRules: () => {
       const rules = permissionStoreRef.current.list();
       if (rules.length === 0) return "No permission rules.";
-      return rules.map(r => `${r.decision === "allow" ? "✓" : "✗"} ${r.tool} ${r.dir}`).join("\n");
+      return rules.map(r => `${r.decision === "allow" ? "✓" : "✗"} ${r.tool} ${r.dir ?? `'${r.prefix}' commands`}`).join("\n");
     },
     clearPermissionRules: () => permissionStoreRef.current.clear(),
     mcpStatus: async () =>
@@ -459,6 +459,15 @@ export function App(props: AppProps) {
     if (rememberAs && activePermission && typeof activePermission.input.file_path === "string") {
       try {
         permissionStoreRef.current.remember(activePermission.toolName, activePermission.input.file_path, rememberAs);
+      } catch (err) {
+        setItems(prev => [...prev, {
+          kind: "error",
+          text: `Failed to save permission rule: ${err instanceof Error ? err.message : String(err)}`
+        }]);
+      }
+    } else if (rememberAs && activePermission && activePermission.toolName === "Bash" && typeof activePermission.input.command === "string") {
+      try {
+        permissionStoreRef.current.rememberCommand(commandPrefix(String(activePermission.input.command)), rememberAs);
       } catch (err) {
         setItems(prev => [...prev, {
           kind: "error",

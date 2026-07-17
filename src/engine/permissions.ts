@@ -20,6 +20,12 @@ export function decidePermission(
     if (ruling === "deny") return "deny";
     if (ruling === "allow") return "allow";
   }
+  // Remembered command-prefix rules apply to Bash (deny beats allow).
+  if (toolName === "Bash" && typeof input.command === "string") {
+    const ruling = store.checkCommand(input.command);
+    if (ruling === "deny") return "deny";
+    if (ruling === "allow") return "allow";
+  }
   if (READ_ONLY.has(toolName)) return "allow";
   if (mode === "acceptEdits" && EDIT_TOOLS.has(toolName)) return "allow";
   return "ask";

@@ -28,3 +28,27 @@ describe("decidePermission", () => {
     expect(decidePermission("Write", { file_path: "x" }, "default", store)).toBe("ask");
   });
 });
+
+describe("Bash command rules", () => {
+  it("allows a Bash command matching a remembered allow prefix", () => {
+    const store = freshStore();
+    store.rememberCommand("git", "allow");
+    expect(decidePermission("Bash", { command: "git status" }, "default", store)).toBe("allow");
+  });
+
+  it("denies a Bash command matching a deny prefix even in acceptEdits", () => {
+    const store = freshStore();
+    store.rememberCommand("rm", "deny");
+    expect(decidePermission("Bash", { command: "rm -rf /" }, "acceptEdits", store)).toBe("deny");
+  });
+
+  it("still asks for Bash commands with no matching rule", () => {
+    expect(decidePermission("Bash", { command: "git status" }, "default", freshStore())).toBe("ask");
+  });
+
+  it("bypassPermissions still allows everything", () => {
+    const store = freshStore();
+    store.rememberCommand("rm", "deny");
+    expect(decidePermission("Bash", { command: "rm -rf /" }, "bypassPermissions", store)).toBe("allow");
+  });
+});

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { toolLabel } from "./transcript.js";
 import { useTheme } from "./ThemeContext.js";
+import { commandPrefix } from "../agent/permissionStore.js";
 
 interface Props {
   request: { toolName: string; input: Record<string, unknown> };
@@ -27,10 +28,24 @@ const FILE_OPTIONS: Option[] = [
   { label: "Never for this directory (d)", hotkey: "d", allow: false, rememberAs: "deny" }
 ];
 
+function commandOptions(prefix: string): Option[] {
+  return [
+    { label: "Yes (y)", hotkey: "y", allow: true },
+    { label: `Always allow '${prefix}' commands (a)`, hotkey: "a", allow: true, rememberAs: "allow" },
+    { label: "No (n)", hotkey: "n", allow: false },
+    { label: `Never allow '${prefix}' commands (d)`, hotkey: "d", allow: false, rememberAs: "deny" }
+  ];
+}
+
 export function PermissionDialog({ request, onDecision }: Props) {
   const theme = useTheme();
   const hasFilePath = typeof request.input.file_path === "string";
-  const options = hasFilePath ? FILE_OPTIONS : BASE_OPTIONS;
+  const isBashCommand = request.toolName === "Bash" && typeof request.input.command === "string";
+  const options = hasFilePath
+    ? FILE_OPTIONS
+    : isBashCommand
+      ? commandOptions(commandPrefix(String(request.input.command)))
+      : BASE_OPTIONS;
   const [selected, setSelected] = useState(0);
 
   const decide = (opt: Option) => {

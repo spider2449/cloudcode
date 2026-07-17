@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { PermissionStore } from "../src/agent/permissionStore.js";
+import { PermissionStore, commandPrefix } from "../src/agent/permissionStore.js";
 
 const tempCwd = () => mkdtempSync(join(tmpdir(), "cc-perm-"));
 
@@ -77,5 +77,43 @@ describe("PermissionStore", () => {
     expect(raw).toHaveLength(1);
     expect(raw[0].tool).toBe("Write");
     expect(raw[0].decision).toBe("allow");
+  });
+});
+
+describe("command prefix rules", () => {
+  it("commandPrefix extracts the first token", () => {
+    expect(commandPrefix("git status --short")).toBe("git");
+    expect(commandPrefix("  npm  test ")).toBe("npm");
+    expect(commandPrefix("")).toBe("");
+  });
+
+  it("rememberCommand + checkCommand allow a matching prefix", () => {
+    const store = new PermissionStore(tempCwd());
+    store.rememberCommand("git", "allow");
+    expect(store.checkCommand("git status")).toBe("allow");
+    expect(store.checkCommand("git")).toBe("allow");
+  });
+
+  it("matches whole tokens only, not substrings", () => {
+    const store = new PermissionStore(tempCwd());
+    store.rememberCommand("git", "allow");
+    expect(store.checkCommand("github-cli auth")).toBeUndefined();
+  });
+
+  it("deny beats allow for the same command", () => {
+    const store = new PermissionStore(tempCwd());
+    store.rememberCommand("rm", "allow");
+    store.rememberCommand("rm", "deny");
+    expect(store.checkCommand("rm -rf x")).toBe("deny");
+  });
+
+  it("persists prefix rules across instances", () => {
+    const cwd = tempCwd();
+    new PermissionStore(cwd).rememberCommand("npm", "allow");
+    expect(new PermissionStore(cwd).checkCommand("npm test")).toBe("allow");
+    // Directory rules from the same file still work alongside prefix rules.
+    const store = new PermissionStore(cwd);
+    store.remember("Edit", join(cwd, "src", "a.ts"), "allow");
+    expect(new PermissionStore(cwd).check("Edit", join(cwd, "src", "b.ts"))).toBe("allow");
   });
 });

@@ -3,7 +3,7 @@ import { AgentSession, type PermissionMode, type PermissionRequest } from "../ag
 import { History } from "../agent/history.js";
 import type { ProviderConfig } from "../agent/providers.js";
 import { SessionIndex } from "../agent/sessionIndex.js";
-import { PermissionStore } from "../agent/permissionStore.js";
+import { PermissionStore, commandPrefix } from "../agent/permissionStore.js";
 import { buildRegistry } from "../commands/builtins.js";
 import { parseSlash } from "../commands/registry.js";
 import type { CommandContext } from "../commands/types.js";
@@ -270,9 +270,13 @@ export class App {
 
   private decidePermission(allow: boolean, rememberAs?: "allow" | "deny"): void {
     const active = this.permissionQueue[0];
-    if (rememberAs && active && typeof active.input.file_path === "string") {
+    if (rememberAs && active) {
       try {
-        this.permissionStore.remember(active.toolName, active.input.file_path, rememberAs);
+        if (typeof active.input.file_path === "string") {
+          this.permissionStore.remember(active.toolName, active.input.file_path, rememberAs);
+        } else if (active.toolName === "Bash" && typeof active.input.command === "string") {
+          this.permissionStore.rememberCommand(commandPrefix(String(active.input.command)), rememberAs);
+        }
       } catch (err) {
         this.buffer.append({ kind: "error", text: `Failed to save permission rule: ${err instanceof Error ? err.message : String(err)}` });
       }
@@ -368,7 +372,7 @@ export class App {
       listPermissionRules: () => {
         const rules = this.permissionStore.list();
         if (rules.length === 0) return "No permission rules.";
-        return rules.map(r => `${r.decision === "allow" ? "✓" : "✗"} ${r.tool} ${r.dir}`).join("\n");
+        return rules.map(r => `${r.decision === "allow" ? "✓" : "✗"} ${r.tool} ${r.dir ?? `'${r.prefix}' commands`}`).join("\n");
       },
       clearPermissionRules: () => this.permissionStore.clear(),
       mcpStatus: async () =>

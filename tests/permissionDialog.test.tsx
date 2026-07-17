@@ -77,6 +77,16 @@ describe("PermissionDialog", () => {
     expect(onDecision).toHaveBeenCalledWith(true, "allow");
   });
 
+  it("offers Always/Never options for Bash commands", async () => {
+    const { lastFrame } = render(
+      <PermissionDialog request={{ toolName: "Bash", input: { command: "git status" } }} onDecision={() => {}} />
+    );
+    await wait();
+    const frame = lastFrame()!;
+    expect(frame).toContain("Always allow 'git' commands (a)");
+    expect(frame).toContain("Never allow 'git' commands (d)");
+  });
+
   it("keeps two options for requests without file_path", async () => {
     const { lastFrame } = render(
       <PermissionDialog request={{ toolName: "Bash", input: { command: "ls" } }} onDecision={() => {}} />

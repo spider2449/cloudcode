@@ -117,6 +117,7 @@ describe("OverlayManager project sub-mode", () => {
 describe("OverlayManager permission sub-mode", () => {
   const fileRequest = { toolName: "Edit", input: { file_path: "/a/b.ts" } };
   const bashRequest = { toolName: "Bash", input: { command: "ls" } };
+  const otherRequest = { toolName: "WebFetch", input: { url: "https://example.com" } };
 
   it("hotkey 'y' allows without remembering", () => {
     const onDecision = vi.fn();
@@ -152,16 +153,24 @@ describe("OverlayManager permission sub-mode", () => {
 
   it("a non-file-path request only offers Yes/No, not Always/Never", () => {
     const mgr = new OverlayManager();
-    mgr.openPermission(bashRequest as never, () => {});
+    mgr.openPermission(otherRequest as never, () => {});
     const rows = mgr.render(THEMES.dark, 80);
     const joined = rows.join("\n");
     expect(joined).not.toContain("Always for this directory");
   });
 
+  it("offers Always/Never allow '<prefix>' commands for Bash requests", () => {
+    const mgr = new OverlayManager();
+    mgr.openPermission(bashRequest as never, () => {});
+    const joined = mgr.render(THEMES.dark, 80).join("\n");
+    expect(joined).toContain("Always allow 'ls' commands");
+    expect(joined).toContain("Never allow 'ls' commands");
+  });
+
   it("arrow navigation plus Enter selects the currently highlighted option", () => {
     const onDecision = vi.fn();
     const mgr = new OverlayManager();
-    mgr.openPermission(bashRequest as never, onDecision);
+    mgr.openPermission(otherRequest as never, onDecision);
     mgr.handleKey({ t: "right" });
     mgr.handleKey({ t: "enter" });
     expect(onDecision).toHaveBeenCalledWith(false, undefined);

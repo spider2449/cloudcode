@@ -6,6 +6,7 @@ import { toolLabel } from "../transcript.js";
 import { sgr, SGR_RESET } from "../term/ansi.js";
 import type { Theme } from "../theme.js";
 import type { MemoryOption } from "../MemoryPicker.js";
+import { commandPrefix } from "../../agent/permissionStore.js";
 
 export type OverlayMode = "none" | "resume" | "project" | "permission" | "memory";
 
@@ -27,6 +28,15 @@ const FILE_OPTIONS: PermOption[] = [
   { label: "No (n)", hotkey: "n", allow: false },
   { label: "Never for this directory (d)", hotkey: "d", allow: false, rememberAs: "deny" }
 ];
+
+function commandOptions(prefix: string): PermOption[] {
+  return [
+    { label: "Yes (y)", hotkey: "y", allow: true },
+    { label: `Always allow '${prefix}' commands (a)`, hotkey: "a", allow: true, rememberAs: "allow" },
+    { label: "No (n)", hotkey: "n", allow: false },
+    { label: `Never allow '${prefix}' commands (d)`, hotkey: "d", allow: false, rememberAs: "deny" }
+  ];
+}
 
 interface PermissionState {
   request: PermissionRequest;
@@ -86,7 +96,13 @@ export class OverlayManager {
   openPermission(request: PermissionRequest, onDecision: (allow: boolean, rememberAs?: "allow" | "deny") => void): void {
     this._mode = "permission";
     const hasFilePath = typeof request.input.file_path === "string";
-    this.permissionState = { request, options: hasFilePath ? FILE_OPTIONS : BASE_OPTIONS, selected: 0, onDecision };
+    const isBashCommand = request.toolName === "Bash" && typeof request.input.command === "string";
+    const options = hasFilePath
+      ? FILE_OPTIONS
+      : isBashCommand
+        ? commandOptions(commandPrefix(String(request.input.command)))
+        : BASE_OPTIONS;
+    this.permissionState = { request, options, selected: 0, onDecision };
   }
 
   openMemory(options: MemoryOption[], onPick: (o: MemoryOption) => void, onCancel: () => void): void {
