@@ -1,3 +1,5 @@
+import { ANSI16_HEX } from "../themeJson.js";
+
 export const BRACKETED_PASTE_ON = "\x1b[?2004h";
 export const BRACKETED_PASTE_OFF = "\x1b[?2004l";
 // Kitty keyboard protocol, "disambiguate escape codes" flag (bit 1): reports
@@ -48,9 +50,71 @@ const COLOR_CODES: Record<string, number> = {
   gray: 90, blackBright: 90
 };
 
-export function sgr(colorName: string | undefined): string {
-  if (!colorName) return "";
-  const code = COLOR_CODES[colorName];
+export type ColorDepth = "truecolor" | "256" | "16";
+
+// Env-only detection; never queries the terminal (legacy conhost mishandles
+// several DEC/OSC queries, so probing is off the table).
+export function detectColorDepth(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: string = process.platform
+): ColorDepth {
+  if (/^(truecolor|24bit)$/i.test(env.COLORTERM ?? "")) return "truecolor";
+  // Windows 10+ conhost and Windows Terminal both render 24-bit SGR.
+  if (platform === "win32") return "truecolor";
+  if (/256color/.test(env.TERM ?? "")) return "256";
+  return "16";
+}
+
+let colorDepth: ColorDepth = detectColorDepth();
+
+export function setColorDepth(d: ColorDepth): void {
+  colorDepth = d;
+}
+
+function hexToRgb(hex: string): [number, number, number] | undefined {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return undefined;
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
+}
+
+// Nearest xterm-256 index: pick the better of the closest cube entry and the
+// closest grayscale entry by squared RGB distance.
+function nearest256([r, g, b]: [number, number, number]): number {
+  const level = (c: number) => (c < 48 ? 0 : c < 115 ? 1 : Math.min(5, Math.round((c - 55) / 40)));
+  const cubeVal = (i: number) => (i === 0 ? 0 : 55 + i * 40);
+  const [ri, gi, bi] = [level(r), level(g), level(b)];
+  const cubeIdx = 16 + 36 * ri + 6 * gi + bi;
+  const cubeDist = (cubeVal(ri) - r) ** 2 + (cubeVal(gi) - g) ** 2 + (cubeVal(bi) - b) ** 2;
+  const grayIdx = Math.max(0, Math.min(23, Math.round((((r + g + b) / 3) - 8) / 10)));
+  const grayVal = 8 + 10 * grayIdx;
+  const grayDist = (grayVal - r) ** 2 + (grayVal - g) ** 2 + (grayVal - b) ** 2;
+  return grayDist < cubeDist ? 232 + grayIdx : cubeIdx;
+}
+
+// Nearest of the standard 16 colors, returned as an SGR foreground code
+// (30-37 for 0-7, 90-97 for 8-15).
+function nearest16Sgr([r, g, b]: [number, number, number]): number {
+  let best = 0;
+  let bestDist = Infinity;
+  ANSI16_HEX.forEach((hex, i) => {
+    const [pr, pg, pb] = hexToRgb(hex)!;
+    const d = (pr - r) ** 2 + (pg - g) ** 2 + (pb - b) ** 2;
+    if (d < bestDist) { bestDist = d; best = i; }
+  });
+  return best < 8 ? 30 + best : 90 + (best - 8);
+}
+
+export function sgr(color: string | undefined): string {
+  if (!color) return "";
+  if (color.startsWith("#")) {
+    const rgb = hexToRgb(color);
+    if (!rgb) return "";
+    if (colorDepth === "truecolor") return `\x1b[38;2;${rgb[0]};${rgb[1]};${rgb[2]}m`;
+    if (colorDepth === "256") return `\x1b[38;5;${nearest256(rgb)}m`;
+    return `\x1b[${nearest16Sgr(rgb)}m`;
+  }
+  const code = COLOR_CODES[color];
   if (code === undefined) return "";
   return `\x1b[${code}m`;
 }
