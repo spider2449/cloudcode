@@ -102,6 +102,10 @@ The auto-memory system creates and maintains memory files under `~/.cloudcode/pr
 
 User-level instructions (`~/.cloudcode/CLOUDCODE.md`) are now loaded at startup in addition to the project-level `./CLAUDE.md`, giving you persistent settings and preferences across all projects.
 
+## Themes
+
+`/theme <name>` switches the color theme (no argument lists all available themes). Built in: `dark`, `light`, `mono`, `dracula`, `catppuccin`, `gruvbox`, `tokyonight`, `nord`, `one-dark`, `solarized`, `rosepine`, `github`, `monokai`. Drop your own theme JSON files into `~/.cloudcode/themes/*.json` — the filename (without `.json`) becomes the theme name, and a custom theme overrides a built-in of the same name.
+
 ## UX
 
 The UI is a hand-rolled TUI on the terminal's alternate screen: the transcript
