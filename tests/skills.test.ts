@@ -25,7 +25,7 @@ describe("loadSkills", () => {
     const cwd = join(root, "proj");
     writeSkill(join(cwd, ".cloudcode", "skills"), "commit-helper",
       "---\nname: commit-helper\ndescription: Write a commit\n---\n\nDo the thing.\n");
-    const skills = loadSkills(cwd, join(root, "nouser"));
+    const skills = loadSkills(cwd, join(root, "nouser"), join(root, "no-repos"));
     expect(skills).toEqual([{
       name: "commit-helper",
       description: "Write a commit",
@@ -37,7 +37,7 @@ describe("loadSkills", () => {
   it("falls back to directory name and empty description", () => {
     const cwd = join(root, "proj");
     writeSkill(join(cwd, ".cloudcode", "skills"), "my-skill", "---\n---\nInstructions.");
-    const skills = loadSkills(cwd, join(root, "nouser"));
+    const skills = loadSkills(cwd, join(root, "nouser"), join(root, "no-repos"));
     expect(skills[0].name).toBe("my-skill");
     expect(skills[0].description).toBe("");
     expect(skills[0].content).toBe("Instructions.");
@@ -46,11 +46,11 @@ describe("loadSkills", () => {
   it("skips files without a frontmatter block", () => {
     const cwd = join(root, "proj");
     writeSkill(join(cwd, ".cloudcode", "skills"), "plain", "Just markdown, no frontmatter.");
-    expect(loadSkills(cwd, join(root, "nouser"))).toEqual([]);
+    expect(loadSkills(cwd, join(root, "nouser"), join(root, "no-repos"))).toEqual([]);
   });
 
   it("returns empty for missing directories", () => {
-    expect(loadSkills(join(root, "nope"), join(root, "nouser"))).toEqual([]);
+    expect(loadSkills(join(root, "nope"), join(root, "nouser"), join(root, "no-repos"))).toEqual([]);
   });
 
   it("project overrides claude overrides user on name conflict", () => {
@@ -59,7 +59,7 @@ describe("loadSkills", () => {
     writeSkill(userDir, "dup", "---\nname: dup\n---\nuser version");
     writeSkill(join(cwd, ".claude", "skills"), "dup", "---\nname: dup\n---\nclaude version");
     writeSkill(join(cwd, ".cloudcode", "skills"), "dup", "---\nname: dup\n---\nproject version");
-    const skills = loadSkills(cwd, userDir);
+    const skills = loadSkills(cwd, userDir, join(root, "no-repos"));
     expect(skills).toHaveLength(1);
     expect(skills[0].content).toBe("project version");
     expect(skills[0].source).toBe("project");
@@ -68,14 +68,14 @@ describe("loadSkills", () => {
   it("claude skills load when no project skill shadows them", () => {
     const cwd = join(root, "proj");
     writeSkill(join(cwd, ".claude", "skills"), "cc-skill", "---\ndescription: from claude\n---\nBody");
-    const skills = loadSkills(cwd, join(root, "nouser"));
+    const skills = loadSkills(cwd, join(root, "nouser"), join(root, "no-repos"));
     expect(skills).toEqual([{ name: "cc-skill", description: "from claude", content: "Body", source: "claude" }]);
   });
 
   it("parses frontmatter-only file without trailing newline", () => {
     const cwd = join(root, "proj");
     writeSkill(join(cwd, ".cloudcode", "skills"), "bare", "---\nname: bare\ndescription: no body\n---");
-    const skills = loadSkills(cwd, join(root, "nouser"));
+    const skills = loadSkills(cwd, join(root, "nouser"), join(root, "no-repos"));
     expect(skills).toEqual([{
       name: "bare",
       description: "no body",
@@ -88,7 +88,7 @@ describe("loadSkills", () => {
     const cwd = join(root, "proj");
     writeSkill(join(cwd, ".cloudcode", "skills"), "tricky",
       "---\ndescription: dashes---\nname: tricky\n---\nBody text");
-    const skills = loadSkills(cwd, join(root, "nouser"));
+    const skills = loadSkills(cwd, join(root, "nouser"), join(root, "no-repos"));
     expect(skills).toEqual([{
       name: "tricky",
       description: "dashes---",
