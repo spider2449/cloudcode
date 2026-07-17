@@ -214,6 +214,8 @@ export class App {
       }
       this.turnCount += 1;
       void this.git.refresh().then(() => this.recompute());
+      const next = this.queuedMessages.shift();
+      if (next !== undefined) this.handleSubmit(next);
     }
     this.recompute();
   }
@@ -421,7 +423,13 @@ export class App {
   }
 
   private handleSubmit(text: string): void {
-    if (this.phase === "streaming") return;
+    if (this.phase === "streaming") {
+      // The agent is mid-turn: queue the message and send it when idle.
+      // Slash parsing happens at dequeue time so queued commands run in order.
+      this.queuedMessages.push(text);
+      this.recompute();
+      return;
+    }
     const slash = parseSlash(text);
     if (slash) {
       const cmd = this.registry.get(slash.name);
