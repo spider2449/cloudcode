@@ -6,7 +6,7 @@ import type { InputBoxRender } from "../widgets/inputBox.js";
 import type { OverlayMode } from "../widgets/overlay.js";
 import { tailForHeight } from "../streamTail.js";
 import { wrapText } from "../layout.js";
-import { ERASE_DOWN, cursorTo, setScrollRegion, RESET_SCROLL_REGION, CLEAR_ALL_AND_HOME, sgr, SGR_RESET } from "./ansi.js";
+import { ERASE_DOWN, cursorTo, cursorUp, setScrollRegion, RESET_SCROLL_REGION, CLEAR_ALL_AND_HOME, sgr, SGR_RESET } from "./ansi.js";
 import type { Theme } from "../theme.js";
 import { appendFileSync } from "node:fs";
 
@@ -65,12 +65,38 @@ export class InlineRenderer {
   private recentRows: string[] = [];
   private static readonly RECENT_ROWS_CAP = 1000;
 
+  // Simple-mode (non-scroll-region) state: how many rows the previously
+  // printed footer occupied, so the next frame can erase exactly that much
+  // before reprinting, and whether a frame has been printed yet.
+  private footerHeight = 0;
+  private simpleFirstFrame = true;
+  private lastColumnsSimple = -1;
+
+  constructor(
+    // ConPTY on Windows 10 1903/1909 has a documented bug where rows scrolled
+    // off the top of a DECSTBM-restricted region are dropped instead of
+    // reaching native scrollback, silently breaking mouse-wheel/scrollback
+    // access (fixed in later Windows 10 updates and in Windows 11's console
+    // host). Since this can't be reliably distinguished from working Windows
+    // builds at runtime, and other terminal apps avoid the scroll-region
+    // trick entirely, disable it for all of win32 and fall back to plain
+    // sequential printing, which every terminal scrolls correctly natively.
+    private readonly useScrollRegion: boolean = process.platform !== "win32"
+  ) {}
+
   frame(
     buffer: Buffer,
     bottom: BottomState,
     theme: Theme,
     size: { rows: number; columns: number }
   ): string {
+    const footer = this.buildFooter(bottom, theme, size);
+    return this.useScrollRegion
+      ? this.frameScrollRegion(buffer, theme, size, footer)
+      : this.frameSimple(buffer, theme, size, footer);
+  }
+
+  private buildFooter(bottom: BottomState, theme: Theme, size: { rows: number; columns: number }): string[] {
     const { rows, columns } = size;
 
     // Footer content, built bottom-up (same assembly as before).
@@ -103,7 +129,16 @@ export class InlineRenderer {
     }
 
     // Cap the footer so the scroll region always keeps at least 1 row.
-    const footer = dyn.slice(Math.max(0, dyn.length - (rows - 1)));
+    return dyn.slice(Math.max(0, dyn.length - (rows - 1)));
+  }
+
+  private frameScrollRegion(
+    buffer: Buffer,
+    theme: Theme,
+    size: { rows: number; columns: number },
+    footer: string[]
+  ): string {
+    const { rows, columns } = size;
     const scrollBottom = Math.max(1, rows - footer.length);
 
     let out = "";
@@ -222,6 +257,64 @@ export class InlineRenderer {
     return out;
   }
 
+  /**
+   * Fallback for platforms where a DECSTBM scroll region can't be trusted to
+   * push evicted rows into scrollback (see the constructor comment). Never
+   * restricts the scroll region: transcript rows are printed with plain
+   * "\r\n", so a print at the last row scrolls the whole screen the same way
+   * every terminal handles natively. The footer is kept pinned to the bottom
+   * by erasing exactly the rows it occupied last frame (tracked via
+   * footerHeight) before reprinting it fresh each frame.
+   */
+  private frameSimple(
+    buffer: Buffer,
+    theme: Theme,
+    size: { rows: number; columns: number },
+    footer: string[]
+  ): string {
+    const { columns } = size;
+    let out = "";
+
+    // Column-width changes are corrected by nativeApp.ts's debounced
+    // CLEAR_ALL_AND_HOME + recommitAll() once the resize storm settles (same
+    // as the scroll-region path); an immediate clear here on every in-storm
+    // frame would multiply that into one clear per resize event.
+    this.lastColumnsSimple = columns;
+    if (!this.simpleFirstFrame) {
+      // The previous frame's footer was printed via join("\r\n") with no
+      // trailing newline, so the cursor is parked on the footer's LAST row
+      // (at whatever column that line's text ended on) -- only
+      // footerHeight-1 rows separate it from the footer's first row, and
+      // it's not at column 1. Moving up the full footerHeight overshoots by
+      // one row, and erasing without returning to column 1 first only wipes
+      // part of a line: either bug leaves stale content behind or wipes the
+      // last transcript line too, creeping the footer up by one row/frame.
+      out += cursorUp(this.footerHeight - 1) + "\r" + ERASE_DOWN;
+    }
+
+    const staticRows = buffer.takeCommitRows(columns, theme);
+    out += staticRows.map(r => r + "\r\n").join("");
+
+    // thinkingText/streamingText live in the footer, not the committed
+    // transcript, so a preview shrinking (e.g. the "Thinking" block ending)
+    // shrinks the footer itself with no new committed rows to compensate --
+    // without padding, that leaves visible blank space where the block used
+    // to reach and the footer visibly creeps upward, only to jump back down
+    // once new content or a preview regrows it. Padding with blank rows
+    // ahead of the footer keeps this frame's total block height at least as
+    // tall as the previous one whenever committed rows don't already cover
+    // the difference, so the footer's position only ever moves when real
+    // content displaces it, never when a preview merely shrinks -- and the
+    // status bar (footer's own last line) stays the last thing written.
+    const blockHeight = staticRows.length + footer.length;
+    const pad = this.simpleFirstFrame ? 0 : Math.max(0, this.footerHeight - blockHeight);
+    if (pad > 0) out += "\r\n".repeat(pad);
+    out += footer.join("\r\n");
+    this.footerHeight = pad + footer.length;
+    this.simpleFirstFrame = false;
+    return out;
+  }
+
   invalidate(): void {
     traceLog("invalidate() called");
     this.lastScrollBottom = -1;
@@ -229,14 +322,28 @@ export class InlineRenderer {
     this.lastColumns = -1;
     this.printedRows = 0;
     this.recentRows = [];
+    this.simpleFirstFrame = true;
+    this.footerHeight = 0;
+    this.lastColumnsSimple = -1;
   }
 
   finalize(): string {
+    // In simple mode the footer is pinned to the bottom by erasing it and
+    // reprinting it fresh every frame (see frameSimple); finalize() must do
+    // that same erase before handing the screen back to the shell, or the
+    // last-painted footer (input box + status bar) is left on screen and the
+    // shell's next prompt gets printed overlapping it.
+    const eraseFooter = !this.useScrollRegion && !this.simpleFirstFrame
+      ? cursorUp(this.footerHeight - 1) + "\r" + ERASE_DOWN
+      : "";
     this.lastScrollBottom = -1;
     this.lastRows = -1;
     this.lastColumns = -1;
     this.printedRows = 0;
     this.recentRows = [];
-    return RESET_SCROLL_REGION + "\r\n";
+    this.simpleFirstFrame = true;
+    this.footerHeight = 0;
+    this.lastColumnsSimple = -1;
+    return (this.useScrollRegion ? RESET_SCROLL_REGION : eraseFooter) + "\r\n";
   }
 }

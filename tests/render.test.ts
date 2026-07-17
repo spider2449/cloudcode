@@ -37,14 +37,14 @@ const SCROLL_BOTTOM = size.rows - FOOTER_HEIGHT; // 20
 
 describe("InlineRenderer", () => {
   it("first frame defines the scroll region for rows 1..(rows-footerHeight)", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     const out = r.frame(buf, baseBottom(), theme, size);
     expect(out).toContain(`\x1b[1;${SCROLL_BOTTOM}r`);
   });
 
   it("steady-state frames with unchanged footer height and size do not redefine the region", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     const first = r.frame(buf, baseBottom(), theme, size);
     const second = r.frame(buf, baseBottom(), theme, size);
@@ -54,7 +54,7 @@ describe("InlineRenderer", () => {
   });
 
   it("appends committed transcript rows anchored at the scroll region's bottom row", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     buf.append({ kind: "notice", text: "STATIC_MARKER" });
     const out = r.frame(buf, baseBottom(), theme, size);
@@ -65,7 +65,7 @@ describe("InlineRenderer", () => {
   });
 
   it("emits committed transcript rows exactly once across frames", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     buf.append({ kind: "notice", text: "STATIC_MARKER" });
     const first = r.frame(buf, baseBottom(), theme, size);
@@ -75,7 +75,7 @@ describe("InlineRenderer", () => {
   });
 
   it("paints the footer anchored at the row after the scroll region, erasing to end of screen first", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     const out = r.frame(buf, baseBottom(), theme, size);
     const footerAnchor = `\x1b[${SCROLL_BOTTOM + 1};1H`;
@@ -86,7 +86,7 @@ describe("InlineRenderer", () => {
   });
 
   it("repaints the footer every frame (status bar redrawn even with no new transcript rows)", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     const first = r.frame(buf, baseBottom(), theme, size);
     const second = r.frame(buf, baseBottom(), theme, size);
@@ -95,7 +95,7 @@ describe("InlineRenderer", () => {
   });
 
   it("renders the open overlay instead of the input box", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     const out = r.frame(buf, baseBottom({ overlay: "resume", overlayRows: ["OVERLAY_MARKER"] }), theme, size);
     expect(out).toContain("OVERLAY_MARKER");
@@ -103,7 +103,7 @@ describe("InlineRenderer", () => {
   });
 
   it("caps a tall streaming preview so the footer fits under the viewport, keeping at least 1 scroll-region row", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     const longText = Array.from({ length: 50 }, (_, i) => `line ${i}`).join("\n");
     const out = r.frame(buf, baseBottom({ streaming: true, streamingText: longText }), theme, size);
@@ -115,7 +115,7 @@ describe("InlineRenderer", () => {
   });
 
   it("growing footer height with no content on screen redraws without scrolling (no blank-line burst)", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     // First frame: footer is 4 lines, scrollBottom = 20.
     r.frame(buf, baseBottom(), theme, size);
@@ -128,7 +128,7 @@ describe("InlineRenderer", () => {
   });
 
   it("growing footer height with more on-screen content than the new region holds reprints it through the new region so the excess reaches scrollback", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     // Commit enough rows to fill the entire first scroll region (20 rows),
     // so all of it is "on screen" and none of it can fit once the region
@@ -148,7 +148,7 @@ describe("InlineRenderer", () => {
   });
 
   it("growing footer height with partial on-screen content (fits new region) redraws it at the new bottom-anchored position, not via scrolling", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     buf.append({ kind: "notice", text: "ONLY_ROW" });
     r.frame(buf, baseBottom(), theme, size); // commits "ONLY_ROW", scrollBottom = 20
@@ -160,7 +160,7 @@ describe("InlineRenderer", () => {
   });
 
   it("fits-redraw anchors content at scrollBottom-1, leaving the true bottom row blank", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     buf.append({ kind: "notice", text: "ONLY_ROW" });
     r.frame(buf, baseBottom(), theme, size); // commits "ONLY_ROW", scrollBottom = 20
@@ -184,7 +184,7 @@ describe("InlineRenderer", () => {
   });
 
   it("a row relocated by a fits-redraw survives a follow-up commit at the same footer height", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     buf.append({ kind: "notice", text: "ROW_A" });
     r.frame(buf, baseBottom(), theme, size); // commits "ROW_A", scrollBottom = 20
@@ -207,7 +207,7 @@ describe("InlineRenderer", () => {
   });
 
   it("sudden large footer growth (first streaming chunk) does not scroll blank filler rows into scrollback", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     // Commit 5 rows while idle: scrollBottom = 20, content sits bottom-anchored
     // at rows 15..19 with rows 1..14 blank above it.
@@ -231,7 +231,7 @@ describe("InlineRenderer", () => {
   });
 
   it("boundary: onScreen exactly filling the new region reprints content through the region, never blank filler", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     // Commit exactly (SCROLL_BOTTOM - 1) rows: under the corrected invariant,
     // onScreen = min(printedRows, lastScrollBottom - 1) = SCROLL_BOTTOM - 1,
@@ -249,7 +249,7 @@ describe("InlineRenderer", () => {
   });
 
   it("shrinking footer height (region growing back) redraws the on-screen content at the new position, not via a stale-footer erase", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     // First frame: streaming, footer is 5 lines, scrollBottom = 19.
     r.frame(buf, baseBottom({ streaming: true, activeTool: "Bash" }), theme, size);
@@ -266,7 +266,7 @@ describe("InlineRenderer", () => {
   });
 
   it("footer shrinking back to idle (region growing) repositions existing content adjacent to new commits, not stranded with a gap", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     buf.append({ kind: "tool", label: "Bash dir /b" });
     r.frame(buf, baseBottom(), theme, size); // idle, scrollBottom=20, "Bash dir /b" ends at row 19
@@ -290,7 +290,7 @@ describe("InlineRenderer", () => {
   });
 
   it("streaming end with transcript already in scrollback triggers a full clear + recommit, not a blank-padded redraw", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     // 10 rows committed while idle (scrollBottom = 20, all on screen).
     for (let i = 0; i < 10; i++) buf.append({ kind: "notice", text: `early ${i}` });
@@ -314,7 +314,7 @@ describe("InlineRenderer", () => {
   });
 
   it("streaming end with the whole transcript still on screen keeps the cheap bottom-anchored redraw (no scrollback wipe)", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     buf.append({ kind: "notice", text: "ONLY_ROW" });
     r.frame(buf, baseBottom(), theme, size); // scrollBottom = 20, 1 row on screen
@@ -327,7 +327,7 @@ describe("InlineRenderer", () => {
   });
 
   it("a rows-only resize (window dragged taller, columns unchanged) repositions on-screen content instead of leaving it stranded", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     buf.append({ kind: "notice", text: "STAYS_VISIBLE" });
     r.frame(buf, baseBottom(), theme, size); // rows=24, columns=80, scrollBottom=20; content ends at row 19
@@ -343,7 +343,7 @@ describe("InlineRenderer", () => {
   });
 
   it("repeated rows-only resize events in quick succession (a drag) do not strand or duplicate content", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     buf.append({ kind: "notice", text: "SOLE_ROW" });
     r.frame(buf, baseBottom(), theme, size); // rows=24
@@ -360,7 +360,7 @@ describe("InlineRenderer", () => {
   });
 
   it("a columns change drops the stale row cache instead of redrawing content wrapped for the old width", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     buf.append({ kind: "notice", text: "WIDE_CONTENT" });
     r.frame(buf, baseBottom(), theme, size); // columns=80
@@ -375,7 +375,7 @@ describe("InlineRenderer", () => {
   });
 
   it("invalidate() forces the next frame to redefine the region unconditionally", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     r.frame(buf, baseBottom(), theme, size);
     r.invalidate();
@@ -384,7 +384,7 @@ describe("InlineRenderer", () => {
   });
 
   it("finalize() resets the scroll region and parks the cursor on a fresh line", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     expect(r.finalize()).toBe("\x1b[r\r\n");
   });
 
@@ -393,7 +393,7 @@ describe("InlineRenderer", () => {
     // the bottom of the screen, scrolls the viewport, and strands stale copies
     // of the footer in the transcript. Footer rows must therefore never be
     // wider than the terminal.
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     const longLine = "Q".repeat(200); // 200 > 80 columns
     const out = r.frame(buf, baseBottom({ streaming: true, streamingText: longLine, thinkingText: longLine }), theme, size);
@@ -408,7 +408,7 @@ describe("InlineRenderer", () => {
   });
 
   it("renders thinkingText above the stream text in the theme's thinking color", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     const out = r.frame(buf, baseBottom({ thinkingText: "pondering...", streamingText: "" }), theme, size);
     expect(out).toContain("pondering...");
@@ -419,7 +419,7 @@ describe("InlineRenderer", () => {
     const previousDepth = detectColorDepth();
     setColorDepth("16");
     try {
-      const r = new InlineRenderer();
+      const r = new InlineRenderer(true);
       const buf = new Buffer();
       const out = r.frame(buf, baseBottom({ thinkingText: "pondering...", streamingText: "" }), theme, size);
       expect(out).toContain("○ pondering...");
@@ -430,7 +430,7 @@ describe("InlineRenderer", () => {
   });
 
   it("renders queuedRows above the input box rows", () => {
-    const r = new InlineRenderer();
+    const r = new InlineRenderer(true);
     const buf = new Buffer();
     const out = r.frame(
       buf,
@@ -442,5 +442,96 @@ describe("InlineRenderer", () => {
     // Queued rows sit above the input box's first border row ("╭─╮" in
     // emptyInputRender), i.e. earlier in the footer paint.
     expect(out.indexOf("⧉ queued: fix tests")).toBeLessThan(out.indexOf("╭─╮"));
+  });
+});
+
+describe("InlineRenderer (simple mode, no scroll region)", () => {
+  it("never emits a DECSTBM scroll-region sequence", () => {
+    const r = new InlineRenderer(false);
+    const buf = new Buffer();
+    const out = r.frame(buf, baseBottom(), theme, size);
+    expect(out).not.toMatch(/\x1b\[\d*;\d*r/);
+  });
+
+  it("first frame prints transcript rows then the footer with no leading erase", () => {
+    const r = new InlineRenderer(false);
+    const buf = new Buffer();
+    buf.append({ kind: "user", text: "hi" });
+    const out = r.frame(buf, baseBottom(), theme, size);
+    expect(out.indexOf("hi")).toBeLessThan(out.indexOf("╭─╮"));
+  });
+
+  it("erases exactly the previous footer height before reprinting on the next frame", () => {
+    // The cursor is parked on the footer's LAST row after a frame (no
+    // trailing "\r\n"), so returning to its first row is footerHeight-1 rows
+    // up, followed by a carriage return to reach column 1 before erasing.
+    const r = new InlineRenderer(false);
+    const buf = new Buffer();
+    r.frame(buf, baseBottom(), theme, size);
+    const out = r.frame(buf, baseBottom(), theme, size);
+    expect(out).toContain(`\x1b[${FOOTER_HEIGHT - 1}A\r\x1b[0J`);
+  });
+
+  it("does not creep the footer upward or delete transcript rows across repeated no-op frames", () => {
+    const r = new InlineRenderer(false);
+    const buf = new Buffer();
+    buf.append({ kind: "notice", text: "KEEP_ME" });
+    r.frame(buf, baseBottom(), theme, size);
+    let out = "";
+    for (let i = 0; i < 5; i++) out = r.frame(buf, baseBottom(), theme, size);
+    // Every steady-state frame erases the exact same footer height and
+    // reprints it; none of them may touch rows above the footer, so the
+    // once-committed transcript row is never re-erased.
+    const eraseCount = (out.match(/\x1b\[0J/g) ?? []).length;
+    expect(eraseCount).toBe(1);
+    expect(out).not.toContain("KEEP_ME");
+  });
+
+  it("pads a shrinking footer instead of letting it creep upward when no new content displaces it", () => {
+    // thinkingText lives in the footer; when it disappears with nothing new
+    // committed, the footer must not visibly move up -- it should stay
+    // anchored at the same erase-distance from the prior frame, absorbing
+    // the shrink as invisible padding instead.
+    const r = new InlineRenderer(false);
+    const buf = new Buffer();
+    r.frame(buf, baseBottom({ streaming: true, thinkingText: "pondering...\nstill going" }), theme, size);
+    const cursorUpMatch = (s: string) => /\x1b\[(\d+)A/.exec(s)?.[1];
+    const second = r.frame(buf, baseBottom({ streaming: true, streamingText: "hi" }), theme, size);
+    const third = r.frame(buf, baseBottom({ streaming: true, streamingText: "hi there" }), theme, size);
+    // Both post-shrink frames must erase the same distance: if the footer
+    // had crept upward, the second frame's cursorUp count would differ from
+    // (and be smaller than) the steady-state count in the third frame.
+    expect(cursorUpMatch(second)).toBe(cursorUpMatch(third));
+    // The status bar (footer's own last line) must remain the last thing
+    // written, not a blank padding row.
+    const lastLine = second.split("\r\n").at(-1) ?? "";
+    expect(lastLine).toContain("/repo");
+  });
+
+  it("finalize() does not reset a scroll region, just parks the cursor on a fresh line", () => {
+    const r = new InlineRenderer(false);
+    expect(r.finalize()).toBe("\r\n");
+  });
+
+  it("finalize() erases a previously painted footer instead of leaving it on screen", () => {
+    // On win32 (no scroll region), the footer is pinned to the bottom by
+    // erasing it and reprinting it fresh every frame. If finalize() (called
+    // on /exit and Ctrl+C) skips that erase, the last footer -- the input
+    // box and status bar -- is left behind on screen when control returns to
+    // the shell, so the shell's next prompt gets printed overlapping it.
+    const r = new InlineRenderer(false);
+    const buf = new Buffer();
+    r.frame(buf, baseBottom(), theme, size);
+    const out = r.finalize();
+    expect(out).toBe(`\x1b[${FOOTER_HEIGHT - 1}A\r\x1b[0J\r\n`);
+  });
+
+  it("does not clear the screen itself on a column-width change (nativeApp's debounced resize handles that)", () => {
+    const r = new InlineRenderer(false);
+    const buf = new Buffer();
+    buf.append({ kind: "user", text: "hi" });
+    r.frame(buf, baseBottom(), theme, size);
+    const out = r.frame(buf, baseBottom(), theme, { rows: size.rows, columns: 100 });
+    expect(out).not.toContain("\x1b[2J\x1b[3J\x1b[H");
   });
 });

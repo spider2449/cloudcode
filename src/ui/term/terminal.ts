@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline";
 import { appendFileSync } from "node:fs";
 import { KeyDecoder, type Key } from "../input.js";
-import { BRACKETED_PASTE_ON, BRACKETED_PASTE_OFF, CURSOR_HIDE, CURSOR_SHOW, AUTOWRAP_OFF, AUTOWRAP_ON, RESET_SCROLL_REGION, KITTY_KEYBOARD_ON, KITTY_KEYBOARD_OFF } from "./ansi.js";
+import { BRACKETED_PASTE_ON, BRACKETED_PASTE_OFF, CURSOR_HIDE, CURSOR_SHOW, AUTOWRAP_OFF, AUTOWRAP_ON, RESET_SCROLL_REGION, KITTY_KEYBOARD_ON, KITTY_KEYBOARD_OFF, setTitle } from "./ansi.js";
 
 // Opt-in raw-output capture for diagnosing rendering bugs that only show up
 // on a real terminal (resize storms, redraw artifacts) and can't be
@@ -20,6 +20,15 @@ function debugLog(line: string): void {
   }
 }
 
+// Terminal-state restore written at cleanup. CSI r (DECSTBM reset) also homes
+// the cursor to row 1/column 1, so it must only be emitted on platforms where
+// a scroll region can actually have been set (InlineRenderer disables the
+// scroll region entirely on win32); otherwise the shell's next prompt prints
+// at the top of the window, overlapping the transcript.
+export function restoreSequence(useScrollRegion: boolean = process.platform !== "win32"): string {
+  return KITTY_KEYBOARD_OFF + (useScrollRegion ? RESET_SCROLL_REGION : "") + AUTOWRAP_ON + BRACKETED_PASTE_OFF + CURSOR_SHOW;
+}
+
 export interface ITerminal {
   isTTY: boolean;
   size(): { rows: number; columns: number };
@@ -27,6 +36,7 @@ export interface ITerminal {
   onKeys(cb: (keys: Key[]) => void): void;
   onResize(cb: () => void): void;
   onLine(cb: (line: string) => void): void;
+  setTitle(title: string): void;
   cleanup(): void;
 }
 
@@ -92,6 +102,10 @@ export class Terminal implements ITerminal {
     rl.on("line", cb);
   }
 
+  setTitle(title: string): void {
+    if (this.isTTY) this.write(setTitle(title));
+  }
+
   cleanup(): void {
     if (this.cleaned) return;
     this.cleaned = true;
@@ -103,7 +117,7 @@ export class Terminal implements ITerminal {
     if (this.isTTY) {
       process.stdin.setRawMode(false);
       process.stdin.pause();
-      process.stdout.write(KITTY_KEYBOARD_OFF + RESET_SCROLL_REGION + AUTOWRAP_ON + BRACKETED_PASTE_OFF + CURSOR_SHOW);
+      process.stdout.write(restoreSequence());
     }
   }
 }
@@ -137,6 +151,10 @@ export class FakeTerminal implements ITerminal {
 
   onLine(cb: (line: string) => void): void {
     this.lineCb = cb;
+  }
+
+  setTitle(): void {
+    // no-op: FakeTerminal never touches real stdin/stdout
   }
 
   cleanup(): void {

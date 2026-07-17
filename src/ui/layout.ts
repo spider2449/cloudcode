@@ -119,7 +119,7 @@ export function layoutItem(item: DisplayItem, theme: Theme, width: number): stri
       return wrapText(colorize("> " + item.text, theme.user), width);
     case "assistant": {
       const innerWidth = Math.max(1, width - 2);
-      return prefixBlock(wrapText(renderMarkdown(item.text, innerWidth), innerWidth), "●");
+      return prefixBlock(wrapText(renderMarkdown(item.text, innerWidth, theme), innerWidth), "●");
     }
     case "tool":
       return wrapText(colorize("● " + item.label, theme.accent), width);

@@ -15,6 +15,14 @@ export const CURSOR_SHOW = "\x1b[?25h";
 // on the bottom row scrolls the whole screen and misaligns every frame.
 export const AUTOWRAP_OFF = "\x1b[?7l";
 export const AUTOWRAP_ON = "\x1b[?7h";
+// OSC 0: set both the window/tab icon name and title. Universally supported
+// (xterm, Windows Terminal, ConPTY, iTerm2, ...); terminals that don't
+// recognize OSC sequences simply ignore it, so it's safe to send
+// unconditionally like the other feature-detection-free sequences above.
+export function setTitle(title: string): string {
+  return `\x1b]0;${title}\x07`;
+}
+
 export const CLEAR_AND_HOME = "\x1b[2J\x1b[H";
 // 2J clears only the viewport; 3J also drops the terminal's scrollback so a
 // full transcript reprint doesn't stack a duplicate copy above it.

@@ -45,6 +45,20 @@ describe("FakeTerminal", () => {
     const t = new FakeTerminal();
     expect(() => { t.cleanup(); t.cleanup(); }).not.toThrow();
   });
+
+  it("setTitle() is a no-op (never touches real stdout)", () => {
+    const t = new FakeTerminal();
+    expect(() => t.setTitle("cloudcode - myproject")).not.toThrow();
+    expect(t.writes).toEqual([]);
+  });
+});
+
+import { setTitle as setTitleSeq } from "../src/ui/term/ansi.js";
+
+describe("setTitle ANSI sequence", () => {
+  it("emits an OSC 0 sequence with the given title", () => {
+    expect(setTitleSeq("cloudcode - myproject")).toBe("\x1b]0;cloudcode - myproject\x07");
+  });
 });
 
 // Real Terminal: resize listener management. A stale App keeping its resize
@@ -52,6 +66,23 @@ describe("FakeTerminal", () => {
 // frame writes (blank regions, ghost content, stale footers) on every
 // window resize -- see the 2026-07-16 TUI overhaul plan, Task 9d.
 import { Terminal } from "../src/ui/term/terminal.js";
+
+import { restoreSequence } from "../src/ui/term/terminal.js";
+
+describe("restoreSequence", () => {
+  it("omits the scroll-region reset on platforms that never set one (win32)", () => {
+    // CSI r (DECSTBM reset) also homes the cursor to row 1. On win32 no
+    // scroll region is ever set (see InlineRenderer's constructor), so
+    // emitting it at cleanup only teleports the cursor to the top of the
+    // window -- the shell's next prompt then prints there, overlapping the
+    // transcript.
+    expect(restoreSequence(false)).not.toContain("\x1b[r");
+  });
+
+  it("includes the scroll-region reset when a region may have been set", () => {
+    expect(restoreSequence(true)).toContain("\x1b[r");
+  });
+});
 
 describe("Terminal resize listener", () => {
   it("onResize replaces the previous callback instead of stacking listeners", () => {

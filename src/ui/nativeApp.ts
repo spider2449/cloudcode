@@ -463,6 +463,12 @@ export class App {
         // Async commands (e.g. /mcp) append output after the submit-time
         // repaint, so repaint again once the command settles.
         .finally(() => {
+          // /exit (and double-Ctrl+C's ctx.exit()) call stop() synchronously
+          // inside run(), which already finalized and cleared the terminal.
+          // Without this guard, this callback still fires on the next
+          // microtask and repaints a brand-new frame (fresh empty prompt,
+          // fresh elapsed timer) over what should be a torn-down screen.
+          if (!this.running) return;
           this.recompute();
           // Slash commands never start a model turn (no "result" message),
           // so drain the queue here or a queued item after a slash command

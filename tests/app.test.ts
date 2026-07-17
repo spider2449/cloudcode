@@ -277,4 +277,21 @@ describe("App key routing", () => {
     await wait(5);
     expect(terminal.writes).toEqual([]);
   });
+
+  it("/exit does not repaint a fresh frame after stopping (the finally() callback must respect the stopped state)", async () => {
+    const { app, terminal } = makeApp([textTurn("ok")]);
+    void app.run();
+    await wait(5);
+    terminal.writes.length = 0;
+    app.submitForTest("/exit");
+    // /exit's run() calls ctx.exit() -> stop() synchronously, but the
+    // .finally() attached to the command promise still fires on the next
+    // microtask; without a running-state guard it repainted a brand-new
+    // frame (fresh empty prompt, fresh elapsed timer) over the already
+    // torn-down terminal.
+    await wait(5);
+    expect(app.isRunningForTest()).toBe(false);
+    // finalize() writes exactly one reset sequence; nothing after it.
+    expect(terminal.writes.length).toBe(1);
+  });
 });

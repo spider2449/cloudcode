@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
+import { basename } from "node:path";
 import { App } from "./ui/nativeApp.js";
 import { Terminal } from "./ui/term/terminal.js";
 import { loadProviders } from "./agent/providers.js";
@@ -64,6 +65,7 @@ void (async () => {
   let pendingOpenResume = values.resume;
   for (;;) {
     let switchTo: string | undefined;
+    terminal.setTitle(`cloudcode - ${basename(cwd)}`);
     const app = new App({
       cwd,
       providers,
@@ -92,4 +94,10 @@ void (async () => {
     pendingOpenResume = false;
   }
   terminal.cleanup();
+  // App.stop() (from /exit or double-Ctrl+C) only resolves run()'s promise;
+  // it doesn't touch the process. A lingering handle elsewhere (e.g. a
+  // keep-alive HTTP socket to the LLM API) would otherwise keep the event
+  // loop alive and the process hanging until an external SIGINT forces it
+  // down, same as the SIGINT handler above already does explicitly.
+  process.exit(0);
 })();
