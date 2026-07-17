@@ -125,9 +125,6 @@ syntax-highlighted code blocks; Edit/Write tools show a colored diff preview.
 Input supports cursor movement (←/→), command history (↑/↓, persisted to
 ~/.cloudcode/history.json), and multi-line input (end a line with \ and press Enter).
 
-The legacy Ink-based UI remains available with `npm run dev -- --tui=legacy`
-(or `cloudcode --tui=legacy`); the native TUI is the default.
-
 ## Release
 
     npm run package         # npm tarball + binaries + Windows installer
