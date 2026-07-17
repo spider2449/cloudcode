@@ -9,6 +9,11 @@ import { loadProviders } from "./agent/providers.js";
 import { loadSettings } from "./agent/settings.js";
 import { SessionIndex } from "./agent/sessionIndex.js";
 import { VERSION } from "./version.js";
+import { loadCustomThemes } from "./ui/theme.js";
+
+// Custom themes must be registered before loadThemeName() validates the
+// saved name, or a saved custom theme would silently fall back to dark.
+for (const warning of loadCustomThemes()) console.error(warning);
 
 const { values } = parseArgs({
   options: {
