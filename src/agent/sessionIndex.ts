@@ -36,4 +36,8 @@ export class SessionIndex {
   latestForCwd(cwd: string): SessionEntry | undefined {
     return this.list().find(e => e.cwd === cwd);
   }
+
+  listForCwd(cwd: string): SessionEntry[] {
+    return this.list().filter(e => e.cwd === cwd);
+  }
 }

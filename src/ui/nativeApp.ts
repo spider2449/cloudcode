@@ -363,7 +363,7 @@ export class App {
       },
       setCompactProgress: pct => { this.compactPct = pct; this.recompute(); },
       openResumePicker: () => {
-        this.overlay.openResume(this.props.sessionIndex.list(), e => this.pickResume(e), () => { this.overlay.close(); this.recompute(); });
+        this.overlay.openResume(this.props.sessionIndex.listForCwd(this.props.cwd), e => this.pickResume(e), () => { this.overlay.close(); this.recompute(); });
         this.recompute();
       },
       costSummary: () => `Session cost: $${this.cost.toFixed(4)}`,
