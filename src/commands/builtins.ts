@@ -18,6 +18,33 @@ const MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
 const CONFIG_KEYS = ["provider", "model", "permissionMode", "theme", "effort", "autoMemory"] as const;
 type ConfigKey = (typeof CONFIG_KEYS)[number];
 
+function fmtK(n: number): string {
+  return `${(n / 1000).toFixed(1)}k`;
+}
+
+function contextReport(info: ReturnType<CommandContext["contextInfo"]>): string {
+  const { snapshot, model, contextWindow } = info;
+  if (!snapshot) return "No context yet — send a message first.";
+  const estimateSum = snapshot.systemTokens + snapshot.toolsTokens + snapshot.messagesTokens;
+  const real = snapshot.inputTokens;
+  const scale = real !== undefined && estimateSum > 0 ? real / estimateSum : 1;
+  const total = real ?? estimateSum;
+  const rows: Array<[string, number]> = [
+    ["System prompt", Math.round(snapshot.systemTokens * scale)],
+    ["Tools", Math.round(snapshot.toolsTokens * scale)],
+    ["Messages", Math.round(snapshot.messagesTokens * scale)],
+    ["Free space", Math.max(0, contextWindow - total)]
+  ];
+  const pct = (n: number) => `${Math.min(100, Math.max(0, (n / contextWindow) * 100)).toFixed(1)}%`;
+  const totalPct = Math.min(100, Math.round((total / contextWindow) * 100));
+  const suffix = real === undefined ? " (estimated)" : "";
+  const header = `Context usage — ${model} (${fmtK(total)} / ${fmtK(contextWindow)} tokens (${totalPct}%))${suffix}`;
+  const body = rows
+    .map(([label, n]) => `  ${label.padEnd(15)}${fmtK(n).padStart(7)}  ${pct(n).padStart(5)}`)
+    .join("\n");
+  return `${header}\n\n${body}`;
+}
+
 function configValue(key: ConfigKey): string {
   if (key === "theme") return loadThemeName();
   if (key === "effort") return loadSettings().effort ?? "off";
@@ -134,6 +161,13 @@ const commands: Command[] = [
         key === "autoMemory" ? ["true", "false"] :
         key === "model" ? cctx.availableModels() : [];
       return values.filter(v => v.startsWith(valuePrefix)).map(v => `${key} ${v}`);
+    }
+  },
+  {
+    name: "context",
+    description: "Show context window usage breakdown",
+    async run(ctx) {
+      ctx.notice(contextReport(ctx.contextInfo()));
     }
   },
   {

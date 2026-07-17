@@ -84,7 +84,7 @@ describe("parseSlash", () => {
 describe("builtins", () => {
   it("registers all v1 commands", () => {
     const names = [...buildRegistry().keys()].sort();
-    expect(names).toEqual(["clear", "compact", "config", "cost", "effort", "exit", "help", "init", "mcp", "memory", "model", "new", "permissions", "provider", "resume", "set", "skill", "skills", "theme"]);
+    expect(names).toEqual(["clear", "compact", "config", "context", "cost", "effort", "exit", "help", "init", "mcp", "memory", "model", "new", "permissions", "provider", "resume", "set", "skill", "skills", "theme"]);
   });
 
   it("/new starts a new session", async () => {
@@ -404,6 +404,42 @@ describe("/set", () => {
     await buildRegistry().get("set")!.run(ctx, "project Z:\\definitely\\missing\\dir");
     expect(ctx.switchProject).not.toHaveBeenCalled();
     expect(ctx.notice).toHaveBeenCalledWith(expect.stringContaining("Not a directory"));
+  });
+});
+
+describe("/context", () => {
+  it("prints a scaled category breakdown with real usage", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("context")!.run(ctx, "");
+    const out = vi.mocked(ctx.notice).mock.calls[0][0];
+    // header: real total 20k of 200k = 10%
+    expect(out).toContain("claude-sonnet-5");
+    expect(out).toContain("20.0k / 200.0k tokens (10%)");
+    // estimates 1k/3k/6k scale by 20000/10000 = 2x -> 2k/6k/12k
+    expect(out).toMatch(/System prompt\s+2\.0k\s+1\.0%/);
+    expect(out).toMatch(/Tools\s+6\.0k\s+3\.0%/);
+    expect(out).toMatch(/Messages\s+12\.0k\s+6\.0%/);
+    expect(out).toMatch(/Free space\s+180\.0k\s+90\.0%/);
+  });
+
+  it("labels output as estimated when no real usage exists", async () => {
+    const ctx = mockCtx();
+    vi.mocked(ctx.contextInfo).mockReturnValue({
+      snapshot: { systemTokens: 1000, toolsTokens: 3000, messagesTokens: 6000 },
+      model: "claude-sonnet-5",
+      contextWindow: 200_000
+    });
+    await buildRegistry().get("context")!.run(ctx, "");
+    const out = vi.mocked(ctx.notice).mock.calls[0][0];
+    expect(out).toContain("(estimated)");
+    expect(out).toMatch(/System prompt\s+1\.0k/);
+  });
+
+  it("handles a missing snapshot", async () => {
+    const ctx = mockCtx();
+    vi.mocked(ctx.contextInfo).mockReturnValue({ snapshot: undefined, model: "m", contextWindow: 200_000 });
+    await buildRegistry().get("context")!.run(ctx, "");
+    expect(vi.mocked(ctx.notice).mock.calls[0][0]).toContain("No context yet");
   });
 });
 
