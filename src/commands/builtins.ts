@@ -346,7 +346,7 @@ const commands: Command[] = [
   },
   {
     name: "theme",
-    description: "Switch color theme: /theme <dark|light|mono>",
+    description: "Switch color theme: /theme <name> (no arg lists themes)",
     async run(ctx, args) {
       if (!args) { ctx.notice(ctx.listThemes()); return; }
       if (!(args in THEMES)) {

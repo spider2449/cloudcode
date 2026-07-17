@@ -2,19 +2,22 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { THEMES, loadThemeName, saveThemeName } from "../src/ui/theme.js";
+import { THEMES, loadThemeName, saveThemeName, toAppTheme } from "../src/ui/theme.js";
 
-describe("theme presets", () => {
-  it("defines dark, light, and mono", () => {
-    expect(Object.keys(THEMES).sort()).toEqual(["dark", "light", "mono"]);
+const HEX = /^#[0-9a-f]{6}$/;
+const ROLES = ["user", "accent", "muted", "error", "success", "removed", "warning", "thinking"] as const;
+
+describe("built-in themes", () => {
+  it("includes the original three", () => {
+    for (const name of ["dark", "light", "mono"]) expect(THEMES[name]).toBeDefined();
   });
 
-  it("dark preserves the original colors", () => {
-    expect(THEMES.dark).toEqual({
-      user: "blue", accent: "cyan", muted: "gray",
-      error: "red", success: "green", removed: "red", warning: "yellow",
-      thinking: "magenta"
-    });
+  it("every theme resolves all roles to hex colors", () => {
+    for (const [name, theme] of Object.entries(THEMES)) {
+      for (const role of ROLES) {
+        expect(theme[role], `${name}.${role}`).toMatch(HEX);
+      }
+    }
   });
 
   it("every theme defines a thinking color distinct from its user color", () => {
@@ -22,6 +25,30 @@ describe("theme presets", () => {
       expect(theme.thinking).toBeTruthy();
       expect(theme.thinking).not.toBe(theme.user);
     }
+  });
+});
+
+describe("toAppTheme role mapping", () => {
+  const base = {
+    primary: "#010101", secondary: "#020202", accent: "#030303", text: "#040404",
+    textMuted: "#050505", error: "#060606", success: "#070707", warning: "#080808"
+  };
+  it("maps opencode roles onto app roles with fallbacks", () => {
+    const t = toAppTheme({ ...base, diffRemoved: "#090909", thinking: "#0a0a0a" });
+    expect(t.user).toBe("#020202");        // secondary
+    expect(t.accent).toBe("#030303");
+    expect(t.muted).toBe("#050505");       // textMuted
+    expect(t.removed).toBe("#090909");     // diffRemoved
+    expect(t.thinking).toBe("#0a0a0a");    // explicit key wins
+  });
+  it("falls back when optional roles are missing", () => {
+    const t = toAppTheme(base);
+    expect(t.removed).toBe("#060606");     // error
+    expect(t.thinking).toBe("#050505");    // textMuted
+  });
+  it("keeps extra resolved keys accessible", () => {
+    const t = toAppTheme({ ...base, diffAdded: "#0b0b0b" });
+    expect(t.diffAdded).toBe("#0b0b0b");
   });
 });
 
@@ -46,7 +73,7 @@ describe("theme persistence", () => {
 
   it("falls back to dark for an unknown theme name", () => {
     const file = join(dir(), "theme.json");
-    writeFileSync(file, JSON.stringify({ name: "solarized" }));
+    writeFileSync(file, JSON.stringify({ name: "does-not-exist" }));
     expect(loadThemeName(file)).toBe("dark");
   });
 });
