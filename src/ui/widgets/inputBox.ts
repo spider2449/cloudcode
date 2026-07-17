@@ -71,8 +71,7 @@ export class InputBox {
     return applySuggestion(this.value, s).text === this.value.trimEnd();
   }
 
-  handleKey(k: Key, disabled: boolean): void {
-    if (disabled) return;
+  handleKey(k: Key): void {
     if (k.t === "ctrl" || k.t === "alt") return;
     const menu = this.currentSuggestions();
     const menuOpen = menu.length > 0;
@@ -119,8 +118,7 @@ export class InputBox {
     }
   }
 
-  handlePaste(text: string, disabled: boolean): void {
-    if (disabled) return;
+  handlePaste(text: string): void {
     // Pasted newlines are literal text, never Enter: submitting mid-paste
     // would fire the first line at the model. Normalize CRLF/CR to LF and
     // strip other control characters.
@@ -128,19 +126,19 @@ export class InputBox {
     this.setValue(this.value.slice(0, this.cursor) + clean + this.value.slice(this.cursor), this.cursor + clean.length);
   }
 
-  render(theme: Theme, width: number, disabled: boolean): InputBoxRender {
+  render(theme: Theme, width: number, streaming: boolean): InputBoxRender {
     const before = this.value.slice(0, this.cursor);
     const after = this.value.slice(this.cursor);
-    const content = "> " + before + (disabled ? "" : "█") + after;
+    const content = "> " + before + "█" + after;
     const innerWidth = Math.max(1, width - 4);
     const wrapped = this.wrap(content, innerWidth);
     // A single muted divider separating the transcript from the input area.
     const dividerCode = sgr(theme.muted);
     const divider = "─".repeat(Math.max(1, width));
     const borderRows = [dividerCode ? `${dividerCode}${divider}${SGR_RESET}` : divider];
-    const hintRow = disabled ? "working… (Esc to interrupt)" : null;
-    const suggestions = disabled ? [] : this.currentSuggestions();
-    const menuRows = disabled ? [] : renderMenu(suggestions, Math.min(this.selected, Math.max(0, suggestions.length - 1)), theme, width);
+    const hintRow = streaming ? "working… (Esc to interrupt)" : null;
+    const suggestions = this.currentSuggestions();
+    const menuRows = renderMenu(suggestions, Math.min(this.selected, Math.max(0, suggestions.length - 1)), theme, width);
     return {
       borderRows,
       contentRows: wrapped,

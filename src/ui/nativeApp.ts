@@ -534,11 +534,11 @@ export class App {
       return;
     }
     if (k.t === "paste") {
-      this.inputBox.handlePaste(k.text, this.phase === "streaming");
+      this.inputBox.handlePaste(k.text);
       this.recompute();
       return;
     }
-    this.inputBox.handleKey(k, this.phase === "streaming");
+    this.inputBox.handleKey(k);
     this.recompute();
   }
 

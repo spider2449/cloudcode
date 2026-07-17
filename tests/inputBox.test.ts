@@ -19,7 +19,7 @@ function ctx(overrides: Partial<CompletionContext> = {}): CompletionContext {
 }
 
 function type(box: InputBox, text: string): void {
-  for (const ch of text) box.handleKey({ t: "printable", ch }, false);
+  for (const ch of text) box.handleKey({ t: "printable", ch });
 }
 
 describe("InputBox", () => {
@@ -35,7 +35,7 @@ describe("InputBox", () => {
     const onSubmit = vi.fn();
     box.onSubmit = onSubmit;
     type(box, "hi");
-    box.handleKey({ t: "shift-enter" }, false);
+    box.handleKey({ t: "shift-enter" });
     type(box, "there");
     const r = box.render(theme, 80, false);
     expect(r.contentRows.join("\n")).toContain("hi");
@@ -46,7 +46,7 @@ describe("InputBox", () => {
   it("backspace removes the character before the cursor", () => {
     const box = new InputBox(ctx(), new History());
     type(box, "hi");
-    box.handleKey({ t: "backspace" }, false);
+    box.handleKey({ t: "backspace" });
     const r = box.render(theme, 80, false);
     expect(r.contentRows.join("\n")).toContain("> h");
     expect(r.contentRows.join("\n")).not.toContain("hi");
@@ -57,7 +57,7 @@ describe("InputBox", () => {
     const onSubmit = vi.fn();
     box.onSubmit = onSubmit;
     type(box, "hello");
-    box.handleKey({ t: "enter" }, false);
+    box.handleKey({ t: "enter" });
     expect(onSubmit).toHaveBeenCalledWith("hello");
     expect(box.render(theme, 80, false).contentRows.join("\n")).toContain("> ");
     expect(box.render(theme, 80, false).contentRows.join("\n")).not.toContain("hello");
@@ -68,7 +68,7 @@ describe("InputBox", () => {
     const onSubmit = vi.fn();
     box.onSubmit = onSubmit;
     type(box, "line1\\");
-    box.handleKey({ t: "enter" }, false);
+    box.handleKey({ t: "enter" });
     expect(onSubmit).not.toHaveBeenCalled();
     expect(box.render(theme, 80, false).contentRows.join("\n")).toContain("line1");
   });
@@ -78,7 +78,7 @@ describe("InputBox", () => {
     history.add("earlier command");
     const box = new InputBox(ctx(), history);
     type(box, "draft text");
-    box.handleKey({ t: "up" }, false);
+    box.handleKey({ t: "up" });
     expect(box.render(theme, 80, false).contentRows.join("\n")).toContain("earlier command");
   });
 
@@ -87,8 +87,8 @@ describe("InputBox", () => {
     history.add("earlier command");
     const box = new InputBox(ctx(), history);
     type(box, "draft text");
-    box.handleKey({ t: "up" }, false);
-    box.handleKey({ t: "down" }, false);
+    box.handleKey({ t: "up" });
+    box.handleKey({ t: "down" });
     expect(box.render(theme, 80, false).contentRows.join("\n")).toContain("draft text");
   });
 
@@ -97,11 +97,11 @@ describe("InputBox", () => {
     history.add("/older");
     history.add("/clear");
     const box = new InputBox(ctx({ registry: registryWithClear() }), history);
-    box.handleKey({ t: "up" }, false);
+    box.handleKey({ t: "up" });
     expect(box.render(theme, 80, false).contentRows.join("\n")).toContain("/clear");
     // Without the fix, the single-suggestion menu that opens for "/clear" hijacks
     // the next Up press into a menu-cycle no-op instead of recalling "/older".
-    box.handleKey({ t: "up" }, false);
+    box.handleKey({ t: "up" });
     expect(box.render(theme, 80, false).contentRows.join("\n")).toContain("/older");
   });
 
@@ -110,10 +110,10 @@ describe("InputBox", () => {
     history.add("/older");
     history.add("/clear");
     const box = new InputBox(ctx({ registry: registryWithClear() }), history);
-    box.handleKey({ t: "up" }, false);
-    box.handleKey({ t: "up" }, false);
+    box.handleKey({ t: "up" });
+    box.handleKey({ t: "up" });
     expect(box.render(theme, 80, false).contentRows.join("\n")).toContain("/older");
-    box.handleKey({ t: "down" }, false);
+    box.handleKey({ t: "down" });
     expect(box.render(theme, 80, false).contentRows.join("\n")).toContain("/clear");
   });
 
@@ -143,26 +143,20 @@ describe("InputBox", () => {
     const box = new InputBox(ctx({ registry: registryWithClear() }), new History());
     type(box, "/");
     expect(box.render(theme, 80, false).menuRows.length).toBeGreaterThan(0);
-    box.handleKey({ t: "esc" }, false);
+    box.handleKey({ t: "esc" });
     expect(box.render(theme, 80, false).menuRows.length).toBe(0);
   });
 
-  it("render() shows the working hint and no cursor glyph while disabled", () => {
+  it("render() shows the working hint while streaming", () => {
     const box = new InputBox(ctx(), new History());
     const r = box.render(theme, 80, true);
     expect(r.hintRow).toContain("working… (Esc to interrupt)");
   });
 
-  it("handleKey is a no-op while disabled", () => {
-    const box = new InputBox(ctx(), new History());
-    box.handleKey({ t: "printable", ch: "x" }, true);
-    expect(box.render(theme, 80, true).contentRows.join("\n")).not.toContain("x");
-  });
-
   it("handlePaste inserts the pasted text at the cursor without submitting", () => {
     const box = new InputBox(ctx(), new History());
     type(box, "ab");
-    box.handlePaste("PASTED", false);
+    box.handlePaste("PASTED");
     expect(box.render(theme, 80, false).contentRows.join("\n")).toContain("abPASTED");
   });
 
@@ -170,7 +164,7 @@ describe("InputBox", () => {
     const box = new InputBox(ctx(), new History());
     const onSubmit = vi.fn();
     box.onSubmit = onSubmit;
-    box.handlePaste("line1\nline2\nline3", false);
+    box.handlePaste("line1\nline2\nline3");
     expect(onSubmit).not.toHaveBeenCalled();
     const content = box.render(theme, 80, false).contentRows.join("\n");
     expect(content).toContain("line1");
@@ -182,10 +176,10 @@ describe("InputBox", () => {
     const box = new InputBox(ctx(), new History());
     const onSubmit = vi.fn();
     box.onSubmit = onSubmit;
-    box.handlePaste("a\r\nb", false);
+    box.handlePaste("a\r\nb");
     expect(onSubmit).not.toHaveBeenCalled();
     // Exactly one newline between a and b: pressing Enter now submits "a\nb".
-    box.handleKey({ t: "enter" }, false);
+    box.handleKey({ t: "enter" });
     expect(onSubmit).toHaveBeenCalledWith("a\nb");
   });
 
@@ -193,7 +187,22 @@ describe("InputBox", () => {
     const box = new InputBox(ctx(), new History());
     const onSubmit = vi.fn();
     box.onSubmit = onSubmit;
-    box.handlePaste("hello\n", false);
+    box.handlePaste("hello\n");
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("typing while streaming still edits the value, and render shows the hint row", () => {
+    const box = new InputBox(ctx(), new History());
+    type(box, "hi");
+    const r = box.render(theme, 80, true);
+    expect(r.contentRows.join("\n")).toContain("> hi");
+    expect(r.contentRows.join("\n")).toContain("█");
+    expect(r.hintRow).toBe("working… (Esc to interrupt)");
+  });
+
+  it("paste while streaming inserts text", () => {
+    const box = new InputBox(ctx(), new History());
+    box.handlePaste("pasted");
+    expect(box.render(theme, 80, true).contentRows.join("\n")).toContain("pasted");
   });
 });
