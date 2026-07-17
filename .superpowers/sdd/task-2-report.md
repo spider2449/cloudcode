@@ -1,102 +1,47 @@
-# Task 2 Report: Render Queued Messages Above Input Box
+# Task 2 report: Thread AbortSignal into tool execution
 
-## Summary
+## Changes
 
-Successfully implemented Task 2: rendering queued messages above the input box with proper width truncation and muted color formatting. The implementation adds the infrastructure for displaying queued messages while streaming (actual queueing logic deferred to Task 3).
+- `src/engine/tools/types.ts`: Added optional `signal?: AbortSignal` to `ToolContext`.
+- `src/engine/loop.ts`:
+  - `runTurn`'s tool-execution loop now short-circuits: once `signal.aborted` is true, each
+    remaining `tool_use` block gets a synthesized `tool_result` (`"Interrupted by user"`,
+    `is_error: true`) instead of being executed, and the loop `break`s out of the outer
+    turn loop after pushing the results message — matching the API invariant that every
+    `tool_use` id needs a `tool_result` in the following user message.
+  - `runTool` gained a second `signal: AbortSignal` parameter and passes it through as
+    `ctx.signal` to `tool.execute`.
+- `src/engine/tools/bash.ts`: `execFile` now receives `signal: ctx.signal` in its options
+  so an abort kills the child process immediately. The error-handling branch distinguishes
+  an interrupt (checked first, via `ctx.signal?.aborted`) from a timeout (`killed` without
+  an aborted signal) from a plain nonzero exit.
+- `tests/engine-loop.test.ts`: Added "passes the abort signal to tools and skips remaining
+  tools after abort" — a two-tool scripted turn where the first tool's `execute` captures
+  `ctx.signal` and calls `controller.abort()` mid-execution; asserts the second tool never
+  runs, but both `tool_use` ids still get `tool_result` entries, the second marked
+  "Interrupted".
+- `tests/engine-bash-tool.test.ts`: Added "kills the command and reports an interrupt when
+  the signal aborts" — starts a 30s sleep, aborts after 200ms, asserts the promise resolves
+  well under 10s with an error result containing "interrupted".
 
-## What Was Implemented
+## TDD sequence and exact commands run
 
-### 1. Interface Extension (`src/ui/term/render.ts`)
-- Added `queuedRows: string[]` field to `BottomState` interface (lines 34-36)
-- Added comment documenting that rows are muted, width-truncated, and placed directly above the input divider
-- Modified `frame()` method to unshift queued rows above the input box when overlay is not active (line 84)
+1. Wrote both new tests, ran them before implementing:
+   - `npx vitest run tests/engine-loop.test.ts -t "abort signal"` → FAIL:
+     `expected undefined to be AbortSignal {...}` (seenSignals[0] was undefined, since
+     `runTool` didn't accept/pass a signal yet).
+   - `npx vitest run tests/engine-bash-tool.test.ts -t "interrupt"` → FAIL: test timed out
+     at 15000ms (execFile had no `signal` wired in, so the 30s sleep just kept running).
+2. Implemented the three source changes (`types.ts`, `loop.ts`, `bash.ts`) per the brief.
+3. Re-ran both full test files:
+   - `npx vitest run tests/engine-bash-tool.test.ts tests/engine-loop.test.ts`
+   - Result: `Test Files 2 passed (2)`, `Tests 18 passed (18)`.
+4. Full project typecheck: `npx tsc --noEmit` → no output (clean).
 
-### 2. App State Management (`src/ui/nativeApp.ts`)
-- Added imports: `sgr`, `SGR_RESET` from `./term/ansi.js` and `truncateToWidth` from `./width.js` (lines 26-27)
-- Added `private queuedMessages: string[] = []` field to App class (lines 75-77) for FIFO queue of messages submitted during streaming
-- Modified `recompute()` method to:
-  - Build `queuedRows` from `queuedMessages` by mapping each message through truncation and color formatting
-  - Convert newlines to spaces for single-row display
-  - Apply muted color code from theme (with reset after)
-  - Pass `queuedRows` to `BottomState` (lines 551-557)
+## Concerns
 
-### 3. Test Infrastructure (`tests/render.test.ts`)
-- Updated `baseBottom()` helper to include `queuedRows: []` in default state (line 20)
-- Added test: "renders queuedRows above the input box rows" verifying:
-  - Queued rows appear in frame output
-  - Queued rows are positioned BEFORE the input box border rows (earlier in footer paint)
-
-## TDD Evidence
-
-### RED (Failing Test)
-```bash
-npx vitest run tests/render.test.ts
-```
-
-**Output (before implementation):**
-- Test: "renders queuedRows above the input box rows" - FAILED
-- Error: `queuedRows` field unknown on `BottomState`
-- Test assertion: expected output to contain "⧉ queued: fix tests" - FAILED
-
-### GREEN (Passing Test)
-```bash
-npx vitest run tests/render.test.ts
-```
-
-**Output (after implementation):**
-- Test: "renders queuedRows above the input box rows" - PASSED ✓
-- 51 tests passed in render.test.ts (was 50 before adding queuedRows test)
-- Only pre-existing failure: "prefixes the thinking preview..." (due to uncommitted theme.ts change)
-
-**Full test suite:**
-```bash
-npm test
-```
-- Tests: 1205 passed | 16 failed
-- Test Files: 138 passed | 4 failed
-- No new failures introduced by Task 2 changes
-
-## Files Changed
-
-1. **src/ui/term/render.ts**
-   - Added `queuedRows: string[]` field to `BottomState` interface
-   - Integrated queued rows into footer rendering pipeline
-
-2. **src/ui/nativeApp.ts**
-   - Added imports for color/truncation utilities
-   - Added `queuedMessages` field to App class
-   - Extended `recompute()` to build and pass queued rows with proper formatting
-
-3. **tests/render.test.ts**
-   - Updated `baseBottom()` helper with `queuedRows: []` default
-   - Added new test for queued rows rendering
-
-## Self-Review Findings
-
-### Implementation Quality
-- ✓ All code comments in English as per project standards
-- ✓ Queued rows go through `truncateToWidth()` - prevents over-width rows per conhost limitation
-- ✓ Muted color applied via `sgr(this.theme.muted)` with proper reset
-- ✓ Newlines replaced with spaces for single-row display
-- ✓ FIFO queue pattern ready for Task 3 (one message per turn when agent returns to idle)
-
-### Architecture
-- ✓ Clean separation: `queuedMessages` on App, `queuedRows` on BottomState (pre-rendered, pre-colored)
-- ✓ Test helper updated to support required field everywhere
-- ✓ Footer assembly order correct: queued rows above input box (after border unshift)
-
-### No Concerns
-- Theme.ts pre-existing change left untouched as instructed
-- No TypeScript compilation errors
-- All new tests passing, no regressions introduced
-
-## Commit
-
-```
-a81d9c7 feat(ui): render queued messages above the input divider
-```
-
-Files committed:
-- src/ui/term/render.ts
-- src/ui/nativeApp.ts
-- tests/render.test.ts
+- None. Implementation matches the brief's exact snippets; both new tests and all
+  pre-existing tests in the two files pass. `ToolContext.signal` is optional so no other
+  `ToolDef.execute` implementations needed changes.
+- Did not run the entire repo-wide test suite (only the two changed files plus a
+  typecheck), per the task's stated scope — these files are self-contained for this task.
