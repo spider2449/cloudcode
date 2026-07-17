@@ -1,11 +1,12 @@
-import React, { useState } from "react";
-import { Box, Text, useInput } from "ink";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { useTheme } from "./ThemeContext.js";
 import { configDir } from "../agent/providers.js";
 import { memoryDir } from "../engine/memoryPaths.js";
 
+// NOTE: This file used to also contain the Ink `MemoryPicker` component; that
+// component was removed when the legacy Ink TUI was deleted. `MemoryOption`
+// and `buildMemoryOptions` remain because the native TUI (nativeApp.ts,
+// widgets/overlay.ts) still depends on them.
 export interface MemoryOption {
   label: string;
   path: string;
@@ -21,31 +22,4 @@ export function buildMemoryOptions(cwd: string, base: string = configDir()): Mem
     { label: `Project memory${suffix(projectPath)}`, path: projectPath, kind: "file" },
     { label: "Open auto-memory folder", path: memoryDir(cwd, base), kind: "folder" }
   ];
-}
-
-interface Props {
-  options: MemoryOption[];
-  onPick(option: MemoryOption): void;
-  onCancel(): void;
-}
-
-export function MemoryPicker({ options, onPick, onCancel }: Props) {
-  const theme = useTheme();
-  const [index, setIndex] = useState(0);
-
-  useInput((_input, key) => {
-    if (key.escape) onCancel();
-    else if (key.upArrow) setIndex(i => Math.max(0, i - 1));
-    else if (key.downArrow) setIndex(i => Math.min(options.length - 1, i + 1));
-    else if (key.return && options[index]) onPick(options[index]);
-  });
-
-  return (
-    <Box flexDirection="column" borderStyle="round" paddingX={1}>
-      <Text color={theme.warning}>Memory (↑/↓, Enter, Esc)</Text>
-      {options.map((o, i) => (
-        <Text key={o.path} inverse={i === index}>{o.label}</Text>
-      ))}
-    </Box>
-  );
 }
