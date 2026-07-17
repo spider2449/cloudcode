@@ -212,9 +212,11 @@ describe("/theme", () => {
 
   it("rejects an unknown theme", async () => {
     const ctx = mockCtx();
-    await buildRegistry().get("theme")!.run(ctx, "solarized");
+    await buildRegistry().get("theme")!.run(ctx, "nonexistent");
     expect(ctx.setTheme).not.toHaveBeenCalled();
-    expect(ctx.notice).toHaveBeenCalledWith("Unknown theme: solarized. Themes: dark, light, mono");
+    expect(ctx.notice).toHaveBeenCalledWith(
+      "Unknown theme: nonexistent. Themes: dark, light, mono, dracula, catppuccin, gruvbox, tokyonight, nord, one-dark, solarized, rosepine, github, monokai",
+    );
   });
 
   it("completes theme names", () => {
@@ -327,9 +329,11 @@ describe("/config", () => {
     expect(ctx.setTheme).toHaveBeenCalledWith("mono");
     expect(saveSetting).not.toHaveBeenCalledWith("theme", expect.anything());
     expect(ctx.notice).toHaveBeenCalledWith("theme = mono (saved)");
-    await buildRegistry().get("config")!.run(ctx, "theme solarized");
-    expect(ctx.setTheme).not.toHaveBeenCalledWith("solarized");
-    expect(ctx.notice).toHaveBeenCalledWith("Unknown theme: solarized. Themes: dark, light, mono");
+    await buildRegistry().get("config")!.run(ctx, "theme nonexistent");
+    expect(ctx.setTheme).not.toHaveBeenCalledWith("nonexistent");
+    expect(ctx.notice).toHaveBeenCalledWith(
+      "Unknown theme: nonexistent. Themes: dark, light, mono, dracula, catppuccin, gruvbox, tokyonight, nord, one-dark, solarized, rosepine, github, monokai",
+    );
   });
 
   it("sets effort", async () => {
@@ -344,7 +348,7 @@ describe("/config", () => {
     const cmd = buildRegistry().get("config")!;
     const cctx = { providerNames: () => ["anthropic", "local"], availableModels: () => ["claude-sonnet-5"] } as never;
     expect(cmd.completeArgs!("p", cctx)).toEqual(["provider", "permissionMode"]);
-    expect(cmd.completeArgs!("theme m", cctx)).toEqual(["theme mono"]);
+    expect(cmd.completeArgs!("theme m", cctx)).toEqual(["theme mono", "theme monokai"]);
     expect(cmd.completeArgs!("provider l", cctx)).toEqual(["provider local"]);
     expect(cmd.completeArgs!("model cla", cctx)).toEqual(["model claude-sonnet-5"]);
   });
