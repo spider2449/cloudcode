@@ -214,10 +214,16 @@ export class App {
       }
       this.turnCount += 1;
       void this.git.refresh().then(() => this.recompute());
-      const next = this.queuedMessages.shift();
-      if (next !== undefined) this.handleSubmit(next);
+      this.drainQueueIfIdle();
     }
     this.recompute();
+  }
+
+  /** If idle with pending queued messages, submit the next one. */
+  private drainQueueIfIdle(): void {
+    if (this.phase !== "idle" || this.queuedMessages.length === 0) return;
+    const next = this.queuedMessages.shift();
+    if (next !== undefined) this.handleSubmit(next);
   }
 
   private refreshSkills(): void {
@@ -433,14 +439,28 @@ export class App {
     const slash = parseSlash(text);
     if (slash) {
       const cmd = this.registry.get(slash.name);
-      if (!cmd) { this.notice(`Unknown command: /${slash.name}`); this.recompute(); return; }
+      if (!cmd) {
+        this.notice(`Unknown command: /${slash.name}`);
+        this.recompute();
+        // Slash commands never start a model turn, so nothing else will
+        // drain the queue -- drain it here to avoid stalling behind an
+        // unknown command.
+        this.drainQueueIfIdle();
+        return;
+      }
       cmd.run(this.ctx, slash.args)
         .catch(err => {
           this.buffer.append({ kind: "error", text: err instanceof Error ? err.message : String(err) });
         })
         // Async commands (e.g. /mcp) append output after the submit-time
         // repaint, so repaint again once the command settles.
-        .finally(() => this.recompute());
+        .finally(() => {
+          this.recompute();
+          // Slash commands never start a model turn (no "result" message),
+          // so drain the queue here or a queued item after a slash command
+          // would stall indefinitely.
+          this.drainQueueIfIdle();
+        });
       return;
     }
     this.sendUserMessage(text);

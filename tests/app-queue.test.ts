@@ -84,6 +84,20 @@ describe("App input queue", () => {
     expect(client.create).toHaveBeenCalledTimes(3);
   });
 
+  it("drains the queue past a dequeued slash command", async () => {
+    const { app, terminal, release } = makeApp();
+    void app.run();
+    app.submitForTest("first");
+    await wait();
+    app.submitForTest("/help");
+    app.submitForTest("second");
+    await wait();
+    release();
+    await wait(80);
+    const all = terminal.writes.join("");
+    expect(all).toContain("> second");
+  });
+
   it("typing while streaming updates the input box", async () => {
     const { app, terminal } = makeApp();
     void app.run();
