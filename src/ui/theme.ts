@@ -15,7 +15,7 @@ export interface Theme {
 }
 
 export const THEMES: Record<string, Theme> = {
-  dark: { user: "blue", accent: "cyan", muted: "gray", error: "red", success: "green", removed: "red", warning: "yellow", thinking: "magenta" },
+  dark: { user: "blue", accent: "cyan", muted: "gray", error: "red", success: "green", removed: "red", warning: "yellow", thinking: "gray" },
   light: { user: "magenta", accent: "blue", muted: "blackBright", error: "red", success: "green", removed: "red", warning: "magenta", thinking: "cyan" },
   mono: { user: "white", accent: "white", muted: "gray", error: "white", success: "white", removed: "gray", warning: "white", thinking: "gray" }
 };

@@ -122,12 +122,21 @@ The legacy Ink-based UI remains available with `npm run dev -- --tui=legacy`
 
     npm run package         # npm tarball + binaries + Windows installer
     npm run package:npm     # build + `npm pack` into release/
-    npm run package:bin     # bun-compiled standalone binaries into release/
-                             #   (win-x64, macos-arm64, macos-x64, linux-x64)
+    npm run package:bin     # bun-compiled standalone binary for the host OS into release/
     npm run package:installer  # Windows installer via Inno Setup (installer/cloudcode.iss)
 
-`package:bin` requires `bun` on PATH (or `~/.bun/bin/bun.exe`); `package:installer`
-requires Inno Setup 6 (ISCC.exe) and is Windows-only. All outputs land in `release/`.
+`package:bin` requires `bun` on PATH (or `~/.bun/bin/bun.exe`) and only builds a
+binary for the OS it runs on: `cloudcode-win-x64.exe` on Windows, `cloudcode-linux-x64`
+elsewhere. `package:installer` requires Inno Setup 6 (ISCC.exe) and is Windows-only.
+All outputs land in `release/`.
+
+Building `cloudcode-linux-x64` from Windows: bun's `--target=bun-linux-x64` cross-compile
+can fail on Windows with `Failed to extract executable for 'bun-linux-x64-...'` even
+though the downloaded tarball is intact — bun's own extractor has a bug here, unrelated
+to network/proxy/AV. Build natively in WSL instead (install bun there once with
+`curl -fsSL https://bun.sh/install | bash`):
+
+    wsl bun build --compile --target=bun-linux-x64 scripts/bin-entry.ts --outfile release/cloudcode-linux-x64
 
 Each compiled binary is fully self-contained: the agent loop, tools, and
 permission engine are cloudcode's own code, so there is no bundled native CLI
