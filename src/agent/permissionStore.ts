@@ -32,6 +32,19 @@ export function commandPrefix(command: string): string {
   return command.trim().split(/\s+/)[0] ?? "";
 }
 
+// Detects shell control/chaining operators that let a command string run
+// more than the literal command a remembered prefix rule was approved for.
+// bash.ts hands the whole command string to a real shell (`sh -c` / `powershell -Command`),
+// so "git status; rm -rf ~" has a commandPrefix of "git" but actually runs
+// two commands. Any of these operators means the "first token" is no longer
+// a trustworthy proxy for "what this command does", so callers must treat
+// the command as ineligible for the allow-prefix fast path.
+const COMPOUND_COMMAND_PATTERN = /;|&&|\|\||\||`|\$\(|>/;
+
+export function isCompoundCommand(command: string): boolean {
+  return COMPOUND_COMMAND_PATTERN.test(command);
+}
+
 export class PermissionStore {
   private rules: PermissionRule[] = [];
   private filePath: string;

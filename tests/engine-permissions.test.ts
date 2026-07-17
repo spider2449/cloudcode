@@ -51,4 +51,16 @@ describe("Bash command rules", () => {
     store.rememberCommand("rm", "deny");
     expect(decidePermission("Bash", { command: "rm -rf /" }, "bypassPermissions", store)).toBe("allow");
   });
+
+  it("does not auto-allow a compound command even with a matching allow prefix rule", () => {
+    const store = freshStore();
+    store.rememberCommand("git", "allow");
+    expect(decidePermission("Bash", { command: "git status; rm -rf ~" }, "default", store)).toBe("ask");
+  });
+
+  it("still denies a compound command with a matching deny prefix rule", () => {
+    const store = freshStore();
+    store.rememberCommand("git", "deny");
+    expect(decidePermission("Bash", { command: "git status; rm -rf ~" }, "default", store)).toBe("deny");
+  });
 });
