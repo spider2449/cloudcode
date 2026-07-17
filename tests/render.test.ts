@@ -125,7 +125,7 @@ describe("InlineRenderer", () => {
     expect(second).toContain(`\x1b[1;${SCROLL_BOTTOM - 1}r`);
   });
 
-  it("growing footer height with more on-screen content than the new region holds still evacuates the excess into scrollback", () => {
+  it("growing footer height with more on-screen content than the new region holds reprints it through the new region so the excess reaches scrollback", () => {
     const r = new InlineRenderer();
     const buf = new Buffer();
     // Commit enough rows to fill the entire first scroll region (20 rows),
@@ -134,12 +134,15 @@ describe("InlineRenderer", () => {
     for (let i = 0; i < SCROLL_BOTTOM; i++) buf.append({ kind: "notice", text: `row ${i}` });
     r.frame(buf, baseBottom(), theme, size);
     const second = r.frame(buf, baseBottom({ streaming: true, activeTool: "Bash" }), theme, size);
-    // More content is on screen (20 rows) than the new region can hold (19
-    // rows), so the excess row must still be evacuated via a real scroll.
-    const evacuateIdx = second.indexOf(`\x1b[${SCROLL_BOTTOM};1H\r\n`);
+    // More content is on screen (19 usable rows) than the new region can hold
+    // (18 usable rows): the new region must be set first, then all cached
+    // on-screen rows re-printed through it so the excess scrolls into native
+    // scrollback naturally, with no blank filler.
     const newRegionIdx = second.indexOf(`\x1b[1;${SCROLL_BOTTOM - 1}r`);
-    expect(evacuateIdx).toBeGreaterThanOrEqual(0);
-    expect(newRegionIdx).toBeGreaterThan(evacuateIdx);
+    expect(newRegionIdx).toBeGreaterThanOrEqual(0);
+    for (let i = 1; i < SCROLL_BOTTOM; i++) {
+      expect(second.indexOf(`row ${i}`)).toBeGreaterThan(newRegionIdx);
+    }
   });
 
   it("growing footer height with partial on-screen content (fits new region) redraws it at the new bottom-anchored position, not via scrolling", () => {
@@ -201,7 +204,31 @@ describe("InlineRenderer", () => {
     expect(third.indexOf("ROW_B")).toBeGreaterThan(third.indexOf(`\x1b[${SCROLL_BOTTOM - 1};1H`));
   });
 
-  it("boundary: onScreen exactly filling the new region falls through to scroll-evacuate, not redraw", () => {
+  it("sudden large footer growth (first streaming chunk) does not scroll blank filler rows into scrollback", () => {
+    const r = new InlineRenderer();
+    const buf = new Buffer();
+    // Commit 5 rows while idle: scrollBottom = 20, content sits bottom-anchored
+    // at rows 15..19 with rows 1..14 blank above it.
+    for (let i = 0; i < 5; i++) buf.append({ kind: "notice", text: `row ${i}` });
+    r.frame(buf, baseBottom(), theme, size);
+    // A large first streaming chunk arrives between frames: the footer jumps
+    // from 4 rows to 21 in a single frame, scrollBottom collapses 20 -> 3.
+    // onScreen (5) no longer fits the new region (2 usable rows), but a raw
+    // region scroll of (20 - 3) = 17 rows would push the 14 blank rows above
+    // the content into native scrollback as a permanent visible gap.
+    const longText = Array.from({ length: 50 }, (_, i) => `line ${i}`).join("\n");
+    const second = r.frame(buf, baseBottom({ streaming: true, streamingText: longText }), theme, size);
+    // The blank-burst signature (cursor to old scrollBottom + newline run)
+    // must not appear.
+    expect(second).not.toContain(`\x1b[${SCROLL_BOTTOM};1H\r\n\r\n`);
+    // Instead the cached content rows are re-printed through the new region
+    // so only real content (never blank filler) reaches scrollback.
+    for (let i = 0; i < 5; i++) expect(second).toContain(`row ${i}`);
+    expect(second).toContain(`\x1b[1;1H\x1b[0J`);
+    expect(second).toContain(`\x1b[1;3r`);
+  });
+
+  it("boundary: onScreen exactly filling the new region reprints content through the region, never blank filler", () => {
     const r = new InlineRenderer();
     const buf = new Buffer();
     // Commit exactly (SCROLL_BOTTOM - 1) rows: under the corrected invariant,
@@ -212,8 +239,11 @@ describe("InlineRenderer", () => {
     for (let i = 0; i < SCROLL_BOTTOM - 1; i++) buf.append({ kind: "notice", text: `row ${i}` });
     r.frame(buf, baseBottom(), theme, size); // scrollBottom = 20
     const second = r.frame(buf, baseBottom({ streaming: true, activeTool: "Bash" }), theme, size); // scrollBottom = 19
-    // Evacuate branch signature: cursorTo(lastScrollBottom,1) + "\r\n" burst.
-    expect(second).toContain(`\x1b[${SCROLL_BOTTOM};1H\r\n`);
+    // Reprint-through-region signature: new region set, then the cached rows
+    // re-printed after it (one of them scrolls into scrollback naturally).
+    const newRegionIdx = second.indexOf(`\x1b[1;${SCROLL_BOTTOM - 1}r`);
+    expect(newRegionIdx).toBeGreaterThanOrEqual(0);
+    expect(second.indexOf("row 0")).toBeGreaterThan(newRegionIdx);
   });
 
   it("shrinking footer height (region growing back) redraws the on-screen content at the new position, not via a stale-footer erase", () => {
@@ -255,6 +285,43 @@ describe("InlineRenderer", () => {
     // No more than 2 CRLFs between them: end of the tool line, and the one
     // intentional blank separator row before the assistant item.
     expect((between.match(/\r\n/g) ?? []).length).toBeLessThanOrEqual(2);
+  });
+
+  it("streaming end with transcript already in scrollback triggers a full clear + recommit, not a blank-padded redraw", () => {
+    const r = new InlineRenderer();
+    const buf = new Buffer();
+    // 10 rows committed while idle (scrollBottom = 20, all on screen).
+    for (let i = 0; i < 10; i++) buf.append({ kind: "notice", text: `early ${i}` });
+    r.frame(buf, baseBottom(), theme, size);
+    // A large streaming preview collapses the region to scrollBottom = 3:
+    // 8 of the 10 rows scroll into native scrollback, 2 stay on screen.
+    const longText = Array.from({ length: 50 }, (_, i) => `line ${i}`).join("\n");
+    r.frame(buf, baseBottom({ streaming: true, streamingText: longText }), theme, size);
+    // Streaming ends and the full answer commits. A bottom-anchored redraw
+    // here would leave ~17 blank rows above the 2 redrawn rows, and the
+    // answer's commit would scroll those blanks into scrollback as a
+    // permanent gap between the early rows and the answer. Instead the
+    // renderer must clear screen + scrollback and recommit the whole
+    // transcript, exactly like the resize path the user confirmed works.
+    buf.append({ kind: "assistant", text: "the answer" });
+    const third = r.frame(buf, baseBottom(), theme, size);
+    expect(third).toContain("\x1b[2J\x1b[3J");
+    // The whole transcript is re-emitted contiguously.
+    for (let i = 0; i < 10; i++) expect(third).toContain(`early ${i}`);
+    expect(third).toContain("the answer");
+  });
+
+  it("streaming end with the whole transcript still on screen keeps the cheap bottom-anchored redraw (no scrollback wipe)", () => {
+    const r = new InlineRenderer();
+    const buf = new Buffer();
+    buf.append({ kind: "notice", text: "ONLY_ROW" });
+    r.frame(buf, baseBottom(), theme, size); // scrollBottom = 20, 1 row on screen
+    r.frame(buf, baseBottom({ streaming: true, activeTool: "Bash" }), theme, size); // scrollBottom = 19
+    const third = r.frame(buf, baseBottom(), theme, size); // back to 20
+    // Nothing from this session is in scrollback, so wiping the user's
+    // scrollback (3J) would be gratuitous; the redraw-in-place branch stays.
+    expect(third).not.toContain("\x1b[3J");
+    expect(third).toContain(`\x1b[1;1H\x1b[0J`);
   });
 
   it("a rows-only resize (window dragged taller, columns unchanged) repositions on-screen content instead of leaving it stranded", () => {

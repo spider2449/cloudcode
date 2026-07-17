@@ -6,7 +6,7 @@ import type { InputBoxRender } from "../widgets/inputBox.js";
 import type { OverlayMode } from "../widgets/overlay.js";
 import { tailForHeight } from "../streamTail.js";
 import { wrapText } from "../layout.js";
-import { ERASE_DOWN, cursorTo, setScrollRegion, RESET_SCROLL_REGION, sgr, SGR_RESET } from "./ansi.js";
+import { ERASE_DOWN, cursorTo, setScrollRegion, RESET_SCROLL_REGION, CLEAR_ALL_AND_HOME, sgr, SGR_RESET } from "./ansi.js";
 import type { Theme } from "../theme.js";
 import { appendFileSync } from "node:fs";
 
@@ -126,7 +126,26 @@ export class InlineRenderer {
       this.recentRows = [];
     }
 
-    if (!firstFrame && !columnsChanged && scrollBottom !== this.lastScrollBottom) {
+    if (
+      !firstFrame && !columnsChanged && !rowsChanged &&
+      scrollBottom > this.lastScrollBottom &&
+      this.printedRows > this.lastScrollBottom - 1
+    ) {
+      // Region growing back (footer collapsing, e.g. a streaming/thinking
+      // preview ending) while part of the transcript has already scrolled
+      // into native scrollback through the old, smaller region. A bottom-
+      // anchored redraw here would leave a band of blank rows above the few
+      // redrawn rows, and the very next commits (typically the full response
+      // landing in this same frame) would scroll that blank band into
+      // scrollback -- a permanent gap between the earlier transcript and the
+      // new content. The scrollback rows can't be repositioned by escape
+      // codes, so do what the resize path does: wipe screen + scrollback and
+      // recommit the whole transcript contiguously.
+      out += CLEAR_ALL_AND_HOME;
+      this.printedRows = 0;
+      this.recentRows = [];
+      buffer.recommitAll();
+    } else if (!firstFrame && !columnsChanged && scrollBottom !== this.lastScrollBottom) {
       const onScreen = Math.min(this.printedRows, Math.max(0, this.lastScrollBottom - 1));
       traceLog(`redraw-check onScreen=${onScreen} scrollBottom-1=${scrollBottom - 1} branch=${onScreen <= scrollBottom - 1 ? "redraw" : "evacuate"}`);
       if (onScreen <= scrollBottom - 1) {
@@ -162,9 +181,19 @@ export class InlineRenderer {
         // hit this branch, since onScreen was already bounded by the
         // smaller old region's own capacity. The excess rows have never
         // been scrolled into native scrollback (only ever drawn on
-        // screen), so they must be relocated via a real scroll.
-        const evacuate = this.lastScrollBottom - scrollBottom;
-        out += cursorTo(this.lastScrollBottom, 1) + "\r\n".repeat(evacuate);
+        // screen), so they must reach scrollback now -- but NOT via a raw
+        // region scroll of (lastScrollBottom - scrollBottom) rows: when the
+        // footer jumps by many rows in one frame (a large first streaming/
+        // thinking chunk, or an overlay opening) while the content only
+        // partially fills the old region, that scroll pushes all the blank
+        // rows sitting above the content into native scrollback, baking a
+        // permanent blank gap into the transcript. Instead: erase the
+        // screen, set the new (smaller) region immediately, and re-print
+        // the cached on-screen rows through it, so exactly the rows that
+        // do not fit scroll into scrollback and nothing else does.
+        out += cursorTo(1, 1) + ERASE_DOWN + setScrollRegion(1, scrollBottom);
+        const tail = this.recentRows.slice(-onScreen);
+        out += cursorTo(scrollBottom, 1) + tail.map(r => r + "\r\n").join("");
       }
     }
 
