@@ -6,8 +6,8 @@ import { resolveThemeJson, type ThemeJson, type ThemeMode } from "./themeJson.js
 import { BUILTIN_THEME_JSONS, BUILTIN_MODES } from "./themes/index.js";
 
 // App-facing theme: the 8 roles cloudcode's widgets consume, as "#rrggbb"
-// strings (Ink's <Text color> and the native sgr() both accept hex). Extra
-// resolved keys from the opencode schema are retained for future widgets.
+// strings (the native sgr() accepts hex). Extra resolved keys from the
+// opencode schema are retained for future widgets.
 export interface Theme {
   user: string;
   accent: string;
