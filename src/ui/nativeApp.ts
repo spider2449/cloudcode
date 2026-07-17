@@ -49,7 +49,7 @@ export interface AppProps {
 type Phase = "idle" | "streaming" | "permission";
 
 const MODE_CYCLE: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
-const CONTEXT_WINDOW = 200_000;
+const DEFAULT_CONTEXT_WINDOW = 200_000;
 const AUTO_COMPACT_THRESHOLD_PCT = 80;
 
 export class App {
@@ -144,6 +144,10 @@ export class App {
     return (name === this.props.initialProvider ? this.props.initialModel : undefined) ?? this.props.providers[name]?.model;
   }
 
+  private contextWindowFor(name: string): number {
+    return this.props.providers[name]?.model_context_window ?? DEFAULT_CONTEXT_WINDOW;
+  }
+
   private completionCtxRef(): CompletionContext {
     return {
       registry: this.registry,
@@ -167,7 +171,7 @@ export class App {
     try {
       const estimatedTokens = await this.session?.compact(pct => { this.compactPct = pct; this.recompute(); });
       if (typeof estimatedTokens === "number") {
-        this.contextPct = Math.min(100, Math.round((estimatedTokens / CONTEXT_WINDOW) * 100));
+        this.contextPct = Math.min(100, Math.round((estimatedTokens / this.contextWindowFor(this.providerName)) * 100));
       }
       this.notice("Context was getting full — compacted automatically.");
     } catch (err) {
@@ -208,7 +212,7 @@ export class App {
         const input = (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
         const output = usage.output_tokens ?? 0;
         this.tokens += input + output;
-        const pct = Math.min(100, Math.round((input / CONTEXT_WINDOW) * 100));
+        const pct = Math.min(100, Math.round((input / this.contextWindowFor(this.providerName)) * 100));
         this.contextPct = pct;
         if (pct >= AUTO_COMPACT_THRESHOLD_PCT) void this.runAutoCompact();
       }
@@ -350,7 +354,7 @@ export class App {
       },
       compact: async onProgress => {
         const estimatedTokens = await this.session?.compact(onProgress);
-        if (typeof estimatedTokens === "number") this.contextPct = Math.min(100, Math.round((estimatedTokens / CONTEXT_WINDOW) * 100));
+        if (typeof estimatedTokens === "number") this.contextPct = Math.min(100, Math.round((estimatedTokens / this.contextWindowFor(this.providerName)) * 100));
         return estimatedTokens;
       },
       setCompactProgress: pct => { this.compactPct = pct; this.recompute(); },

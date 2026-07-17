@@ -6,6 +6,7 @@ export interface ProviderConfig {
   baseUrl?: string;
   apiKey?: string;
   model?: string;
+  model_context_window?: number;
 }
 
 export function configDir(): string {

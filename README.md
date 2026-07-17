@@ -24,11 +24,17 @@ Anthropic-compatible `/v1/messages` endpoint. Create `~/.cloudcode/providers.jso
       "local": {
         "baseUrl": "http://127.0.0.1:8080",
         "apiKey": "none",
-        "model": "qwen2.5-coder-32b"
+        "model": "qwen2.5-coder-32b",
+        "model_context_window": 32768
       }
     }
 
 Then `npm run dev -- --provider local` or `/provider local` at runtime.
+
+`model_context_window` overrides the 200k default used to compute the context
+usage percentage shown in the status bar and to trigger auto-compact — set it
+to your local model's actual context size (check `n_ctx` from the server's
+`/v1/models` response).
 
 Note: local models are markedly weaker at agentic tool use than Claude; degraded
 behavior on local providers is a model limitation, not a cloudcode bug.

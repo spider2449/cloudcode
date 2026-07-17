@@ -55,7 +55,7 @@ export interface AppProps {
 type Phase = "idle" | "streaming" | "permission";
 
 const MODE_CYCLE: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
-const CONTEXT_WINDOW = 200_000;
+const DEFAULT_CONTEXT_WINDOW = 200_000;
 const AUTO_COMPACT_THRESHOLD_PCT = 80;
 
 export function App(props: AppProps) {
@@ -63,6 +63,9 @@ export function App(props: AppProps) {
   const { stdout } = useStdout();
   function modelFor(name: string): string | undefined {
     return (name === props.initialProvider ? props.initialModel : undefined) ?? props.providers[name]?.model;
+  }
+  function contextWindowFor(name: string): number {
+    return props.providers[name]?.model_context_window ?? DEFAULT_CONTEXT_WINDOW;
   }
   function welcomeItems(provider: string): DisplayItem[] {
     // Fit budget: terminal minus the live region floor (input box 3 + status
@@ -186,7 +189,7 @@ export function App(props: AppProps) {
     try {
       const estimatedTokens = await sessionRef.current?.compact(pct => setCompactPct(pct));
       if (typeof estimatedTokens === "number") {
-        setContextPct(Math.min(100, Math.round((estimatedTokens / CONTEXT_WINDOW) * 100)));
+        setContextPct(Math.min(100, Math.round((estimatedTokens / contextWindowFor(providerName)) * 100)));
       }
       notice("Context was getting full — compacted automatically.");
     } catch (err) {
@@ -237,7 +240,7 @@ export function App(props: AppProps) {
         const input = (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
         const output = usage.output_tokens ?? 0;
         setTokens(prev => prev + input + output);
-        const pct = Math.min(100, Math.round((input / CONTEXT_WINDOW) * 100));
+        const pct = Math.min(100, Math.round((input / contextWindowFor(providerName)) * 100));
         setContextPct(pct);
         if (pct >= AUTO_COMPACT_THRESHOLD_PCT) void runAutoCompact();
       }
@@ -372,7 +375,7 @@ export function App(props: AppProps) {
     compact: async (onProgress?: (pct: number) => void) => {
       const estimatedTokens = await sessionRef.current?.compact(onProgress);
       if (typeof estimatedTokens === "number") {
-        setContextPct(Math.min(100, Math.round((estimatedTokens / CONTEXT_WINDOW) * 100)));
+        setContextPct(Math.min(100, Math.round((estimatedTokens / contextWindowFor(providerName)) * 100)));
       }
       return estimatedTokens;
     },
