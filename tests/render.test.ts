@@ -18,6 +18,7 @@ function baseBottom(overrides: Partial<BottomState> = {}): BottomState {
     thinkingText: "",
     activeTool: undefined,
     compactPct: undefined,
+    queuedRows: [],
     inputRender: emptyInputRender(),
     overlayRows: [],
     statusBarProps: { provider: "anthropic", mode: "default", cwd: "/repo" },
@@ -420,5 +421,20 @@ describe("InlineRenderer", () => {
     const out = r.frame(buf, baseBottom({ thinkingText: "pondering...", streamingText: "" }), theme, size);
     expect(out).toContain("○ pondering...");
     expect(out).toContain("\x1b[35m");
+  });
+
+  it("renders queuedRows above the input box rows", () => {
+    const r = new InlineRenderer();
+    const buf = new Buffer();
+    const out = r.frame(
+      buf,
+      baseBottom({ queuedRows: ["⧉ queued: fix tests"] }),
+      theme,
+      size
+    );
+    expect(out).toContain("⧉ queued: fix tests");
+    // Queued rows sit above the input box's first border row ("╭─╮" in
+    // emptyInputRender), i.e. earlier in the footer paint.
+    expect(out.indexOf("⧉ queued: fix tests")).toBeLessThan(out.indexOf("╭─╮"));
   });
 });

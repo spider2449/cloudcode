@@ -23,7 +23,8 @@ import { Buffer } from "./buffer.js";
 import { InputBox } from "./widgets/inputBox.js";
 import { OverlayManager } from "./widgets/overlay.js";
 import { InlineRenderer, type BottomState } from "./term/render.js";
-import { CLEAR_AND_HOME, CLEAR_ALL_AND_HOME } from "./term/ansi.js";
+import { CLEAR_AND_HOME, CLEAR_ALL_AND_HOME, sgr, SGR_RESET } from "./term/ansi.js";
+import { truncateToWidth } from "./width.js";
 import type { ITerminal } from "./term/terminal.js";
 import type { Key } from "./input.js";
 import { loadSettings, saveSetting } from "../agent/settings.js";
@@ -70,6 +71,9 @@ export class App {
   private servedModel: string | undefined;
   private mode: PermissionMode;
   private permissionQueue: PermissionRequest[] = [];
+  // Messages submitted while a turn was in flight; sent FIFO, one per turn,
+  // when the agent returns to idle.
+  private queuedMessages: string[] = [];
   private cost = 0;
   private tokens = 0;
   private contextPct: number | undefined;
@@ -545,6 +549,11 @@ export class App {
   recompute(): void {
     const size = this.terminal.size();
     const inputVisible = this.overlay.mode === "none" && this.phase !== "permission";
+    const queueCode = sgr(this.theme.muted);
+    const queuedRows = this.queuedMessages.map(m => {
+      const row = truncateToWidth(`⧉ queued: ${m.replace(/\n/g, " ")}`, Math.max(1, size.columns));
+      return queueCode ? `${queueCode}${row}${SGR_RESET}` : row;
+    });
     const bottom: BottomState = {
       overlay: this.overlay.mode,
       streaming: this.phase === "streaming",
@@ -552,6 +561,7 @@ export class App {
       thinkingText: this.thinkingText,
       activeTool: this.activeTool,
       compactPct: this.compactPct,
+      queuedRows,
       inputRender: inputVisible
         ? this.inputBox.render(this.theme, size.columns, this.phase === "streaming")
         : { borderRows: [], contentRows: [], menuRows: [], hintRow: null, totalRows: 0 },

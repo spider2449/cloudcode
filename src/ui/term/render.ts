@@ -32,6 +32,9 @@ export interface BottomState {
   thinkingText: string;
   activeTool?: string;
   compactPct?: number;
+  // Muted, width-truncated rows for messages queued while streaming; drawn
+  // directly above the input divider.
+  queuedRows: string[];
   inputRender: InputBoxRender;
   overlayRows: string[];
   statusBarProps: StatusBarProps;
@@ -80,6 +83,7 @@ export class InlineRenderer {
       if (bottom.inputRender.hintRow !== null) dyn.unshift(bottom.inputRender.hintRow);
       dyn.unshift(...bottom.inputRender.contentRows);
       dyn.unshift(...bottom.inputRender.borderRows);
+      dyn.unshift(...bottom.queuedRows);
     }
     if (bottom.compactPct !== undefined) dyn.unshift(renderProgress("Compacting", bottom.compactPct, theme, 20));
     if (bottom.streaming) dyn.unshift(renderWorkInd(bottom.workIndFrame, bottom.activeTool ? `Running ${bottom.activeTool}` : "Thinking", Date.now() - bottom.workStartedAt, theme));
