@@ -20,4 +20,19 @@ describe("bashTool", () => {
     expect(out.isError).toBe(true);
     expect(out.content.toLowerCase()).toContain("timed out");
   }, 15000);
+
+  it("kills the command and reports an interrupt when the signal aborts", async () => {
+    const controller = new AbortController();
+    const started = Date.now();
+    const pending = bashTool.execute(
+      // A sleep long enough that only an abort can end it quickly.
+      { command: process.platform === "win32" ? "Start-Sleep -Seconds 30" : "sleep 30" },
+      { cwd: process.cwd(), signal: controller.signal }
+    );
+    setTimeout(() => controller.abort(), 200);
+    const out = await pending;
+    expect(Date.now() - started).toBeLessThan(10000);
+    expect(out.isError).toBe(true);
+    expect(out.content).toContain("interrupted");
+  }, 15000);
 });

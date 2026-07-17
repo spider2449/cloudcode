@@ -26,18 +26,29 @@ export const bashTool: ToolDef = {
     const { cmd, args } = shellArgs(String(input.command ?? ""));
     const timeout = typeof input.timeout === "number" && input.timeout > 0 ? input.timeout : DEFAULT_TIMEOUT;
     return new Promise(resolvePromise => {
-      execFile(cmd, args, { cwd: ctx.cwd, timeout, windowsHide: true, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
-        let content = [stdout, stderr].filter(Boolean).join("\n");
-        if (content.length > MAX_OUTPUT) content = content.slice(0, MAX_OUTPUT) + "\n… (output truncated)";
-        if (err) {
-          const killed = (err as { killed?: boolean }).killed;
-          const code = (err as { code?: number | string }).code;
-          const reason = killed ? `Command timed out after ${timeout}ms` : `Command failed with exit code ${code ?? "unknown"}`;
-          resolvePromise({ content: `${reason}\n${content}`.trim(), isError: true });
-        } else {
-          resolvePromise({ content: content || "(no output)" });
+      execFile(
+        cmd,
+        args,
+        { cwd: ctx.cwd, timeout, windowsHide: true, maxBuffer: 10 * 1024 * 1024, signal: ctx.signal },
+        (err, stdout, stderr) => {
+          let content = [stdout, stderr].filter(Boolean).join("\n");
+          if (content.length > MAX_OUTPUT) content = content.slice(0, MAX_OUTPUT) + "\n… (output truncated)";
+          if (err) {
+            const killed = (err as { killed?: boolean }).killed;
+            const code = (err as { code?: number | string }).code;
+            // An aborted signal also sets killed; check the signal first so
+            // an interrupt is not misreported as a timeout.
+            const reason = ctx.signal?.aborted
+              ? "Command interrupted by user"
+              : killed
+                ? `Command timed out after ${timeout}ms`
+                : `Command failed with exit code ${code ?? "unknown"}`;
+            resolvePromise({ content: `${reason}\n${content}`.trim(), isError: true });
+          } else {
+            resolvePromise({ content: content || "(no output)" });
+          }
         }
-      });
+      );
     });
   }
 };

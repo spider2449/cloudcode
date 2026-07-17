@@ -116,11 +116,17 @@ export class EngineLoop {
         for (const block of turn.blocks) {
           this.opts.onMessage(assistantMessage([block]));
           if (block.type !== "tool_use") continue;
-          const result = await this.runTool(block);
+          // After an interrupt, still emit a tool_result for every remaining
+          // tool_use id (the API requires one per id on resume), but do not
+          // execute the tools.
+          const result = signal.aborted
+            ? { type: "tool_result", tool_use_id: block.id, content: "Interrupted by user", is_error: true }
+            : await this.runTool(block, signal);
           results.push(result);
           this.opts.onMessage(toolResultMessage(result.tool_use_id, result.content, result.is_error === true));
         }
         this.messages.push({ role: "user", content: results });
+        if (signal.aborted) break;
       }
       this.opts.onMessage({
         type: "result",
@@ -221,7 +227,7 @@ export class EngineLoop {
     return { blocks, stopReason, usage };
   }
 
-  private async runTool(block: { id: string; name: string; input: Record<string, unknown> }) {
+  private async runTool(block: { id: string; name: string; input: Record<string, unknown> }, signal: AbortSignal) {
     const deniedResult = (msg: string) => ({
       type: "tool_result",
       tool_use_id: block.id,
@@ -236,7 +242,7 @@ export class EngineLoop {
     }
     if (decision === "deny") return deniedResult("User denied this tool use");
     try {
-      const out = await tool.execute(block.input, { cwd: this.opts.cwd });
+      const out = await tool.execute(block.input, { cwd: this.opts.cwd, signal });
       return { type: "tool_result", tool_use_id: block.id, content: out.content, is_error: out.isError === true };
     } catch (err) {
       return deniedResult(`Tool failed: ${err instanceof Error ? err.message : String(err)}`);

@@ -226,6 +226,68 @@ describe("EngineLoop", () => {
     expect(estimate).toBeLessThan(beforeEstimate);
   });
 
+  it("passes the abort signal to tools and skips remaining tools after abort", async () => {
+    const controller = new AbortController();
+    const seenSignals: Array<AbortSignal | undefined> = [];
+    const ran: string[] = [];
+    const tools: ToolDef[] = [
+      {
+        name: "SlowTool",
+        description: "",
+        input_schema: { type: "object", properties: {}, required: [] },
+        async execute(_input, ctx) {
+          seenSignals.push(ctx.signal);
+          ran.push("SlowTool");
+          controller.abort(); // simulate Esc while the tool is running
+          return { content: "done" };
+        }
+      },
+      {
+        name: "SecondTool",
+        description: "",
+        input_schema: { type: "object", properties: {}, required: [] },
+        async execute() {
+          ran.push("SecondTool");
+          return { content: "should not run" };
+        }
+      }
+    ];
+    // Fake client: first response requests both tools, then the aborted
+    // follow-up request throws (matching real SDK behavior on abort).
+    const client = {
+      async *create(_req: unknown, signal: AbortSignal) {
+        if (signal.aborted) throw new Error("aborted");
+        yield { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "t1", name: "SlowTool", input: {} } };
+        yield { type: "content_block_stop", index: 0 };
+        yield { type: "content_block_start", index: 1, content_block: { type: "tool_use", id: "t2", name: "SecondTool", input: {} } };
+        yield { type: "content_block_stop", index: 1 };
+        yield { type: "message_delta", delta: { stop_reason: "tool_use" } };
+      }
+    };
+    const received: unknown[] = [];
+    const loop = new EngineLoop({
+      client,
+      model: "m",
+      systemPrompt: "s",
+      tools,
+      cwd: process.cwd(),
+      permissionMode: "bypassPermissions",
+      store: new PermissionStore(mkdtempSync(join(tmpdir(), "cc-loop-abort-"))),
+      onMessage: m => received.push(m),
+      requestPermission: async () => true
+    });
+    await loop.runTurn("go", controller.signal);
+    expect(seenSignals[0]).toBe(controller.signal);
+    expect(ran).toEqual(["SlowTool"]); // SecondTool skipped after abort
+    // Both tool_use ids still received tool_result entries (API invariant).
+    const resultsMsg = loop.messages.find(
+      m => (m as { role?: string; content?: unknown[] }).role === "user" && Array.isArray((m as { content?: unknown[] }).content)
+        && ((m as { content?: unknown[] }).content ?? []).some((c: unknown) => (c as { type?: string }).type === "tool_result")
+    ) as { content: Array<{ tool_use_id: string; content: string }> };
+    expect(resultsMsg.content.map(r => r.tool_use_id)).toEqual(["t1", "t2"]);
+    expect(resultsMsg.content[1].content).toContain("Interrupted");
+  });
+
   it("denied permission produces an error tool_result and still continues", async () => {
     const received: unknown[] = [];
     const loop = new EngineLoop({
