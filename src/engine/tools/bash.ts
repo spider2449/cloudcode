@@ -39,7 +39,7 @@ export const bashTool: ToolDef = {
             // An aborted signal also sets killed; check the signal first so
             // an interrupt is not misreported as a timeout.
             const reason = ctx.signal?.aborted
-              ? "Command interrupted by user"
+              ? "Interrupted by user"
               : killed
                 ? `Command timed out after ${timeout}ms`
                 : `Command failed with exit code ${code ?? "unknown"}`;

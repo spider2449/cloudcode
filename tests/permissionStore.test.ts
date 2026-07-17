@@ -106,6 +106,14 @@ describe("command prefix rules", () => {
     expect(store.checkCommand("git")).toBe("allow");
   });
 
+  it("preserves the typed case of the prefix for display while matching case-insensitively", () => {
+    const store = new PermissionStore(tempCwd());
+    store.rememberCommand("Git", "allow");
+    expect(store.list()).toEqual([{ tool: "Bash", prefix: "Git", decision: "allow" }]);
+    expect(store.checkCommand("git status")).toBe("allow");
+    expect(store.checkCommand("GIT status")).toBe("allow");
+  });
+
   it("matches whole tokens only, not substrings", () => {
     const store = new PermissionStore(tempCwd());
     store.rememberCommand("git", "allow");

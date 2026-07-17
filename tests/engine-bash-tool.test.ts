@@ -33,6 +33,6 @@ describe("bashTool", () => {
     const out = await pending;
     expect(Date.now() - started).toBeLessThan(10000);
     expect(out.isError).toBe(true);
-    expect(out.content).toContain("interrupted");
+    expect(out.content).toContain("Interrupted by user");
   }, 15000);
 });

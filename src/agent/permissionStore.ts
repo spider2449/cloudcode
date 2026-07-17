@@ -96,7 +96,9 @@ export class PermissionStore {
   rememberCommand(prefix: string, decision: PermissionDecision): void {
     const p = prefix.toLowerCase();
     this.rules = this.rules.filter(r => !(r.tool === "Bash" && r.prefix?.toLowerCase() === p));
-    this.rules.push({ tool: "Bash", prefix: p, decision });
+    // Store the prefix as typed (for display in /permissions list) while
+    // matching stays case-insensitive via checkCommand's .toLowerCase() calls.
+    this.rules.push({ tool: "Bash", prefix, decision });
     this.persist();
   }
 
