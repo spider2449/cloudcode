@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { configDir } from "../agent/providers.js";
 
@@ -14,6 +14,12 @@ export class SessionFile {
 
   append(entry: unknown): void {
     appendFileSync(this.filePath, JSON.stringify(entry) + "\n");
+  }
+
+  // Replaces the whole file — used after /compact so a resumed session
+  // loads the compacted history instead of the stale pre-compact transcript.
+  rewrite(entries: unknown[]): void {
+    writeFileSync(this.filePath, entries.map(e => JSON.stringify(e) + "\n").join(""));
   }
 
   static load(sessionId: string, dir: string = defaultDir()): unknown[] {
