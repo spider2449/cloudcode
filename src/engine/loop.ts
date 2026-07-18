@@ -7,7 +7,8 @@ import type { PermissionStore } from "../agent/permissionStore.js";
 import { decidePermission } from "./permissions.js";
 import { costUsd } from "./pricing.js";
 import { compactHistory, estimateTokens } from "./compact.js";
-import { EFFORT_BUDGETS, type EffortLevel } from "./effort.js";
+import { EFFORT_BUDGETS, clampEffortBudget, type EffortLevel } from "./effort.js";
+import { DEFAULT_CONTEXT_WINDOW } from "../agent/providers.js";
 
 const MAX_TOKENS = 8192;
 const MAX_LOOP_TURNS = 100;
@@ -21,6 +22,7 @@ export interface EngineOptions {
   permissionMode: PermissionMode;
   store: PermissionStore;
   effort?: EffortLevel;
+  contextWindow?: number;
   onMessage(msg: EngineMessage): void;
   requestPermission(toolName: string, input: Record<string, unknown>): Promise<boolean>;
 }
@@ -189,7 +191,9 @@ export class EngineLoop {
     // With extended thinking enabled, budget_tokens counts against
     // max_tokens, so raise the cap to keep MAX_TOKENS available for the
     // visible answer.
-    const budget = this.effort === "off" ? undefined : EFFORT_BUDGETS[this.effort];
+    const budget = this.effort === "off"
+      ? undefined
+      : clampEffortBudget(EFFORT_BUDGETS[this.effort], this.opts.contextWindow ?? DEFAULT_CONTEXT_WINDOW, MAX_TOKENS);
     const req = {
       model: this.model,
       system: [{ type: "text" as const, text: this.systemPrompt, cache_control: { type: "ephemeral" as const } }],

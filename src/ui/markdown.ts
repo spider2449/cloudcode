@@ -44,7 +44,18 @@ function tableColumnWidths(text: string, width: number): number[] {
   const total = desired.reduce((a, b) => a + b, 0);
   if (total <= budget) return desired;
   // Too wide: shrink columns proportionally to their content, floor of 6.
-  return desired.map((w) => Math.max(6, Math.floor((w / total) * budget)));
+  // Flooring can push the total back over budget, so shave the excess off
+  // the widest columns (never below the floor) until the table fits.
+  const widths = desired.map((w) => Math.max(6, Math.floor((w / total) * budget)));
+  let excess = widths.reduce((a, b) => a + b, 0) - budget;
+  while (excess > 0) {
+    let widest = 0;
+    for (let i = 1; i < n; i++) if (widths[i] > widths[widest]) widest = i;
+    if (widths[widest] <= 6) break;
+    widths[widest]--;
+    excess--;
+  }
+  return widths;
 }
 
 // cli-table3 only understands @colors/colors style names, not hex, so table
@@ -104,15 +115,18 @@ function configure(width: number, colWidths: number[], theme: Theme | undefined)
 // bullet ("* ", "- ", "• ") or number ("12. ").
 const LIST_PREFIX_RE = /^(\s*)((?:[*\-•]|\d+\.)\s+)?/;
 
-// marked-terminal's reflowText only reflows paragraphs and headings; list
-// items pass through at their full source length. Without this pass those
-// over-width lines reach the app's generic wrapText, which knows nothing
-// about list structure and wraps their tails back to column 0, stranding
-// orphan words under the bullets. Wrap them here instead, indenting each
-// continuation row to align under the item's own text.
+// marked-terminal's reflowText leaves list items over-width two ways: tight
+// items pass through at their full source length, and loose items (with
+// nested content) are reflowed at the full width BEFORE the list indent is
+// prepended, so every line ends up a few columns over. Wrapping those lines
+// one at a time strands the overflow of each line as an orphan word row, so
+// when a line overflows, gather its continuation lines (same indent, no own
+// marker) and re-wrap the whole run as one paragraph with a hanging indent.
 function hangingWrap(rendered: string, width: number): string {
   const out: string[] = [];
-  for (const line of rendered.split("\n")) {
+  const lines = rendered.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (stringWidth(line) <= width) {
       out.push(line);
       continue;
@@ -122,8 +136,18 @@ function hangingWrap(rendered: string, width: number): string {
     const m = LIST_PREFIX_RE.exec(line)!;
     const prefix = m[0];
     const indent = " ".repeat(prefix.length);
-    const rows = wrapText(line.slice(prefix.length), Math.max(1, width - prefix.length));
-    rows.forEach((row, i) => out.push((i === 0 ? prefix : indent) + row));
+    let text = line.slice(prefix.length);
+    while (i + 1 < lines.length) {
+      const next = lines[i + 1];
+      const nm = LIST_PREFIX_RE.exec(next)!;
+      const isContinuation =
+        nm[2] === undefined && nm[1] === indent && indent.length > 0 && next.trim() !== "";
+      if (!isContinuation) break;
+      text += " " + next.slice(indent.length);
+      i++;
+    }
+    const rows = wrapText(text, Math.max(1, width - prefix.length));
+    rows.forEach((row, j) => out.push((j === 0 ? prefix : indent) + row));
   }
   return out.join("\n");
 }

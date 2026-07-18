@@ -33,6 +33,24 @@ describe("renderMarkdown", () => {
     for (const line of out.split("\n")) expect(line.length).toBeLessThanOrEqual(60);
   });
 
+  it("keeps an over-wide table within the pane width", () => {
+    // Shape from a real review table: several narrow columns plus one huge
+    // Issue column. Proportional shrink floors narrow columns at 6, which
+    // must not push the total past the pane width.
+    const md =
+      "| # | File | Line | Issue | Severity |\n" +
+      "| --- | --- | --- | --- | --- |\n" +
+      "| 1 | engine/loop.ts | 100 | fire-and-forget with no error handling so a thrown error is silently swallowed and the session file will not be appended at all | Medium |\n" +
+      "| 4 | engine/mcpClient.ts | 15-20 | MCP servers spawned as subprocesses with user-configured commands could execute arbitrary code | Low (depends on trust model) |";
+    const out = strip(renderMarkdown(md, 80, THEME));
+    for (const line of out.split("\n")) {
+      expect(line.length).toBeLessThanOrEqual(80);
+      // An over-wide table gets re-wrapped into fragments that lose their
+      // right border; every rendered line must still be a complete row.
+      expect(line).toMatch(/[│┐┤┘]$/);
+    }
+  });
+
   it("colors headings with the theme accent instead of chalk defaults", () => {
     const out = renderMarkdown("# Title", 60, THEME);
     expect(out).toContain("\x1b[38;2;255;0;255m");
@@ -62,6 +80,25 @@ describe("renderMarkdown", () => {
     for (let i = first + 1; i < lines.length && !lines[i].includes("2."); i++) {
       if (lines[i].trim() === "") continue;
       expect(lines[i].startsWith(" ".repeat(textCol))).toBe(true);
+    }
+  });
+
+  it("re-wraps loose list items as one paragraph instead of stranding orphan words", () => {
+    // With a nested bullet the item becomes a loose list: marked-terminal
+    // reflows the item's paragraph at the full width and THEN prepends the
+    // list indent, leaving every line a few columns over-width. Wrapping
+    // those lines one at a time spills the last word of each onto its own
+    // row ("orphan words").
+    const md =
+      '2. **`edit.ts` uses `text.replace(oldStr, newStr)` — single match only, but the user-facing message says "must match exactly and be unique unless replace_all is true"**\n' +
+      "\n" +
+      "   - The `replace_all` flag is the only way to do multiple replacements.\n";
+    const lines = strip(renderMarkdown(md, 65, THEME)).split("\n");
+    for (const line of lines) {
+      expect(line.length).toBeLessThanOrEqual(65);
+      // No orphan rows: a continuation row holding a single short word.
+      const t = line.trim();
+      if (t !== "") expect(t.includes(" ") || t.length > 12).toBe(true);
     }
   });
 

@@ -68,6 +68,7 @@ export class AgentSession {
       tools: builtinTools(),
       cwd: this.opts.cwd,
       effort: this.opts.effort,
+      contextWindow: this.opts.provider.model_context_window,
       permissionMode: this.opts.permissionMode,
       store,
       onMessage: this.opts.onMessage,

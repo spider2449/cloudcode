@@ -1,7 +1,7 @@
 import type { EngineMessage } from "../engine/messages.js";
 import { AgentSession, type PermissionMode, type PermissionRequest } from "../agent/session.js";
 import { History } from "../agent/history.js";
-import type { ProviderConfig } from "../agent/providers.js";
+import { DEFAULT_CONTEXT_WINDOW, type ProviderConfig } from "../agent/providers.js";
 import { SessionIndex } from "../agent/sessionIndex.js";
 import { PermissionStore, commandPrefix } from "../agent/permissionStore.js";
 import { buildRegistry } from "../commands/builtins.js";
@@ -49,7 +49,6 @@ export interface AppProps {
 type Phase = "idle" | "streaming" | "permission";
 
 const MODE_CYCLE: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
-const DEFAULT_CONTEXT_WINDOW = 200_000;
 const AUTO_COMPACT_THRESHOLD_PCT = 80;
 
 export class App {

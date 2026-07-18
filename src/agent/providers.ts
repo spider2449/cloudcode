@@ -9,6 +9,8 @@ export interface ProviderConfig {
   model_context_window?: number;
 }
 
+export const DEFAULT_CONTEXT_WINDOW = 200_000;
+
 export function configDir(): string {
   return join(homedir(), ".cloudcode");
 }
