@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ProviderConfig } from "../agent/providers.js";
+import { makeOpenAIClient } from "./openaiApi.js";
 
 export interface StreamRequest {
   model: string;
@@ -15,6 +16,7 @@ export interface MessagesClient {
 }
 
 export function makeClient(cfg: ProviderConfig): MessagesClient {
+  if (cfg.kind === "openai") return makeOpenAIClient(cfg);
   const anthropic = new Anthropic({
     apiKey: cfg.apiKey ?? process.env.ANTHROPIC_API_KEY ?? "none",
     baseURL: cfg.baseUrl

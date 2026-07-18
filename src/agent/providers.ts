@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 export interface ProviderConfig {
+  kind?: "anthropic" | "openai";
   baseUrl?: string;
   apiKey?: string;
   model?: string;

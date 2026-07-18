@@ -27,6 +27,13 @@ describe("fetchModels", () => {
     expect(fetchFn.mock.calls[0][0]).toBe("http://localhost:8080/v1/models");
   });
 
+  it("does not double /v1 when baseUrl already ends with /v1", async () => {
+    const fetchFn = ok({ data: [{ id: "z-ai/glm-5.2" }] });
+    const models = await fetchModels({ baseUrl: "https://integrate.api.nvidia.com/v1", apiKey: "nvapi-x" }, fetchFn as never);
+    expect(models).toEqual(["z-ai/glm-5.2"]);
+    expect(fetchFn.mock.calls[0][0]).toBe("https://integrate.api.nvidia.com/v1/models");
+  });
+
   it("queries the Anthropic API with x-api-key when no baseUrl", async () => {
     const fetchFn = ok({ data: [{ id: "claude-sonnet-5" }] });
     const models = await fetchModels({ apiKey: "sk-ant" }, fetchFn as never);

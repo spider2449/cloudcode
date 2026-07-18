@@ -3,7 +3,8 @@
 A Claude Code-style terminal coding agent with its own native agent engine (no
 subprocess, no bundled CLI) talking directly to the Anthropic Messages API, with
 a hand-rolled alt-screen TUI, slash commands, session resume, permission modes,
-and switchable providers including local llama.cpp.
+and switchable providers including local llama.cpp and OpenAI-compatible
+endpoints such as NVIDIA NIM.
 
 ## Setup
 
@@ -65,6 +66,25 @@ where `chat_template.jinja` is a tool-capable template matching your model famil
 
 Verify the setup by POSTing a tool-forcing request to `/v1/messages`: the response
 must contain a `tool_use` content block and `stop_reason: "tool_use"`.
+
+## OpenAI-compatible providers (NVIDIA NIM, etc.)
+
+Providers that speak OpenAI's Chat Completions API (`/chat/completions`) instead
+of the Anthropic Messages API — for example NVIDIA NIM — are supported by adding
+`"kind": "openai"` to the provider entry in `~/.cloudcode/providers.json`:
+
+    {
+      "nim": {
+        "kind": "openai",
+        "baseUrl": "https://integrate.api.nvidia.com/v1",
+        "apiKey": "nvapi-...",
+        "model": "z-ai/glm-5.2"
+      }
+    }
+
+Then `npm run dev -- --provider nim` or `/provider nim` at runtime. Without
+`"kind": "openai"`, a `baseUrl` is assumed to be an Anthropic-compatible proxy
+(like the local llama.cpp setup above).
 
 ## MCP servers
 

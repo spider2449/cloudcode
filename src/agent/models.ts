@@ -19,7 +19,10 @@ export async function fetchModels(
   let url: string;
   const headers: Record<string, string> = {};
   if (provider.baseUrl) {
-    url = `${provider.baseUrl.replace(/\/$/, "")}/v1/models`;
+    // Providers like NVIDIA NIM include /v1 in the baseUrl already; avoid
+    // producing a doubled /v1/v1/models path.
+    const base = provider.baseUrl.replace(/\/$/, "");
+    url = base.endsWith("/v1") ? `${base}/models` : `${base}/v1/models`;
     if (provider.apiKey) headers.Authorization = `Bearer ${provider.apiKey}`;
   } else {
     const key = provider.apiKey || process.env.ANTHROPIC_API_KEY;
