@@ -226,6 +226,29 @@ describe("EngineLoop", () => {
     expect(estimate).toBeLessThan(beforeEstimate);
   });
 
+  it("compact() refreshes contextSnapshot so /context reflects the shrunk history, not the stale pre-compact turn", async () => {
+    const received: unknown[] = [];
+    const loop = makeLoop([textTurn("a fairly long assistant reply about several topics".repeat(10))], received);
+    await loop.runTurn("go", new AbortController().signal);
+    const staleSnapshot = loop.contextSnapshot();
+    const compactClient = {
+      async *create() {
+        yield { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } };
+        yield { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "short recap" } };
+        yield { type: "message_stop" };
+      }
+    };
+    await loop.compact(compactClient as never, "m");
+    const snap = loop.contextSnapshot();
+    // messagesTokens must shrink to match the compacted history, not the
+    // pre-compact turn captured by the last real request.
+    expect(snap.messagesTokens).toBeLessThan(staleSnapshot.messagesTokens);
+    expect(snap.messagesTokens).toBe(Math.ceil(JSON.stringify(loop.messages).length / 4));
+    // The real input-token count from before compaction no longer applies
+    // to the shrunk history; stale usage must not leak into the new snapshot.
+    expect(snap.inputTokens).toBeUndefined();
+  });
+
   it("passes the abort signal to tools and skips remaining tools after abort", async () => {
     const controller = new AbortController();
     const seenSignals: Array<AbortSignal | undefined> = [];

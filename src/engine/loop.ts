@@ -6,7 +6,7 @@ import type { PermissionMode } from "../agent/session.js";
 import type { PermissionStore } from "../agent/permissionStore.js";
 import { decidePermission } from "./permissions.js";
 import { costUsd } from "./pricing.js";
-import { compactHistory, estimateTokens } from "./compact.js";
+import { compactHistory } from "./compact.js";
 import { EFFORT_BUDGETS, clampEffortBudget, type EffortLevel } from "./effort.js";
 import { DEFAULT_CONTEXT_WINDOW } from "../agent/providers.js";
 
@@ -171,7 +171,13 @@ export class EngineLoop {
 
   async compact(client: MessagesClient, model: string, onProgress?: (pct: number) => void): Promise<number> {
     this.messages = await compactHistory(client, model, this.messages, onProgress);
-    return estimateTokens(this.messages);
+    // The cached snapshot describes the request that was actually sent to the
+    // API, which is now stale — the shrunk history has no real usage numbers
+    // yet. Drop it so contextSnapshot() re-estimates from the compacted state
+    // instead of reporting the pre-compact turn forever.
+    this.lastSnapshot = undefined;
+    const snap = this.contextSnapshot();
+    return snap.systemTokens + snap.toolsTokens + snap.messagesTokens;
   }
 
   private async streamOnce(signal: AbortSignal): Promise<StreamedTurn> {

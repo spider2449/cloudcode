@@ -170,6 +170,7 @@ export class App {
     try {
       const estimatedTokens = await this.session?.compact(pct => { this.compactPct = pct; this.recompute(); });
       if (typeof estimatedTokens === "number") {
+        this.tokens = estimatedTokens;
         this.contextPct = Math.min(100, Math.round((estimatedTokens / this.contextWindowFor(this.providerName)) * 100));
       }
       this.notice("Context was getting full — compacted automatically.");
@@ -210,7 +211,10 @@ export class App {
       if (usage) {
         const input = (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
         const output = usage.output_tokens ?? 0;
-        this.tokens += input + output;
+        // Current context size, not a running lifetime sum: `input` already
+        // covers the whole resent history, so summing it turn over turn would
+        // double-count and drift away from what /context reports.
+        this.tokens = input + output;
         const pct = Math.min(100, Math.round((input / this.contextWindowFor(this.providerName)) * 100));
         this.contextPct = pct;
         if (pct >= AUTO_COMPACT_THRESHOLD_PCT) void this.runAutoCompact();
@@ -357,7 +361,10 @@ export class App {
       },
       compact: async onProgress => {
         const estimatedTokens = await this.session?.compact(onProgress);
-        if (typeof estimatedTokens === "number") this.contextPct = Math.min(100, Math.round((estimatedTokens / this.contextWindowFor(this.providerName)) * 100));
+        if (typeof estimatedTokens === "number") {
+          this.tokens = estimatedTokens;
+          this.contextPct = Math.min(100, Math.round((estimatedTokens / this.contextWindowFor(this.providerName)) * 100));
+        }
         return estimatedTokens;
       },
       setCompactProgress: pct => { this.compactPct = pct; this.recompute(); },
