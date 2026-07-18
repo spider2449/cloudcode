@@ -118,6 +118,13 @@ export class EngineLoop {
           // No tool calls this turn: emit the whole batch as one assistant
           // message, same as before.
           this.opts.onMessage(assistantMessage(turn.blocks));
+          if (turn.stopReason === "max_tokens") {
+            // UI-only notice; never pushed into this.messages so the API
+            // history stays exactly what the model produced.
+            this.opts.onMessage(assistantMessage([
+              { type: "text", text: "\n[Response truncated: hit the max_tokens output limit]" }
+            ]));
+          }
           break;
         }
         // Tool calls present: emit each block's label/diff immediately
@@ -191,9 +198,10 @@ export class EngineLoop {
     // With extended thinking enabled, budget_tokens counts against
     // max_tokens, so raise the cap to keep MAX_TOKENS available for the
     // visible answer.
-    const budget = this.effort === "off"
-      ? undefined
+    const clamped = this.effort === "off"
+      ? 0
       : clampEffortBudget(EFFORT_BUDGETS[this.effort], this.opts.contextWindow ?? DEFAULT_CONTEXT_WINDOW, MAX_TOKENS);
+    const budget = clamped > 0 ? clamped : undefined;
     const req = {
       model: this.model,
       system: [{ type: "text" as const, text: this.systemPrompt, cache_control: { type: "ephemeral" as const } }],

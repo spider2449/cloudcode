@@ -113,6 +113,40 @@ describe("AgentSession", () => {
     await expect(session.interrupt()).resolves.toBeUndefined();
   });
 
+  it("send() surfaces a session-file write failure as an error message instead of an unhandled rejection", async () => {
+    vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("ok")]));
+    const messages: unknown[] = [];
+    const session = new AgentSession({
+      providerName: "anthropic",
+      provider: {},
+      permissionMode: "default",
+      cwd: "/p",
+      onMessage: m => messages.push(m),
+      onPermissionRequest: () => {},
+      onSessionId: () => {}
+    });
+    session.start();
+    (session as unknown as { sessionFile: { append(entry: unknown): void } }).sessionFile = {
+      append() { throw new Error("disk full"); }
+    };
+    const rejections: unknown[] = [];
+    const onRejection = (reason: unknown) => rejections.push(reason);
+    process.on("unhandledRejection", onRejection);
+    try {
+      session.send("hello");
+      await vi.waitFor(() => {
+        const errors = messages.filter(m => (m as { subtype?: string }).subtype === "error_during_execution");
+        expect(errors.length).toBe(1);
+        expect((errors[0] as { result: string }).result).toContain("disk full");
+      });
+      await new Promise(r => setImmediate(r));
+      expect(rejections).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onRejection);
+      await session.dispose();
+    }
+  });
+
   it("mcpStatus returns [] (MCP wiring lands in a later task)", async () => {
     vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("ok")]));
     const session = new AgentSession({

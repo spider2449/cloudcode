@@ -288,6 +288,27 @@ describe("EngineLoop", () => {
     expect(resultsMsg.content[1].content).toContain("Interrupted");
   });
 
+  it("surfaces a truncation notice when the response stops at max_tokens", async () => {
+    const truncatedTurn = [
+      { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+      { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "partial answ" } },
+      { type: "content_block_stop", index: 0 },
+      { type: "message_delta", delta: { stop_reason: "max_tokens" }, usage: { input_tokens: 10, output_tokens: 8192 } },
+      { type: "message_stop" }
+    ];
+    const received: unknown[] = [];
+    const loop = makeLoop([truncatedTurn], received);
+    await loop.runTurn("q", new AbortController().signal);
+    const texts = received
+      .filter(m => (m as { type: string }).type === "assistant")
+      .flatMap(m => (m as { message: { content: Array<{ type: string; text?: string }> } }).message.content)
+      .filter(c => c.type === "text")
+      .map(c => c.text ?? "");
+    expect(texts.some(t => t.toLowerCase().includes("truncated"))).toBe(true);
+    // The notice is UI-only: history must contain only the real blocks.
+    expect(JSON.stringify(loop.messages).toLowerCase()).not.toContain("truncated");
+  });
+
   it("denied permission produces an error tool_result and still continues", async () => {
     const received: unknown[] = [];
     const loop = new EngineLoop({
@@ -347,6 +368,27 @@ describe("EngineLoop thinking", () => {
     loop.setEffort("high");
     await loop.runTurn("q2", new AbortController().signal);
     expect((requests[1] as { thinking?: unknown }).thinking).toEqual({ type: "enabled", budget_tokens: 32768 });
+  });
+
+  it("disables thinking entirely when the context window is too small for a useful budget", async () => {
+    const requests: unknown[] = [];
+    const loop = new EngineLoop({
+      client: capturingClient([textTurn("hi")], requests),
+      model: "test-model",
+      systemPrompt: "sys",
+      tools: [echoTool],
+      cwd: process.cwd(),
+      permissionMode: "bypassPermissions",
+      store: new PermissionStore(mkdtempSync(join(tmpdir(), "cc-loop-"))),
+      effort: "low",
+      contextWindow: 9000, // 9000 - 8192 < 1024: no room for a real budget
+      onMessage: () => {},
+      requestPermission: async () => true
+    });
+    await loop.runTurn("q", new AbortController().signal);
+    const req = requests[0] as { thinking?: unknown; max_tokens: number };
+    expect(req.thinking).toBeUndefined();
+    expect(req.max_tokens).toBe(8192);
   });
 
   it("accumulates thinking blocks with signature into history and emits thinking deltas", async () => {

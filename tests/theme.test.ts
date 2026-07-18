@@ -39,12 +39,12 @@ describe("toAppTheme role mapping", () => {
     expect(t.accent).toBe("#030303");
     expect(t.muted).toBe("#050505");       // textMuted
     expect(t.removed).toBe("#090909");     // diffRemoved
-    expect(t.thinking).toBe("#0a0a0a");    // explicit key wins
+    expect(t.thinking).toBe("#080808");    // explicit key wins, darkened by 0.8
   });
   it("falls back when optional roles are missing", () => {
     const t = toAppTheme(base);
     expect(t.removed).toBe("#060606");     // error
-    expect(t.thinking).toBe("#050505");    // textMuted
+    expect(t.thinking).toBe("#040404");    // textMuted, darkened by 0.8
   });
   it("keeps extra resolved keys accessible", () => {
     const t = toAppTheme({ ...base, diffAdded: "#0b0b0b" });

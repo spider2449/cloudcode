@@ -3,3 +3,4 @@ dist/
 release/
 .cloudcode/
 .claude/worktrees/
+*.bun-build

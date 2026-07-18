@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { EngineMessage } from "../engine/messages.js";
+import { errorResult, type EngineMessage } from "../engine/messages.js";
 import { EngineLoop, type ContextSnapshot } from "../engine/loop.js";
 import { makeClient } from "../engine/api.js";
 import { builtinTools } from "../engine/registry.js";
@@ -101,6 +101,13 @@ export class AgentSession {
       const added = this.loop?.messages.slice(before) ?? [];
       for (const entry of added) this.sessionFile?.append(entry);
       this.maybeExtractMemories();
+    }).catch(err => {
+      // runTurn never rejects; this guards the post-turn persistence (e.g.
+      // a full disk breaking sessionFile.append) from becoming an unhandled
+      // rejection that kills the process.
+      this.opts.onMessage(errorResult(
+        `Failed to save session: ${err instanceof Error ? err.message : String(err)}`
+      ));
     });
   }
 

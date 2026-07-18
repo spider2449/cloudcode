@@ -25,6 +25,14 @@ export interface Theme {
 
 const FALLBACK = "#c0c0c0";
 
+// Darkens a "#rrggbb" color by scaling each channel. The thinking preview
+// should sit slightly below normal text in visual weight in every theme.
+function darken(hex: string, factor = 0.8): string {
+  const n = parseInt(hex.slice(1), 16);
+  const scale = (c: number) => Math.round(c * factor).toString(16).padStart(2, "0");
+  return `#${scale((n >> 16) & 0xff)}${scale((n >> 8) & 0xff)}${scale(n & 0xff)}`;
+}
+
 // Maps opencode role names onto cloudcode's app roles, with fallbacks so a
 // minimal theme definition still yields a fully usable Theme.
 export function toAppTheme(resolved: Record<string, string>): Theme {
@@ -38,7 +46,7 @@ export function toAppTheme(resolved: Record<string, string>): Theme {
     success: pick("success"),
     warning: pick("warning"),
     removed: pick("diffRemoved", "error"),
-    thinking: pick("thinking", "textMuted")
+    thinking: darken(pick("thinking", "textMuted"))
   };
 }
 

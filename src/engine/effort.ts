@@ -14,6 +14,10 @@ export function isEffortLevel(v: unknown): v is EffortLevel {
 
 // Caps a thinking budget so budget + maxTokens never exceeds the model's
 // context window, protecting models with smaller windows than Anthropic's.
+// Returns 0 (meaning: disable thinking) when the window can't fit even the
+// API's 1024-token minimum budget on top of maxTokens.
 export function clampEffortBudget(budget: number, contextWindow: number, maxTokens: number): number {
-  return Math.min(budget, Math.max(1024, contextWindow - maxTokens));
+  const cap = contextWindow - maxTokens;
+  if (cap < 1024) return 0;
+  return Math.min(budget, cap);
 }
