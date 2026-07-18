@@ -161,7 +161,19 @@ export class AgentSession {
 
   async compact(onProgress?: (pct: number) => void): Promise<number | undefined> {
     if (!this.loop) return undefined;
-    return this.loop.compact(makeClient(this.opts.provider), this.opts.model ?? this.opts.provider.model ?? DEFAULT_MODEL, onProgress);
+    const estimatedTokens = await this.loop.compact(
+      makeClient(this.opts.provider),
+      this.opts.model ?? this.opts.provider.model ?? DEFAULT_MODEL,
+      onProgress
+    );
+    // The session file is append-only during normal turns; compaction is the
+    // one place history shrinks, so rewrite the file to match loop.messages
+    // or a later resume would reload the stale pre-compact transcript.
+    this.sessionFile?.rewrite(this.loop.messages);
+    // Old cursor positions point into the discarded history; realign so the
+    // next extraction window starts at the compacted state.
+    this.extractCursor = this.loop.messages.length;
+    return estimatedTokens;
   }
 
   contextSnapshot(): ContextSnapshot | undefined {

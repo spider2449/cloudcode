@@ -139,4 +139,50 @@ describe("AgentSession integration", () => {
     expect(flat).toContain("second reply");
     await second.dispose();
   });
+
+  it("compact() persists the summarized history so resume loads the summary, not the stale transcript", async () => {
+    vi.mocked(makeClient).mockReturnValue(fakeClient([
+      textTurn("hello there"),
+      textTurn("CONDENSED SUMMARY"),
+      textTurn("after compact reply")
+    ]));
+    const messages: unknown[] = [];
+    let sessionId = "";
+    const session = new AgentSession({
+      providerName: "anthropic",
+      provider: {},
+      permissionMode: "default",
+      cwd: "/p",
+      onMessage: m => messages.push(m),
+      onPermissionRequest: () => {},
+      onSessionId: id => { sessionId = id; }
+    });
+    session.start();
+    session.send("hello");
+    await vi.waitFor(() => expect(messages.some(m => (m as { type: string }).type === "result")).toBe(true));
+
+    await session.compact();
+
+    // The file now holds exactly the compacted history: one summary message.
+    const afterCompact = SessionFile.load(sessionId);
+    expect(afterCompact).toHaveLength(1);
+    expect(JSON.stringify(afterCompact)).toContain("CONDENSED SUMMARY");
+    expect(JSON.stringify(afterCompact)).not.toContain("hello there");
+
+    // The extraction cursor tracks the new, shorter history.
+    expect((session as unknown as { extractCursor: number }).extractCursor).toBe(1);
+
+    // A follow-up turn appends after the summary without resurrecting old history.
+    session.send("next question");
+    await vi.waitFor(() => {
+      const all = SessionFile.load(sessionId);
+      return expect(JSON.stringify(all)).toContain("after compact reply");
+    });
+    const finalFile = SessionFile.load(sessionId);
+    const flat = JSON.stringify(finalFile);
+    expect(flat).toContain("CONDENSED SUMMARY");
+    expect(flat).toContain("next question");
+    expect(flat).not.toContain("hello there");
+    await session.dispose();
+  });
 });
