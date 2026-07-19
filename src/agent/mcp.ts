@@ -9,6 +9,11 @@ export interface McpServerStatusEntry {
   status: string;
 }
 
+export interface McpServersByScope {
+  user: Record<string, McpServerConfig>;
+  project: Record<string, McpServerConfig>;
+}
+
 function readServerFile(filePath: string): Record<string, McpServerConfig> {
   try {
     const raw = JSON.parse(readFileSync(filePath, "utf8"));
@@ -22,13 +27,22 @@ function readServerFile(filePath: string): Record<string, McpServerConfig> {
   return {};
 }
 
+export function loadMcpServersByScope(
+  cwd: string,
+  userPath: string = join(configDir(), "mcp.json")
+): McpServersByScope {
+  return {
+    user: readServerFile(userPath),
+    project: readServerFile(join(cwd, ".mcp.json"))
+  };
+}
+
 export function loadMcpServers(
   cwd: string,
   userPath: string = join(configDir(), "mcp.json")
 ): Record<string, McpServerConfig> {
-  const user = readServerFile(userPath);
-  const project = readServerFile(join(cwd, ".mcp.json"));
-  return { ...user, ...project };
+  const scopes = loadMcpServersByScope(cwd, userPath);
+  return { ...scopes.user, ...scopes.project };
 }
 
 export function formatMcpStatus(
