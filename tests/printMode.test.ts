@@ -7,6 +7,7 @@ vi.mock("../src/engine/api.js", () => ({ makeClient: vi.fn() }));
 
 import { makeClient } from "../src/engine/api.js";
 import { runPrint } from "../src/printMode.js";
+import { SessionIndex } from "../src/agent/sessionIndex.js";
 
 type Event = Record<string, unknown>;
 
@@ -51,12 +52,14 @@ function collectIo() {
 
 let home: string;
 let saved: { HOME?: string; USERPROFILE?: string };
+let sessionIndex: SessionIndex;
 
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), "print-home-"));
   saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
   process.env.HOME = home;
   process.env.USERPROFILE = home;
+  sessionIndex = new SessionIndex(join(home, "sessions.json"));
 });
 
 afterEach(() => {
@@ -70,7 +73,8 @@ const baseOpts = () => ({
   providerName: "anthropic",
   provider: {},
   permissionMode: "default" as const,
-  cwd: home
+  cwd: home,
+  sessionIndex
 });
 
 describe("runPrint", () => {
@@ -100,5 +104,19 @@ describe("runPrint", () => {
     const code = await runPrint(baseOpts(), io);
     expect(code).toBe(1);
     expect(errText()).toContain("boom");
+  });
+
+  it("records the session in the session index so -c can resume it", async () => {
+    vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("hello")]) as never);
+    const { io } = collectIo();
+    const code = await runPrint(baseOpts(), io);
+    expect(code).toBe(0);
+    const entries = sessionIndex.listForCwd(home);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      cwd: home,
+      provider: "anthropic",
+      firstMessage: "hi"
+    });
   });
 });

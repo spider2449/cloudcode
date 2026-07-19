@@ -2,6 +2,7 @@ import { AgentSession, type PermissionMode } from "./agent/session.js";
 import type { ProviderConfig } from "./agent/providers.js";
 import { loadMcpServers } from "./agent/mcp.js";
 import type { EffortLevel } from "./engine/effort.js";
+import type { SessionIndex } from "./agent/sessionIndex.js";
 
 export interface PrintIo {
   out(text: string): void;
@@ -17,6 +18,7 @@ export interface PrintOptions {
   permissionMode: PermissionMode;
   resume?: string;
   cwd: string;
+  sessionIndex: SessionIndex;
 }
 
 // One-shot non-interactive turn: stream assistant text to stdout, summarize
@@ -60,7 +62,15 @@ export async function runPrint(opts: PrintOptions, io: PrintIo): Promise<number>
       io.err(`[denied] ${req.toolName} (non-interactive; pass --permission-mode acceptEdits or bypassPermissions to allow)\n`);
       req.resolve(false);
     },
-    onSessionId: () => {}
+    onSessionId: id => {
+      opts.sessionIndex.record({
+        id,
+        cwd: opts.cwd,
+        firstMessage: opts.prompt,
+        timestamp: new Date().toISOString(),
+        provider: opts.providerName
+      });
+    }
   });
   session.start();
   session.send(opts.prompt);
