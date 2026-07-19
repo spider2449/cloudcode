@@ -16,6 +16,21 @@ supported — cloudcode talks to `/v1/messages` directly rather than spawning th
 Claude Code CLI, so it needs its own API key (or a compatible local endpoint,
 see below).
 
+## CLI usage
+
+    cloudcode                 # interactive session
+    cloudcode -c              # continue the latest session in this directory
+    cloudcode -r              # pick a session to resume
+    cloudcode -p "prompt"     # one-shot non-interactive run (or pipe the prompt on stdin)
+    cloudcode doctor          # check environment and configuration health
+    cloudcode config          # show config paths and effective settings
+    cloudcode mcp             # list configured MCP servers
+    cloudcode update          # update to the latest version
+
+Print mode auto-denies any tool call that would normally prompt; pass
+`--permission-mode acceptEdits` (or `bypassPermissions`) to loosen that for
+a single run. Run `cloudcode --help` for the full flag list.
+
 ## Local models (llama.cpp)
 
 Requires a recent llama.cpp build whose `llama-server` exposes the
