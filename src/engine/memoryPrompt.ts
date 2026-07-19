@@ -35,7 +35,7 @@ export function buildMemoryPrompt(dir: string, entrypointContent: string): strin
     ? truncateEntrypoint(entrypointContent).content
     : "Your MEMORY.md is currently empty. When you save new memories, they will appear here.";
   return `# Auto memory
-You have a persistent, file-based memory system at \`${dir}\`. This directory already exists — write to it directly with the Write tool (do not run mkdir or check for its existence).
+You have a persistent, file-based memory system at \`${dir}\`. Write to it directly with the Write tool — parent directories are created automatically on first write, so do not run mkdir or check for its existence first.
 
 Build this memory up over time so future conversations know who the user is, how they like to collaborate, and the context behind the work. If the user explicitly asks you to remember something, save it immediately as whichever type fits best. If they ask you to forget something, find and remove the relevant entry.
 

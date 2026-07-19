@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { loadSkills } from "../agent/skills.js";
 import { loadSettings } from "../agent/settings.js";
 import { configDir } from "../agent/providers.js";
-import { memoryDir, memoryEntrypoint, ensureMemoryDir } from "./memoryPaths.js";
+import { memoryDir, memoryEntrypoint } from "./memoryPaths.js";
 import { buildMemoryPrompt } from "./memoryPrompt.js";
 
 const BASE = `You are cloudcode, an interactive terminal coding agent.
@@ -37,12 +37,12 @@ export function buildSystemPrompt(cwd: string, opts: SystemPromptOptions = {}): 
   }
 
   if (autoMemory) {
+    // Don't create the memory directory here — that would leave an empty
+    // folder behind for every project ever opened. The Write tool creates
+    // parent directories lazily, so the dir only appears once a memory is
+    // actually saved.
     const dir = memoryDir(cwd, base);
-    // Only advertise the memory system when the directory actually exists,
-    // so the "already exists" promise in the prompt is truthful.
-    if (ensureMemoryDir(dir)) {
-      prompt += `\n\n${buildMemoryPrompt(dir, readIfPresent(memoryEntrypoint(cwd, base)))}`;
-    }
+    prompt += `\n\n${buildMemoryPrompt(dir, readIfPresent(memoryEntrypoint(cwd, base)))}`;
   }
   return prompt;
 }

@@ -1,3 +1,4 @@
+import { isAbsolute, resolve, sep } from "node:path";
 import type { PermissionMode } from "../agent/session.js";
 import { type PermissionStore, isCompoundCommand } from "../agent/permissionStore.js";
 
@@ -7,13 +8,29 @@ const FILE_TOOLS = new Set(["Read", "Write", "Edit"]);
 
 export type PermissionDecision = "allow" | "deny" | "ask";
 
+// True for paths at or inside `cwd`. Resolves both sides first so ".."
+// segments and relative paths can't produce a false "inside" result.
+function isInsideCwd(filePath: string, cwd: string): boolean {
+  const root = resolve(cwd);
+  const target = isAbsolute(filePath) ? resolve(filePath) : resolve(cwd, filePath);
+  return target === root || target.startsWith(root + sep);
+}
+
 export function decidePermission(
   toolName: string,
   input: Record<string, unknown>,
   mode: PermissionMode,
-  store: PermissionStore
+  store: PermissionStore,
+  cwd: string
 ): PermissionDecision {
-  if (mode === "bypassPermissions") return "allow";
+  // acceptEdits/bypassPermissions auto-allow edits, but only inside cwd — a
+  // write outside cwd always needs an explicit human "ask" (or a remembered
+  // store rule, checked below), since those modes otherwise remove the only
+  // barrier between model output and the rest of the filesystem.
+  const outsideCwdEdit =
+    EDIT_TOOLS.has(toolName) && typeof input.file_path === "string" && !isInsideCwd(input.file_path, cwd);
+
+  if (mode === "bypassPermissions" && !outsideCwdEdit) return "allow";
   // Per-directory rules (deny beats allow) apply to file tools.
   if (FILE_TOOLS.has(toolName) && typeof input.file_path === "string") {
     const ruling = store.check(toolName, input.file_path);
@@ -35,6 +52,6 @@ export function decidePermission(
     if (ruling === "allow" && !compound) return "allow";
   }
   if (READ_ONLY.has(toolName)) return "allow";
-  if (mode === "acceptEdits" && EDIT_TOOLS.has(toolName)) return "allow";
+  if (mode === "acceptEdits" && EDIT_TOOLS.has(toolName)) return outsideCwdEdit ? "ask" : "allow";
   return "ask";
 }

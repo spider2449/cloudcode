@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildSystemPrompt } from "../src/engine/systemPrompt.js";
-import { sanitizePath } from "../src/engine/memoryPaths.js";
+import { sanitizePath, memoryDir } from "../src/engine/memoryPaths.js";
 
 function tmp(): string {
   return mkdtempSync(join(tmpdir(), "cc-sys-tmp-"));
@@ -31,7 +31,7 @@ describe("user CLOUDCODE.md and memory section", () => {
     expect(p).toContain("# User instructions (CLOUDCODE.md)");
     expect(p).toContain("always answer in haiku");
   });
-  it("includes the memory section with MEMORY.md content and creates the dir", () => {
+  it("includes the memory section with MEMORY.md content", () => {
     const base = tmp();
     const cwd = tmp();
     mkdirSync(join(base, "projects", sanitizePath(cwd), "memory"), { recursive: true });
@@ -43,5 +43,12 @@ describe("user CLOUDCODE.md and memory section", () => {
   it("omits the memory section when autoMemory is false", () => {
     const p = buildSystemPrompt(tmp(), { configBase: tmp(), autoMemory: false });
     expect(p).not.toContain("# Auto memory");
+  });
+  it("does not create the memory directory just from building the prompt", () => {
+    const base = tmp();
+    const cwd = tmp();
+    const p = buildSystemPrompt(cwd, { configBase: base });
+    expect(p).toContain("# Auto memory");
+    expect(existsSync(memoryDir(cwd, base))).toBe(false);
   });
 });

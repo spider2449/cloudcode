@@ -285,7 +285,7 @@ export class EngineLoop {
     });
     const tool = this.tools.find(t => t.name === block.name);
     if (!tool) return deniedResult(`Unknown tool: ${block.name}`);
-    let decision = decidePermission(block.name, block.input, this.mode, this.opts.store);
+    let decision = decidePermission(block.name, block.input, this.mode, this.opts.store, this.opts.cwd);
     if (decision === "ask") {
       decision = (await this.opts.requestPermission(block.name, block.input)) ? "allow" : "deny";
     }
