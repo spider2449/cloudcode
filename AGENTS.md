@@ -89,17 +89,30 @@ non-null (`!`) assertions — as of this writing `src/` has zero `: any`
 annotations and a single `!` assertion. If a cast is unavoidable, prefer
 `as unknown as T` with a comment explaining why over a bare `as any`.
 
+## Dependency version policy
+
+`typescript@^7.0.2` and `@types/node@^26.1.1` are deliberate early adoption
+of the Go-ported `tsc` and current Node types, not an oversight — keep
+using `^` ranges for these rather than tightening to `~`. The tradeoff this
+creates: `typescript-eslint`'s peer range caps at TypeScript `<6.1.0`, so it
+can't be used here; `oxlint` is used instead (no TS-version dependency).
+Re-evaluate `typescript-eslint` once it supports TS 7.
+
 ## Open gaps (tracked here until closed)
 
-- `typescript@^7.0.2` / `@types/node@^26.1.1` are prerelease pins with no
-  documented rationale for why (only that they block `typescript-eslint`,
-  which is why `oxlint` is used instead — see below).
-- No test coverage for the packaging scripts (`scripts/build-binaries.*`,
-  `installer/cloudcode.iss`); they'd only fail visibly at release time.
+None currently tracked. See "Closed" below for what's been addressed.
 
 Closed: CI (`.github/workflows/ci.yml`, runs lint/build/test/audit on push
-and PR to `master`), linting (`oxlint`, via `npm run lint` — chosen over
-`typescript-eslint` because that peer range caps at TypeScript `<6.1.0`,
-which the `^7.0.2` prerelease pin doesn't satisfy), dependency auditing
-(`npm audit --audit-level=high` in CI plus `.github/dependabot.yml` for
-weekly npm/Actions update PRs), and the missing `LICENSE` file.
+and PR to `master`), linting (`oxlint`, via `npm run lint`), dependency
+auditing (`npm audit --audit-level=high` in CI plus `.github/dependabot.yml`
+for weekly npm/Actions update PRs), the missing `LICENSE` file, and a
+release smoke test (`.github/workflows/release-smoke-test.yml`, triggered
+on `v*` tags: builds the npm package and the Windows/Linux compiled
+binaries, then runs each with `--version` to catch a broken packaging
+script before users hit it). Note: that workflow calls
+`scripts/build-binaries.sh` directly on Linux rather than
+`npm run package:bin`, because that npm script shells out to Windows
+PowerShell specifically — `build-binaries.sh` covers Linux/macOS but isn't
+wired to any npm script; the smoke test doesn't cover macOS or the Inno
+Setup installer (`installer/cloudcode.iss`, Windows-only, needs ISCC on the
+runner) yet.

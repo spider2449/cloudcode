@@ -1,0 +1,67 @@
+name: Release smoke test
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  npm-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build npm package
+        run: npm run package:npm
+
+      - name: Smoke test dist/cli.js
+        run: node dist/cli.js --version | grep -q cloudcode
+
+  compiled-binary:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            binary: release/cloudcode-win-x64.exe
+          - os: ubuntu-latest
+            binary: release/cloudcode-linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: npm ci
+
+      - name: Type-check and build
+        run: npm run build
+
+      # npm's package:bin script shells out to PowerShell, which is not
+      # present on the ubuntu-latest bash image; run the platform-matched
+      # build script directly so both legs of this matrix work.
+      - name: Build compiled binary (Windows)
+        if: runner.os == 'Windows'
+        run: npm run package:bin
+
+      - name: Build compiled binary (Linux)
+        if: runner.os == 'Linux'
+        run: bash scripts/build-binaries.sh
+
+      - name: Smoke test compiled binary
+        shell: bash
+        run: |
+          test -f "${{ matrix.binary }}"
+          "${{ matrix.binary }}" --version | grep -q cloudcode
