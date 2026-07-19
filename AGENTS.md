@@ -64,10 +64,15 @@ annotations and a single `!` assertion. If a cast is unavoidable, prefer
 
 ## Open gaps (tracked here until closed)
 
-- No `LICENSE` file, despite `package.json` declaring `"license": "MIT"`.
+- `typescript@^7.0.2` / `@types/node@^26.1.1` are prerelease pins with no
+  documented rationale for why (only that they block `typescript-eslint`,
+  which is why `oxlint` is used instead — see below).
+- No test coverage for the packaging scripts (`scripts/build-binaries.*`,
+  `installer/cloudcode.iss`); they'd only fail visibly at release time.
 
-Closed: CI (`.github/workflows/ci.yml`, runs lint/build/test on push and PR
-to `master`) and linting (`oxlint`, via `npm run lint`) are both wired up.
-`typescript-eslint` was tried first but its peer range caps at TypeScript
-`<6.1.0`, which this project's `typescript@^7.0.2` prerelease pin doesn't
-satisfy — `oxlint` was used instead since it has no TS-version dependency.
+Closed: CI (`.github/workflows/ci.yml`, runs lint/build/test/audit on push
+and PR to `master`), linting (`oxlint`, via `npm run lint` — chosen over
+`typescript-eslint` because that peer range caps at TypeScript `<6.1.0`,
+which the `^7.0.2` prerelease pin doesn't satisfy), dependency auditing
+(`npm audit --audit-level=high` in CI plus `.github/dependabot.yml` for
+weekly npm/Actions update PRs), and the missing `LICENSE` file.
