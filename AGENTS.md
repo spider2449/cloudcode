@@ -55,6 +55,33 @@ not as follow-up cleanup. Keep test files under the same size guidance as
 production code — don't let `tests/` accumulate a monolithic file per
 subsystem.
 
+## Error handling: catch at the boundary, not at every call site
+
+Errors are handled at three deliberate boundaries — new code should rely on
+these rather than adding its own try/catch:
+
+1. **Per-tool** (`engine/loop.ts`, `runTool`): a thrown tool error becomes a
+   `tool_result` with `is_error: true` fed back to the model. The turn
+   continues.
+2. **Per-turn** (`engine/loop.ts`, `send`): any error during the API
+   call/stream (network failure, malformed SSE) becomes an `errorResult`
+   message shown to the user. The session survives.
+3. **Per-command** (`ui/nativeApp.ts`, the single `cmd.run(...).catch(...)`
+   at slash-command dispatch): covers every command uniformly, so
+   individual command bodies (see `commands/builtins.ts`) don't need their
+   own try/catch just to avoid crashing the app.
+
+Below all three, `cli.tsx`'s `uncaughtException` handler logs a stack trace
+to the terminal and **intentionally rethrows to crash** — that's correct
+for a stateful TUI process; don't add a handler that swallows and
+continues instead.
+
+Config/session file loaders (`agent/sessionIndex.ts`, `agent/settings.ts`,
+`agent/mcp.ts`, `agent/providers.ts`) each wrap their own
+`readFileSync`+`JSON.parse` and fall back to defaults on any error — keep
+that pattern for any new on-disk config file rather than relying on the
+boundaries above, since those run before a session/turn/command exists.
+
 ## Type discipline
 
 `tsconfig.json` has `"strict": true`; keep it that way. Avoid `any` and
