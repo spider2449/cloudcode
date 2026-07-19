@@ -98,6 +98,7 @@ describe("runPrint", () => {
 
   it("returns 1 and prints the error when the API fails", async () => {
     vi.mocked(makeClient).mockReturnValue({
+      // oxlint-disable-next-line require-yield -- mock only throws, never yields
       create: vi.fn(async function* () { throw new Error("boom"); })
     } as never);
     const { io, errText } = collectIo();

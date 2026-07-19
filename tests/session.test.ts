@@ -93,6 +93,7 @@ describe("AgentSession", () => {
 
   it("interrupt() aborts the in-flight turn without throwing", async () => {
     vi.mocked(makeClient).mockReturnValue({
+      // oxlint-disable-next-line require-yield -- mock only aborts/throws, never yields
       create: vi.fn(async function* (_req: unknown, signal: AbortSignal) {
         await new Promise((_resolve, reject) => {
           signal.addEventListener("abort", () => reject(new Error("aborted")));

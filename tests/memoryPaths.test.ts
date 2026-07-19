@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, sep } from "node:path";
+import { join } from "node:path";
 import {
   sanitizePath, memoryDir, memoryEntrypoint, isInsideMemoryDir, ensureMemoryDir
 } from "../src/engine/memoryPaths.js";

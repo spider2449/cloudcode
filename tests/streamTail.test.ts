@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { tailForHeight } from "../src/ui/streamTail.js";
-import { stringWidth } from "../src/ui/width.js";
 
 describe("tailForHeight", () => {
   it("returns short text unchanged", () => {

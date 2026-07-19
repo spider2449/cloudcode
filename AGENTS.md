@@ -64,9 +64,10 @@ annotations and a single `!` assertion. If a cast is unavoidable, prefer
 
 ## Open gaps (tracked here until closed)
 
-- No CI is configured to enforce any of the above (build/test only run
-  locally). See `.github/workflows/ci.yml` if present, otherwise this is
-  still open.
-- No linter is configured; `tsc --strict` catches type errors but not
-  style/correctness drift.
 - No `LICENSE` file, despite `package.json` declaring `"license": "MIT"`.
+
+Closed: CI (`.github/workflows/ci.yml`, runs lint/build/test on push and PR
+to `master`) and linting (`oxlint`, via `npm run lint`) are both wired up.
+`typescript-eslint` was tried first but its peer range caps at TypeScript
+`<6.1.0`, which this project's `typescript@^7.0.2` prerelease pin doesn't
+satisfy — `oxlint` was used instead since it has no TS-version dependency.
