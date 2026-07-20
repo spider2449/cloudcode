@@ -148,8 +148,9 @@ export class App {
   }
 
   private completionCtxRef(): CompletionContext {
+    const self = this;
     return {
-      registry: this.registry,
+      get registry() { return self.registry; },
       providerNames: () => Object.keys(this.props.providers),
       availableModels: () => this.availableModels,
       listFiles: () => this.fileIndex.list(),
