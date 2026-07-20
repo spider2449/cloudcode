@@ -17,11 +17,23 @@ function makeClient() {
 }
 
 describe("compactHistory", () => {
-  it("replaces history with a single summary user message", async () => {
+  it("replaces history with a summary user message", async () => {
     const { client } = makeClient();
     const next = await compactHistory(client as never, "m", [{ role: "user", content: "long stuff" }]);
-    expect(next).toHaveLength(1);
+    expect((next[0] as { role: string }).role).toBe("user");
     expect(JSON.stringify(next[0])).toContain("user asked about X");
+  });
+
+  it("ends the compacted history on an assistant turn so the next user message alternates", async () => {
+    const { client } = makeClient();
+    const next = await compactHistory(client as never, "m", [{ role: "user", content: "long stuff" }]);
+    const last = next[next.length - 1] as { role: string };
+    expect(last.role).toBe("assistant");
+    // Appending the next real user turn must not produce consecutive user roles.
+    const withNext = [...next, { role: "user", content: "follow-up" }] as Array<{ role: string }>;
+    for (let i = 1; i < withNext.length; i++) {
+      expect(withNext[i].role).not.toBe(withNext[i - 1].role);
+    }
   });
 
   it("does not send consecutive user-role messages when history ends on a tool-result user turn", async () => {

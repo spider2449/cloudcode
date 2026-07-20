@@ -300,6 +300,13 @@ export class App {
   private async restartSession(name: string, resume?: string, modeOverride?: PermissionMode): Promise<void> {
     await this.session?.dispose();
     this.firstMessage = undefined;
+    // The cached token/context-usage numbers describe the session being torn
+    // down. Clearing them keeps the status bar from advertising the old
+    // session's usage against the fresh (usually empty) one — which is also
+    // what makes it disagree with the live figure /context reports until the
+    // next turn's result would otherwise overwrite it.
+    this.tokens = 0;
+    this.contextPct = undefined;
     this.session = this.createSession(name, resume, modeOverride);
     this.model = this.modelFor(name);
     this.servedModel = undefined;

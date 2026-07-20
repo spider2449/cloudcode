@@ -228,8 +228,13 @@ describe("EngineLoop", () => {
 
   it("compact() refreshes contextSnapshot so /context reflects the shrunk history, not the stale pre-compact turn", async () => {
     const received: unknown[] = [];
-    const loop = makeLoop([textTurn("a fairly long assistant reply about several topics".repeat(10))], received);
+    const bigReply = "a fairly long assistant reply about several topics".repeat(10);
+    const loop = makeLoop([textTurn(bigReply), textTurn("second reply")], received);
+    // Two turns so the last request's snapshot captures the accumulated
+    // history (including the big first reply), giving a genuinely large
+    // pre-compact baseline for the shrink assertion below.
     await loop.runTurn("go", new AbortController().signal);
+    await loop.runTurn("again", new AbortController().signal);
     const staleSnapshot = loop.contextSnapshot();
     const compactClient = {
       async *create() {

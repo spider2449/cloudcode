@@ -47,5 +47,14 @@ export async function compactHistory(
     }
   }
   onProgress?.(100);
-  return [{ role: "user", content: `Summary of prior conversation: ${summary}` }];
+  // Return the summary as a user turn followed by an assistant acknowledgment.
+  // History must begin on a user turn, but if it also *ended* on this user
+  // summary the next real user message would sit directly after it, producing
+  // two consecutive user turns — the strict-alternation violation the API
+  // rejects (see the history-padding above). The trailing assistant turn keeps
+  // the compacted history ready for the next user message.
+  return [
+    { role: "user", content: `Summary of prior conversation: ${summary}` },
+    { role: "assistant", content: "Understood. I'll continue from this summary." }
+  ];
 }

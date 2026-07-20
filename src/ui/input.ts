@@ -39,6 +39,8 @@ const UNKNOWN_CSI_RE = /^\x1b\[[0-9;?]*[A-Za-z~]/;
 const CSI_U_RE = /^\x1b\[(\d+)(?:;(\d+))?u/;
 const CSI_U_ENTER_KEYCODE = 13;
 const CSI_U_TAB_KEYCODE = 9;
+const CSI_U_ESC_KEYCODE = 27;
+const CSI_U_BACKSPACE_KEYCODE = 127;
 const CSI_U_SHIFT_BIT = 1; // (modifiers - 1) & CSI_U_SHIFT_BIT
 
 const SEQUENCES: Record<string, Key> = {
@@ -143,8 +145,19 @@ export class KeyDecoder {
       } else if (keycode === CSI_U_TAB_KEYCODE) {
         const shifted = ((modifiers - 1) & CSI_U_SHIFT_BIT) !== 0;
         keys.push(shifted ? { t: "backtab" } : { t: "tab" });
+      } else if (keycode === CSI_U_ESC_KEYCODE) {
+        // With the Kitty keyboard protocol's "disambiguate escape codes" flag
+        // enabled (see KITTY_KEYBOARD_ON), the Escape key is reported as this
+        // CSI u sequence instead of a bare \x1b. Without handling it here the
+        // key is silently dropped, so Esc-to-interrupt never fires in any
+        // terminal that supports the protocol (Windows Terminal, WezTerm, etc.).
+        keys.push({ t: "esc" });
+      } else if (keycode === CSI_U_BACKSPACE_KEYCODE) {
+        // Some Kitty-protocol terminals report Backspace as CSI u (keycode 127)
+        // rather than the legacy 0x7f byte; map it so editing still works there.
+        keys.push({ t: "backspace" });
       }
-      // Other CSI u key reports (not Enter/Tab) aren't otherwise handled; drop them.
+      // Other CSI u key reports (not Enter/Tab/Esc/Backspace) aren't otherwise handled; drop them.
       return csiU[0].length;
     }
 

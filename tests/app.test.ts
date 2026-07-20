@@ -129,6 +129,20 @@ describe("App", () => {
     expect(all).toContain("No MCP servers configured");
   });
 
+  it("/new resets the status-bar context usage so it doesn't outlive its session", async () => {
+    // 100k of the 200k default window = 50%. After /new the fresh, empty
+    // session has no usage, so the status bar must not keep advertising 50%
+    // (which would disagree with what /context reports for the new session).
+    const { app, terminal } = makeApp([textTurn("ok", { input_tokens: 100_000, output_tokens: 0 })]);
+    void app.run();
+    app.submitForTest("hello");
+    await wait();
+    expect(terminal.writes[terminal.writes.length - 1]).toContain("(50%)");
+    app.submitForTest("/new");
+    await wait();
+    expect(terminal.writes[terminal.writes.length - 1]).not.toContain("(50%)");
+  });
+
   it("auto-compact fires when context usage reaches 80%", async () => {
     const { app } = makeApp([textTurn("ok", { input_tokens: 160_000, output_tokens: 0 })]);
     const compactSpy = vi.fn();

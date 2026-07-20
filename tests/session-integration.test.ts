@@ -163,14 +163,16 @@ describe("AgentSession integration", () => {
 
     await session.compact();
 
-    // The file now holds exactly the compacted history: one summary message.
+    // The file now holds the compacted history: a summary user turn plus a
+    // trailing assistant acknowledgment (so the next user turn alternates).
     const afterCompact = SessionFile.load(sessionId);
-    expect(afterCompact).toHaveLength(1);
+    expect(afterCompact).toHaveLength(2);
+    expect((afterCompact[afterCompact.length - 1] as { role: string }).role).toBe("assistant");
     expect(JSON.stringify(afterCompact)).toContain("CONDENSED SUMMARY");
     expect(JSON.stringify(afterCompact)).not.toContain("hello there");
 
     // The extraction cursor tracks the new, shorter history.
-    expect((session as unknown as { extractCursor: number }).extractCursor).toBe(1);
+    expect((session as unknown as { extractCursor: number }).extractCursor).toBe(2);
 
     // A follow-up turn appends after the summary without resurrecting old history.
     session.send("next question");

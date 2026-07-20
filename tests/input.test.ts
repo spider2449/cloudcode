@@ -120,6 +120,21 @@ describe("KeyDecoder", () => {
     expect(d.feed(b("\x1b[9;2u"))).toEqual([{ t: "backtab" }]);
   });
 
+  it("decodes a CSI u Escape report from the Kitty keyboard protocol", () => {
+    const d = new KeyDecoder();
+    // With the "disambiguate escape codes" flag the Escape key arrives as
+    // \x1b[27u, not a bare \x1b; it must still surface as an esc key so
+    // Esc-to-interrupt works in Kitty-protocol terminals.
+    expect(d.feed(b("\x1b[27u"))).toEqual([{ t: "esc" }]);
+    expect(d.feed(b("\x1b[27;1u"))).toEqual([{ t: "esc" }]);
+  });
+
+  it("decodes a CSI u Backspace report from the Kitty keyboard protocol", () => {
+    const d = new KeyDecoder();
+    expect(d.feed(b("\x1b[127u"))).toEqual([{ t: "backspace" }]);
+    expect(d.feed(b("\x1b[127;1u"))).toEqual([{ t: "backspace" }]);
+  });
+
   it("decodes ESC+CR/LF as Shift+Enter (VS Code integrated terminal's encoding)", () => {
     const d = new KeyDecoder();
     expect(d.feed(b("\x1b\r"))).toEqual([{ t: "shift-enter" }]);
