@@ -15,6 +15,7 @@ export function mergeSkillCommands(
     merged.set(skill.name, {
       name: skill.name,
       description: skill.description,
+      source: skill.source,
       async run(ctx, args) {
         ctx.sendPrompt(buildSkillPrompt(skill, args));
       }
