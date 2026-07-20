@@ -2,6 +2,7 @@ import type { PermissionMode } from "../agent/session.js";
 import type { CompletionContext } from "./completion.js";
 import type { EffortLevel } from "../engine/effort.js";
 import type { ContextSnapshot } from "../engine/loop.js";
+import type { Skill } from "../agent/skills.js";
 
 export interface CommandContext {
   notice(text: string): void;
@@ -37,6 +38,8 @@ export interface CommandContext {
 export interface Command {
   name: string;
   description: string;
+  /** Present only for skill-backed commands; identifies the skill's origin. */
+  source?: Skill["source"];
   run(ctx: CommandContext, args: string): Promise<void>;
   completeArgs?(prefix: string, ctx: CompletionContext): string[];
 }

@@ -39,4 +39,14 @@ describe("mergeSkillCommands", () => {
     mergeSkillCommands(registry, [skill]);
     expect(registry.size).toBe(before);
   });
+
+  it("sets source on the merged skill command", () => {
+    const merged = mergeSkillCommands(buildRegistry(), [skill]);
+    expect(merged.get("commit-helper")!.source).toBe("project");
+  });
+
+  it("leaves builtin commands without a source", () => {
+    const merged = mergeSkillCommands(buildRegistry(), [skill]);
+    expect(merged.get("help")!.source).toBeUndefined();
+  });
 });

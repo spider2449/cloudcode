@@ -42,6 +42,30 @@ describe("command-name provider", () => {
   });
 });
 
+describe("skill command tagging", () => {
+  function withSkill(): CompletionContext {
+    const registry = buildRegistry();
+    registry.set("brainstorming", {
+      name: "brainstorming",
+      description: "Explore ideas into designs",
+      source: "user",
+      async run() {}
+    });
+    return ctx({ registry });
+  }
+
+  it("appends a (skill) tag to a skill-backed suggestion", () => {
+    const s = getSuggestions("/brainst", 8, withSkill());
+    expect(s.map(x => x.label)).toEqual(["/brainstorming"]);
+    expect(s[0].description).toBe("Explore ideas into designs (skill)");
+  });
+
+  it("does not tag builtin commands", () => {
+    const s = getSuggestions("/help", 5, withSkill());
+    expect(s[0].description).not.toContain("(skill)");
+  });
+});
+
 describe("applySuggestion", () => {
   it("replaces the range and positions the cursor after the value", () => {
     const r = applySuggestion("/pe", { value: "/permissions ", label: "/permissions", replaceStart: 0, replaceEnd: 3 });

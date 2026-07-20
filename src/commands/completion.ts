@@ -26,7 +26,7 @@ function commandNameSuggestions(text: string, cursor: number, ctx: CompletionCon
     .map(c => ({
       value: `/${c.name} `,
       label: `/${c.name}`,
-      description: c.description,
+      description: c.source ? `${c.description} (skill)` : c.description,
       replaceStart: 0,
       replaceEnd: text.length
     }));
