@@ -191,7 +191,7 @@ export const diagnosticsTool: ToolDef = {
       try {
         await ensureOpened(h as any);
         const diags = await ctx.lsp.waitForDiagnostics(h.uri, 1500);
-        const block = formatDiagnosticsBlock(file, diags, 20);
+        const block = formatDiagnosticsBlock(file, diags, 20, "--- diagnostics ---");
         return { content: block || `No diagnostics for ${file}.` };
       } catch (err) {
         return { content: `LSP request failed: ${err instanceof Error ? err.message : String(err)}` };
@@ -200,7 +200,7 @@ export const diagnosticsTool: ToolDef = {
     try {
       const parts: string[] = [];
       for (const uri of ctx.lsp.openFiles()) {
-        const block = formatDiagnosticsBlock(uri, ctx.lsp.diagnosticsFor(uri), 20);
+        const block = formatDiagnosticsBlock(uri, ctx.lsp.diagnosticsFor(uri), 20, "--- diagnostics ---");
         if (block) parts.push(block);
       }
       return { content: parts.length ? parts.join("\n\n") : "No diagnostics." };

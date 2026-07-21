@@ -1,6 +1,6 @@
 import { loadRegistry, type ServerConfig } from "./config.js";
 import { detectLanguage, findRoot, commandExists as realCommandExists } from "./detect.js";
-import { LspServer, fileUri, type Diagnostic } from "./server.js";
+import { LspServer, fileUri, normalizeUri, type Diagnostic } from "./server.js";
 
 export { fileUri };
 export type { Diagnostic };
@@ -52,16 +52,17 @@ export class LspManager {
   }
 
   private onDiagnostics(uri: string, diags: Diagnostic[]): void {
-    this.diagnostics.set(uri, diags);
-    const set = this.waiters.get(uri);
+    const key = normalizeUri(uri);
+    this.diagnostics.set(key, diags);
+    const set = this.waiters.get(key);
     if (set) {
       for (const w of set) w(diags);
-      this.waiters.delete(uri);
+      this.waiters.delete(key);
     }
   }
 
   diagnosticsFor(uri: string): Diagnostic[] {
-    return this.diagnostics.get(uri) ?? [];
+    return this.diagnostics.get(normalizeUri(uri)) ?? [];
   }
 
   openFiles(): string[] {
@@ -69,6 +70,7 @@ export class LspManager {
   }
 
   waitForDiagnostics(uri: string, timeoutMs: number): Promise<Diagnostic[]> {
+    const key = normalizeUri(uri);
     return new Promise(resolve => {
       let done = false;
       let timer: ReturnType<typeof setTimeout>;
@@ -79,13 +81,13 @@ export class LspManager {
         resolve(diags);
       };
       const waiter: Waiter = diags => finish(diags);
-      let set = this.waiters.get(uri);
-      if (!set) { set = new Set(); this.waiters.set(uri, set); }
+      let set = this.waiters.get(key);
+      if (!set) { set = new Set(); this.waiters.set(key, set); }
       set.add(waiter);
       timer = setTimeout(() => {
         set?.delete(waiter);
-        if (set && set.size === 0) this.waiters.delete(uri);
-        finish(this.diagnosticsFor(uri));
+        if (set && set.size === 0) this.waiters.delete(key);
+        finish(this.diagnosticsFor(key));
       }, timeoutMs);
     });
   }

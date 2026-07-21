@@ -25,8 +25,27 @@ interface Pending {
   signal?: AbortSignal;
 }
 
+const LANGUAGE_IDS: Record<string, string> = {
+  ".ts": "typescript", ".tsx": "typescriptreact",
+  ".js": "javascript", ".jsx": "javascriptreact",
+  ".mjs": "javascript", ".cjs": "javascript",
+  ".py": "python", ".pyi": "python",
+  ".rs": "rust", ".go": "go"
+};
+
+export function languageIdForUri(uri: string): string {
+  const m = /\.[^./\\]+$/.exec(uri);
+  return (m && LANGUAGE_IDS[m[0].toLowerCase()]) || "plaintext";
+}
+
+export function normalizeUri(uri: string): string {
+  // Lowercase a Windows drive letter so our generated URIs match the
+  // lowercased form language servers publish.
+  return uri.replace(/^(file:\/\/\/)([A-Za-z])(:)/, (_m, p, d: string, c) => p + d.toLowerCase() + c);
+}
+
 export function fileUri(path: string): string {
-  return pathToFileURL(path).toString();
+  return normalizeUri(pathToFileURL(path).toString());
 }
 
 export class LspServer {
@@ -44,7 +63,7 @@ export class LspServer {
     private args: string[],
     private rootPath: string,
     private onDiagnostics: (uri: string, diags: Diagnostic[]) => void,
-    private deps: { spawnFn?: SpawnFn } = {}
+    private deps: { spawnFn?: SpawnFn; startTimeoutMs?: number } = {}
   ) {}
 
   get alive(): boolean {
@@ -59,19 +78,26 @@ export class LspServer {
 
   private doStart(): Promise<void> {
     const spawnFn = this.deps.spawnFn ?? spawn;
-    const proc = spawnFn(this.command, this.args, { stdio: ["pipe", "pipe", "pipe"] });
+    const proc = spawnFn(this.command, this.args, { stdio: ["pipe", "pipe", "pipe"], shell: process.platform === "win32" });
     this.proc = proc;
     proc.stdout?.on("data", (chunk: Buffer) => this.onData(chunk));
     proc.on("exit", () => this.markDead(new Error("language server exited")));
     proc.on("error", (err: Error) => this.markDead(err));
 
-    return this.request("initialize", {
+    const timeoutMs = this.deps.startTimeoutMs ?? 10000;
+    let timer: ReturnType<typeof setTimeout>;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("language server initialize timed out")), timeoutMs);
+    });
+    const init = this.request("initialize", {
       processId: process.pid,
       rootUri: fileUri(this.rootPath),
       capabilities: { textDocument: { publishDiagnostics: {} } }
-    }).then(() => {
-      this.notify("initialized", {});
-    });
+    }).then(() => { this.notify("initialized", {}); });
+
+    return Promise.race([init, timeout])
+      .finally(() => clearTimeout(timer))
+      .catch((err: Error) => { this.markDead(err); throw err; });
   }
 
   private onData(chunk: Buffer): void {
@@ -126,7 +152,7 @@ export class LspServer {
     this.opened.add(uri);
     this.versions.set(uri, 1);
     this.notify("textDocument/didOpen", {
-      textDocument: { uri, languageId: "plaintext", version: 1, text }
+      textDocument: { uri, languageId: languageIdForUri(uri), version: 1, text }
     });
   }
 

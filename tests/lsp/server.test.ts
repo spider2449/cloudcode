@@ -1,6 +1,7 @@
 // tests/lsp/server.test.ts
 import { describe, it, expect } from "vitest";
-import { LspServer } from "../../src/engine/lsp/server.js";
+import { EventEmitter } from "node:events";
+import { LspServer, languageIdForUri, normalizeUri } from "../../src/engine/lsp/server.js";
 import { makeFakeServer } from "./fakeServer.js";
 
 function newServer(onDiag = (_u: string, _d: unknown[]) => {}) {
@@ -47,5 +48,40 @@ describe("LspServer", () => {
     const p = server.request("textDocument/references", {}, ctrl.signal);
     ctrl.abort();
     await expect(p).rejects.toThrow();
+  });
+
+  it("times out if initialize never responds", async () => {
+    const fakeProc = {
+      stdout: new EventEmitter(),
+      stderr: new EventEmitter(),
+      stdin: { write() { return true; } },
+      on() {},
+      kill() {}
+    };
+    const server = new LspServer("fake", [], "/root", () => {}, {
+      spawnFn: () => fakeProc as any,
+      startTimeoutMs: 20
+    });
+    await expect(server.start()).rejects.toThrow(/timed out/);
+  });
+});
+
+describe("languageIdForUri", () => {
+  it("maps known extensions", () => {
+    expect(languageIdForUri("file:///a/b.ts")).toBe("typescript");
+    expect(languageIdForUri("file:///a/b.tsx")).toBe("typescriptreact");
+    expect(languageIdForUri("file:///a/b.py")).toBe("python");
+  });
+  it("falls back to plaintext for unknown extensions", () => {
+    expect(languageIdForUri("file:///a/b.unknownext")).toBe("plaintext");
+  });
+});
+
+describe("normalizeUri", () => {
+  it("lowercases a Windows drive letter", () => {
+    expect(normalizeUri("file:///F:/a/b.ts")).toBe("file:///f:/a/b.ts");
+  });
+  it("leaves a POSIX path unchanged", () => {
+    expect(normalizeUri("file:///home/x.ts")).toBe("file:///home/x.ts");
   });
 });

@@ -38,4 +38,10 @@ describe("formatDiagnosticsBlock", () => {
     expect(lines[1]).toBe("a.ts:12:5 error E1: boom");
     expect(out).toContain("(2 issues)");
   });
+  it("uses a custom header when provided", () => {
+    const out = formatDiagnosticsBlock("a.ts", [
+      { line: 0, column: 0, severity: 1, message: "boom" }
+    ], 10, "--- diagnostics ---");
+    expect(out.split("\n")[0]).toBe("--- diagnostics ---");
+  });
 });

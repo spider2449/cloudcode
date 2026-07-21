@@ -34,7 +34,12 @@ function severityLabel(severity: number): string {
   return severity === 1 ? "error" : severity === 2 ? "warning" : severity === 3 ? "info" : "hint";
 }
 
-export function formatDiagnosticsBlock(fileLabel: string, diags: Diagnostic[], cap: number): string {
+export function formatDiagnosticsBlock(
+  fileLabel: string,
+  diags: Diagnostic[],
+  cap: number,
+  header = "--- diagnostics (edited file) ---"
+): string {
   if (diags.length === 0) return "";
   const sorted = [...diags].sort((a, b) => a.severity - b.severity || a.line - b.line);
   const lines = sorted.slice(0, cap).map(d => {
@@ -42,7 +47,7 @@ export function formatDiagnosticsBlock(fileLabel: string, diags: Diagnostic[], c
     return `${fileLabel}:${d.line + 1}:${d.column + 1} ${severityLabel(d.severity)} ${code}${d.message}`;
   });
   return [
-    "--- diagnostics (edited file) ---",
+    header,
     ...lines,
     `(${diags.length} issue${diags.length === 1 ? "" : "s"})`
   ].join("\n");
