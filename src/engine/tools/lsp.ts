@@ -63,12 +63,16 @@ export const definitionTool: ToolDef = {
   async execute(input, ctx) {
     const h = await withServer(String(input.file ?? ""), ctx);
     if ("message" in h) return { content: h.message };
-    await ensureOpened(h as any);
-    const result = await h.server!.request("textDocument/definition", {
-      textDocument: { uri: h.uri },
-      position: { line: Number(input.line) - 1, character: Number(input.column) - 1 }
-    }, ctx.signal);
-    return { content: formatLocations(toLocations(result), NAV_CAP) };
+    try {
+      await ensureOpened(h as any);
+      const result = await h.server!.request("textDocument/definition", {
+        textDocument: { uri: h.uri },
+        position: { line: Number(input.line) - 1, character: Number(input.column) - 1 }
+      }, ctx.signal);
+      return { content: formatLocations(toLocations(result), NAV_CAP) };
+    } catch (err) {
+      return { content: `LSP request failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
   }
 };
 
@@ -83,13 +87,17 @@ export const referencesTool: ToolDef = {
   async execute(input, ctx) {
     const h = await withServer(String(input.file ?? ""), ctx);
     if ("message" in h) return { content: h.message };
-    await ensureOpened(h as any);
-    const result = await h.server!.request("textDocument/references", {
-      textDocument: { uri: h.uri },
-      position: { line: Number(input.line) - 1, character: Number(input.column) - 1 },
-      context: { includeDeclaration: input.includeDeclaration !== false }
-    }, ctx.signal);
-    return { content: formatLocations(toLocations(result), NAV_CAP) };
+    try {
+      await ensureOpened(h as any);
+      const result = await h.server!.request("textDocument/references", {
+        textDocument: { uri: h.uri },
+        position: { line: Number(input.line) - 1, character: Number(input.column) - 1 },
+        context: { includeDeclaration: input.includeDeclaration !== false }
+      }, ctx.signal);
+      return { content: formatLocations(toLocations(result), NAV_CAP) };
+    } catch (err) {
+      return { content: `LSP request failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
   }
 };
 
@@ -100,12 +108,16 @@ export const hoverTool: ToolDef = {
   async execute(input, ctx) {
     const h = await withServer(String(input.file ?? ""), ctx);
     if ("message" in h) return { content: h.message };
-    await ensureOpened(h as any);
-    const result = await h.server!.request("textDocument/hover", {
-      textDocument: { uri: h.uri },
-      position: { line: Number(input.line) - 1, character: Number(input.column) - 1 }
-    }, ctx.signal);
-    return { content: formatHover(result) };
+    try {
+      await ensureOpened(h as any);
+      const result = await h.server!.request("textDocument/hover", {
+        textDocument: { uri: h.uri },
+        position: { line: Number(input.line) - 1, character: Number(input.column) - 1 }
+      }, ctx.signal);
+      return { content: formatHover(result) };
+    } catch (err) {
+      return { content: `LSP request failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
   }
 };
 
@@ -127,24 +139,39 @@ export const symbolsTool: ToolDef = {
       const probe = file || "x.ts";
       const h = await withServer(probe, ctx);
       if ("message" in h) return { content: h.message };
-      const result = await h.server!.request("workspace/symbol", { query }, ctx.signal);
-      const locs = (Array.isArray(result) ? result : []).map((s: any) => ({
-        uri: s.location.uri, line: s.location.range.start.line, column: s.location.range.start.character
-      }));
-      return { content: formatLocations(locs, NAV_CAP) };
+      try {
+        const result = await h.server!.request("workspace/symbol", { query }, ctx.signal);
+        const locs = (Array.isArray(result) ? result : [])
+          .map((s: any) => {
+            const loc = s.location;
+            if (!loc || !loc.uri || !loc.range) return undefined;
+            return { uri: loc.uri, line: loc.range.start.line, column: loc.range.start.character } as Location;
+          })
+          .filter((l): l is Location => l !== undefined);
+        return { content: formatLocations(locs, NAV_CAP) };
+      } catch (err) {
+        return { content: `LSP request failed: ${err instanceof Error ? err.message : String(err)}` };
+      }
     }
     const h = await withServer(file, ctx);
     if ("message" in h) return { content: h.message };
-    await ensureOpened(h as any);
-    const result = await h.server!.request("textDocument/documentSymbol", {
-      textDocument: { uri: h.uri }
-    }, ctx.signal);
-    const locs = (Array.isArray(result) ? result : []).map((s: any) => {
-      const range = s.range ?? s.location?.range;
-      const uri = s.location?.uri ?? h.uri;
-      return { uri, line: range.start.line, column: range.start.character };
-    });
-    return { content: formatLocations(locs, NAV_CAP) };
+    try {
+      await ensureOpened(h as any);
+      const result = await h.server!.request("textDocument/documentSymbol", {
+        textDocument: { uri: h.uri }
+      }, ctx.signal);
+      const locs = (Array.isArray(result) ? result : [])
+        .map((s: any) => {
+          const range = s.range ?? s.location?.range;
+          const uri = s.location?.uri ?? h.uri;
+          if (!range || !uri) return undefined;
+          return { uri, line: range.start.line, column: range.start.character } as Location;
+        })
+        .filter((l): l is Location => l !== undefined);
+      return { content: formatLocations(locs, NAV_CAP) };
+    } catch (err) {
+      return { content: `LSP request failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
   }
 };
 
@@ -161,16 +188,24 @@ export const diagnosticsTool: ToolDef = {
     if (file) {
       const h = await withServer(file, ctx);
       if ("message" in h) return { content: h.message };
-      await ensureOpened(h as any);
-      const diags = await ctx.lsp.waitForDiagnostics(h.uri, 1500);
-      const block = formatDiagnosticsBlock(file, diags, 20);
-      return { content: block || `No diagnostics for ${file}.` };
+      try {
+        await ensureOpened(h as any);
+        const diags = await ctx.lsp.waitForDiagnostics(h.uri, 1500);
+        const block = formatDiagnosticsBlock(file, diags, 20);
+        return { content: block || `No diagnostics for ${file}.` };
+      } catch (err) {
+        return { content: `LSP request failed: ${err instanceof Error ? err.message : String(err)}` };
+      }
     }
-    const parts: string[] = [];
-    for (const uri of ctx.lsp.openFiles()) {
-      const block = formatDiagnosticsBlock(uri, ctx.lsp.diagnosticsFor(uri), 20);
-      if (block) parts.push(block);
+    try {
+      const parts: string[] = [];
+      for (const uri of ctx.lsp.openFiles()) {
+        const block = formatDiagnosticsBlock(uri, ctx.lsp.diagnosticsFor(uri), 20);
+        if (block) parts.push(block);
+      }
+      return { content: parts.length ? parts.join("\n\n") : "No diagnostics." };
+    } catch (err) {
+      return { content: `LSP request failed: ${err instanceof Error ? err.message : String(err)}` };
     }
-    return { content: parts.length ? parts.join("\n\n") : "No diagnostics." };
   }
 };

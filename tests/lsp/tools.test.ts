@@ -33,6 +33,22 @@ describe("Definition tool", () => {
     const out = await definitionTool.execute({ file: "a.txt", line: 1, column: 1 }, { cwd: "/x", lsp: mgr() });
     expect(out.content).toMatch(/no LSP/i);
   });
+
+  it("returns graceful content when the server request rejects", async () => {
+    const m = new LspManager(DEFAULT_SERVERS, {
+      commandExists: () => true,
+      makeServer: () => ({
+        start: () => Promise.resolve(),
+        alive: true,
+        isOpen: () => true,
+        didOpen: () => {},
+        request: () => Promise.reject(new Error("language server is not running"))
+      } as any)
+    });
+    const out = await definitionTool.execute({ file: "a.ts", line: 1, column: 1 }, { cwd: "/x", lsp: m });
+    expect(out.isError).toBeFalsy();
+    expect(out.content).toMatch(/LSP request failed/);
+  });
 });
 
 describe("Hover tool", () => {
