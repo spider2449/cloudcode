@@ -82,6 +82,29 @@ where `chat_template.jinja` is a tool-capable template matching your model famil
 Verify the setup by POSTing a tool-forcing request to `/v1/messages`: the response
 must contain a `tool_use` content block and `stop_reason: "tool_use"`.
 
+## LSP support
+
+cloudcode can use language servers for semantic navigation and diagnostics. It
+ships known configs for TypeScript/JavaScript (`typescript-language-server`),
+Python (`pyright-langserver`), Rust (`rust-analyzer`), and Go (`gopls`), and
+auto-detects which apply from the files you edit. A server is only used if its
+command is on your `PATH` — otherwise LSP features quietly no-op.
+
+The agent gains `Definition`, `References`, `Hover`, `Symbols`, and
+`Diagnostics` tools, and diagnostics for a file are appended automatically after
+it edits that file.
+
+Override or add servers in `~/.cloudcode/lsp.json` (or project-local
+`.cloudcode/lsp.json`):
+
+    {
+      "typescript": { "command": "typescript-language-server", "args": ["--stdio"] },
+      "elixir": { "extensions": [".ex", ".exs"], "command": "elixir-ls", "rootMarkers": ["mix.exs"] }
+    }
+
+Disable a built-in with `{ "go": { "enabled": false } }`. Run `cloudcode doctor`
+to see which servers were found.
+
 ## OpenAI-compatible providers (NVIDIA NIM, etc.)
 
 Providers that speak OpenAI's Chat Completions API (`/chat/completions`) instead

@@ -69,11 +69,11 @@ export function checkLspServers(
   exists: (command: string) => boolean = realCommandExists
 ): DoctorCheck[] {
   return Object.entries(registry).map(([lang, cfg]) => {
-    const ok = exists(cfg.command);
+    const found = exists(cfg.command);
     return {
       name: `lsp:${lang}`,
-      ok,
-      detail: ok ? `${cfg.command} found` : `${cfg.command} not found on PATH`
+      ok: true,
+      detail: found ? `${cfg.command} found` : `${cfg.command} not installed (optional)`
     };
   });
 }
