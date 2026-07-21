@@ -52,4 +52,21 @@ describe("LspManager", () => {
     const diags = await mgr.waitForDiagnostics(fileUri("/x/clean.ts"), 30);
     expect(diags).toEqual([]);
   });
+
+  it("stops and unpools a server whose start() fails", async () => {
+    let stopped = 0;
+    let starts = 0;
+    const mgr = new LspManager(DEFAULT_SERVERS, {
+      commandExists: () => true,
+      makeServer: () => {
+        starts++;
+        return { start: () => Promise.reject(new Error("init failed")), stop: () => { stopped++; }, alive: false } as any;
+      }
+    });
+    expect(await mgr.serverFor("/x/a.ts", "/x")).toBeUndefined();
+    expect(stopped).toBe(1);
+    // not pooled: a second call re-attempts (starts increments again)
+    expect(await mgr.serverFor("/x/a.ts", "/x")).toBeUndefined();
+    expect(starts).toBe(2);
+  });
 });

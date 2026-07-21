@@ -44,6 +44,7 @@ export class LspManager {
     try {
       await server.start();
     } catch {
+      server.stop();
       this.pool.delete(key);
       return undefined;
     }
@@ -70,6 +71,7 @@ export class LspManager {
   waitForDiagnostics(uri: string, timeoutMs: number): Promise<Diagnostic[]> {
     return new Promise(resolve => {
       let done = false;
+      let timer: ReturnType<typeof setTimeout>;
       const finish = (diags: Diagnostic[]) => {
         if (done) return;
         done = true;
@@ -80,8 +82,9 @@ export class LspManager {
       let set = this.waiters.get(uri);
       if (!set) { set = new Set(); this.waiters.set(uri, set); }
       set.add(waiter);
-      const timer = setTimeout(() => {
+      timer = setTimeout(() => {
         set?.delete(waiter);
+        if (set && set.size === 0) this.waiters.delete(uri);
         finish(this.diagnosticsFor(uri));
       }, timeoutMs);
     });
