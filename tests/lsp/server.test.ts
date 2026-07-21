@@ -12,8 +12,10 @@ function newServer(onDiag = (_u: string, _d: unknown[]) => {}) {
 describe("LspServer", () => {
   it("initializes and resolves start() once", async () => {
     const { server } = newServer();
-    await server.start();
-    await server.start(); // idempotent
+    const first = server.start();
+    const second = server.start();
+    expect(first).toBe(second); // same memoized promise, no second initialize
+    await first;
     expect(server.alive).toBe(true);
   });
 

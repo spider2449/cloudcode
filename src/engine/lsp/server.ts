@@ -96,7 +96,7 @@ export class LspServer {
   }
 
   request(method: string, params: unknown, signal?: AbortSignal): Promise<unknown> {
-    if (this.dead) return Promise.reject(new Error("language server is not running"));
+    if (this.dead || !this.proc) return Promise.reject(new Error("language server is not running"));
     const id = this.nextId++;
     return new Promise<unknown>((resolve, reject) => {
       const pending: Pending = { resolve, reject, signal };
@@ -122,6 +122,7 @@ export class LspServer {
   }
 
   didOpen(uri: string, text: string): void {
+    if (this.opened.has(uri)) return;
     this.opened.add(uri);
     this.versions.set(uri, 1);
     this.notify("textDocument/didOpen", {
@@ -151,14 +152,17 @@ export class LspServer {
     } catch {
       // best-effort
     }
-    this.proc?.kill();
     this.markDead(new Error("stopped"));
+    this.proc?.kill();
   }
 
   private markDead(err: Error): void {
     if (this.dead) return;
     this.dead = true;
-    for (const [, p] of this.pending) p.reject(err);
+    for (const [, p] of this.pending) {
+      if (p.onAbort && p.signal) p.signal.removeEventListener("abort", p.onAbort);
+      p.reject(err);
+    }
     this.pending.clear();
   }
 }
