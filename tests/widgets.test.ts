@@ -47,6 +47,28 @@ describe("renderStatusBar", () => {
     expect(text).toContain("sonnet→sonnet-5");
   });
 
+  it("always shows the effort segment, including when off", () => {
+    const off = renderStatusBar(
+      { provider: "anthropic", model: "sonnet", mode: "default", cwd: "/repo", effort: "off" },
+      theme, 80
+    ).join("\n");
+    expect(off).toContain("effort: off");
+    const high = renderStatusBar(
+      { provider: "anthropic", model: "sonnet", mode: "default", cwd: "/repo", effort: "high" },
+      theme, 80
+    ).join("\n");
+    expect(high).toContain("effort: high");
+  });
+
+  it("places the effort segment immediately after provider/model", () => {
+    const text = stripAnsi(renderStatusBar(
+      { provider: "anthropic", model: "sonnet", mode: "default", cwd: "/repo", effort: "medium" },
+      theme, 80
+    ).join(" "));
+    expect(text.indexOf("anthropic/sonnet")).toBeLessThan(text.indexOf("effort: medium"));
+    expect(text.indexOf("effort: medium")).toBeLessThan(text.indexOf("default"));
+  });
+
   it("includes git branch with a dirty marker when dirty", () => {
     const text = renderStatusBar(
       { provider: "a", mode: "default", cwd: "/r", gitBranch: "main", gitDirty: true },

@@ -37,7 +37,6 @@ export interface AppProps {
   cwd: string;
   providers: Record<string, ProviderConfig>;
   initialProvider: string;
-  initialModel?: string;
   initialMode?: PermissionMode;
   resume?: string;
   sessionIndex: SessionIndex;
@@ -140,7 +139,8 @@ export class App {
   }
 
   private modelFor(name: string): string | undefined {
-    return (name === this.props.initialProvider ? this.props.initialModel : undefined) ?? this.props.providers[name]?.model;
+    // providers.json is the source of truth for the interactive TUI model.
+    return this.props.providers[name]?.model;
   }
 
   private contextWindowFor(name: string): number {
@@ -631,6 +631,7 @@ export class App {
         provider: this.providerName,
         model: this.model,
         servedModel: this.servedModel,
+        effort: this.effort,
         mode: this.mode,
         cwd: this.props.cwd,
         costUsd: this.cost,

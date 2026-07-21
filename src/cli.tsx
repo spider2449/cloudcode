@@ -128,7 +128,6 @@ if (parsed.kind === "print") {
         cwd,
         providers,
         initialProvider: providerName,
-        initialModel: settings.model,
         initialMode: settings.permissionMode,
         resume: pendingResume,
         sessionIndex,

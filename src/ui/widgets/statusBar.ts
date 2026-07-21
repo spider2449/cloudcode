@@ -6,6 +6,7 @@ export interface StatusBarProps {
   provider: string;
   model?: string;
   servedModel?: string;
+  effort?: string;
   mode: string;
   cwd: string;
   costUsd?: number;
@@ -35,6 +36,7 @@ export function renderStatusBar(p: StatusBarProps, theme: Theme, width: number):
   const modelLabel =
     p.servedModel && p.model && p.servedModel !== p.model ? `${p.model}→${p.servedModel}` : p.servedModel ?? p.model;
   segments.push(p.provider + (modelLabel ? `/${modelLabel}` : ""));
+  if (p.effort != null) segments.push(`effort: ${p.effort}`);
   segments.push(p.mode);
   if (p.gitBranch) segments.push(`⎇ ${p.gitBranch}${p.gitDirty ? "*" : ""}`);
   if (p.tokens != null && p.tokens > 0) {
