@@ -1,0 +1,95 @@
+import { loadRegistry, type ServerConfig } from "./config.js";
+import { detectLanguage, findRoot, commandExists as realCommandExists } from "./detect.js";
+import { LspServer, fileUri, type Diagnostic } from "./server.js";
+
+export { fileUri };
+export type { Diagnostic };
+
+interface Deps {
+  commandExists?: (command: string) => boolean;
+  makeServer?: (cfg: ServerConfig, root: string, onDiag: (uri: string, d: Diagnostic[]) => void) => LspServer;
+}
+
+type Waiter = (diags: Diagnostic[]) => void;
+
+export class LspManager {
+  private pool = new Map<string, LspServer>();
+  private diagnostics = new Map<string, Diagnostic[]>();
+  private waiters = new Map<string, Set<Waiter>>();
+  private commandExists: (command: string) => boolean;
+  private makeServer: NonNullable<Deps["makeServer"]>;
+
+  constructor(
+    private registry: Record<string, ServerConfig> = loadRegistry(),
+    deps: Deps = {}
+  ) {
+    this.commandExists = deps.commandExists ?? realCommandExists;
+    this.makeServer = deps.makeServer ?? ((cfg, root, onDiag) =>
+      new LspServer(cfg.command, cfg.args, root, onDiag));
+  }
+
+  async serverFor(filePath: string, cwd: string): Promise<LspServer | undefined> {
+    const lang = detectLanguage(filePath, this.registry);
+    if (!lang) return undefined;
+    const cfg = this.registry[lang];
+    if (!this.commandExists(cfg.command)) return undefined;
+
+    const root = findRoot(filePath, cfg.rootMarkers, cwd);
+    const key = `${lang}\0${root}`;
+    let server = this.pool.get(key);
+    if (server && server.alive) return server;
+
+    server = this.makeServer(cfg, root, (uri, diags) => this.onDiagnostics(uri, diags));
+    this.pool.set(key, server);
+    try {
+      await server.start();
+    } catch {
+      this.pool.delete(key);
+      return undefined;
+    }
+    return server;
+  }
+
+  private onDiagnostics(uri: string, diags: Diagnostic[]): void {
+    this.diagnostics.set(uri, diags);
+    const set = this.waiters.get(uri);
+    if (set) {
+      for (const w of set) w(diags);
+      this.waiters.delete(uri);
+    }
+  }
+
+  diagnosticsFor(uri: string): Diagnostic[] {
+    return this.diagnostics.get(uri) ?? [];
+  }
+
+  openFiles(): string[] {
+    return [...this.diagnostics.keys()];
+  }
+
+  waitForDiagnostics(uri: string, timeoutMs: number): Promise<Diagnostic[]> {
+    return new Promise(resolve => {
+      let done = false;
+      const finish = (diags: Diagnostic[]) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve(diags);
+      };
+      const waiter: Waiter = diags => finish(diags);
+      let set = this.waiters.get(uri);
+      if (!set) { set = new Set(); this.waiters.set(uri, set); }
+      set.add(waiter);
+      const timer = setTimeout(() => {
+        set?.delete(waiter);
+        finish(this.diagnosticsFor(uri));
+      }, timeoutMs);
+    });
+  }
+
+  shutdown(): void {
+    for (const server of this.pool.values()) server.stop();
+    this.pool.clear();
+    this.waiters.clear();
+  }
+}
