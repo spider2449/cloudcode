@@ -39,7 +39,14 @@ export function commandPrefix(command: string): string {
 // two commands. Any of these operators means the "first token" is no longer
 // a trustworthy proxy for "what this command does", so callers must treat
 // the command as ineligible for the allow-prefix fast path.
-const COMPOUND_COMMAND_PATTERN = /;|&&|\|\||\||`|\$\(|>/;
+//
+// The character class covers `;`, `&` (both `&&` and a bare background/chain
+// `&`), `|` (both `||` and a pipe), a backtick, and `<`/`>` redirections; the
+// `\n`/`\r` catch a newline-injected second line ("git status\nrm -rf ~"),
+// which both sh and PowerShell execute as a separate statement even though its
+// commandPrefix is still "git"; the `\$\(` catches command substitution. A tab
+// is deliberately excluded — it is argument whitespace, not a separator.
+const COMPOUND_COMMAND_PATTERN = /[;&|`\n\r<>]|\$\(/;
 
 export function isCompoundCommand(command: string): boolean {
   return COMPOUND_COMMAND_PATTERN.test(command);

@@ -27,10 +27,18 @@ export function decidePermission(
   // write outside cwd always needs an explicit human "ask" (or a remembered
   // store rule, checked below), since those modes otherwise remove the only
   // barrier between model output and the rest of the filesystem.
-  const outsideCwdEdit =
-    EDIT_TOOLS.has(toolName) && typeof input.file_path === "string" && !isInsideCwd(input.file_path, cwd);
+  const outsideCwdFile =
+    typeof input.file_path === "string" && !isInsideCwd(input.file_path, cwd);
+  const outsideCwdEdit = EDIT_TOOLS.has(toolName) && outsideCwdFile;
+  // Reads are otherwise unconditionally allowed (see READ_ONLY below), but a
+  // read resolving outside cwd is the primary data-exfiltration path for a
+  // coding agent (e.g. ~/.ssh/id_rsa, ~/.aws/credentials) and so needs the
+  // same cwd confinement as edits. Glob/Grep take a `pattern`/`path` rather
+  // than a `file_path` and are not confined here — targeted secret-file reads
+  // are the concrete vector this closes.
+  const outsideCwdRead = toolName === "Read" && outsideCwdFile;
 
-  if (mode === "bypassPermissions" && !outsideCwdEdit) return "allow";
+  if (mode === "bypassPermissions" && !outsideCwdEdit && !outsideCwdRead) return "allow";
   // Per-directory rules (deny beats allow) apply to file tools.
   if (FILE_TOOLS.has(toolName) && typeof input.file_path === "string") {
     const ruling = store.check(toolName, input.file_path);
@@ -51,7 +59,7 @@ export function decidePermission(
     // to approve "git status; rm -rf ~" — that's the whole bug this guards.
     if (ruling === "allow" && !compound) return "allow";
   }
-  if (READ_ONLY.has(toolName)) return "allow";
+  if (READ_ONLY.has(toolName)) return outsideCwdRead ? "ask" : "allow";
   if (mode === "acceptEdits" && EDIT_TOOLS.has(toolName)) return outsideCwdEdit ? "ask" : "allow";
   return "ask";
 }

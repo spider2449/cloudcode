@@ -99,6 +99,22 @@ describe("command prefix rules", () => {
     expect(isCompoundCommand("")).toBe(false);
   });
 
+  it("treats a newline as a command separator (sh/PowerShell run each line)", () => {
+    expect(isCompoundCommand("git status\nrm -rf ~")).toBe(true);
+    expect(isCompoundCommand("git status\r\nrm -rf ~")).toBe(true);
+  });
+
+  it("treats a bare & (background/chain) and redirections as compound", () => {
+    expect(isCompoundCommand("git status & sleep 1")).toBe(true);
+    expect(isCompoundCommand("cat < secret")).toBe(true);
+  });
+
+  it("does not treat a plain tab-separated argument list as compound", () => {
+    // A tab is argument whitespace in sh, not a statement separator, so
+    // "git status\tclear" is still a single `git` invocation.
+    expect(isCompoundCommand("git\tstatus")).toBe(false);
+  });
+
   it("rememberCommand + checkCommand allow a matching prefix", () => {
     const store = new PermissionStore(tempCwd());
     store.rememberCommand("git", "allow");

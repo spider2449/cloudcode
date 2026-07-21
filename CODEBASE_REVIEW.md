@@ -1,6 +1,11 @@
 # cloudcode Codebase Review
 
-Date: 2026-07-19 · Branch: `master` @ `a5e0cf5` · Reviewer: Claude Code
+Date: 2026-07-21 · Branch: `master` @ `c038a21` (+ working-tree security fixes) ·
+Reviewer: Claude Code
+
+> Supersedes the 2026-07-19 review at `a5e0cf5`. That review's recommendations
+> have since been closed (see §2); this pass adds two code-level security
+> findings and their fixes.
 
 ## 1. Overview
 
@@ -10,192 +15,158 @@ vendor CLI) talking directly to the Anthropic Messages API, plus an
 OpenAI-compatible path for local/alternate providers (llama.cpp, NVIDIA NIM).
 It is a single TypeScript package, not a monorepo:
 
-- **`src/engine/`** (~1.5k LoC) — the agent loop, tool implementations (bash,
+- **`src/engine/`** — the agent loop (`loop.ts`), tool implementations (bash,
   read/write/edit, glob/grep), compaction, permissions, pricing, system
   prompt, and both the Anthropic and OpenAI-compatible API clients.
-- **`src/agent/`** (~0.85k LoC) — session/session-index persistence, provider
-  config, MCP client wiring, skills, permission store, settings.
-- **`src/commands/`** (~0.85k LoC) — slash-command registry/builtins and the
-  `cli`, `config`, `doctor`, `mcp`, `update` subcommands.
-- **`src/ui/`** (~3k LoC excluding themes, ~5.6k with them) — a **hand-rolled**
-  alt-screen terminal UI: own ANSI/render/terminal layer, input box, overlay,
-  status bar, markdown rendering, 12 built-in color themes — no ratatui/ink/blessed.
-- **`tests/`** — 73 test files, ~6.8k LoC, run via Vitest.
-- **`scripts/` / `installer/`** — PowerShell/bash packaging scripts and an
-  Inno Setup (`.iss`) installer definition for a compiled binary distribution.
+- **`src/agent/`** — session/session-index persistence, provider config, MCP
+  client wiring, skills, permission store, settings.
+- **`src/commands/`** — slash-command registry/builtins and the `cli`,
+  `config`, `doctor`, `mcp`, `update` subcommands.
+- **`src/ui/`** — a **hand-rolled** alt-screen terminal UI: own ANSI/render/
+  terminal layer, input box, overlay, status bar, markdown rendering, 12
+  built-in color themes — no ratatui/ink/blessed.
+- **`tests/`** — 71 test files, run via Vitest.
+- **`scripts/` / `installer/`** — PowerShell/bash packaging scripts and an Inno
+  Setup (`.iss`) installer definition for a compiled binary distribution.
 
-Single build system (`tsc`), single test runner (`vitest`), no Bazel-equivalent,
-no workspace/crate splitting — the entire project is one `tsconfig.json` and
-one `package.json`. Total source: ~15.6k LoC across 76 files; test code is
-~44% the size of source, a healthy ratio.
+Single build system (`tsc`), single test runner (`vitest`), one
+`tsconfig.json` and one `package.json`. Total source: ~8.6k LoC across 84
+files. The project is very young and moving fast: **329 commits since
+2026-07-10** (11 days).
 
-The project is very young and moving fast: **314 commits since 2026-07-10**
-(9 days), i.e. this whole codebase was built in about a week and a half.
+### Verification run for this review (at `c038a21` + fixes)
 
-## 2. Architecture assessment
+| Check | Command | Result |
+|---|---|---|
+| Build / type-check | `npx tsc -p tsconfig.json` | ✅ clean, exit 0 |
+| Tests | `npx vitest run` | ✅ **648 passed** / 71 files (~4.4s) |
+| Lint | `npx oxlint src tests` | ⚠️ 1 pre-existing warning (`nativeApp.ts:151`, `no-this-alias`) |
 
-### Strengths
+## 2. Prior review recommendations — now closed
 
-1. **No accidental complexity from vendoring.** Unlike wrapper-style clones
-   that shell out to a bundled CLI, cloudcode talks to `/v1/messages` (and an
-   OpenAI-compatible equivalent) directly. This removes an entire class of
-   subprocess/IPC/version-skew bugs and keeps the agent loop
-   (`src/engine/loop.ts`, 300 LoC) small enough to read in one sitting.
+The 2026-07-19 review's top gaps have all been addressed in the intervening
+commits:
 
-2. **Clean module boundaries for the size.** `engine` (protocol-facing logic),
-   `agent` (persistence/config), `commands` (user-facing surface), and `ui`
-   (rendering) are cleanly separated with no directory dramatically larger
-   than the others except `ui`, which is expected for a hand-rolled terminal
-   renderer. There is no single dominant "gravity well" file — the largest
-   non-test, non-theme file is `src/ui/nativeApp.ts` at 668 lines.
-
-3. **Real type discipline.** `tsconfig.json` has `"strict": true`, and the
-   codebase holds to it: **zero** `: any` annotations, only **3** `as
-   any`/`as unknown` casts, and a single non-null (`!`) assertion in all of
-   `src`. This is stricter in practice than most strict-mode TypeScript
-   projects achieve, and stronger (proportionally) than Codex's own
-   near-zero-`.unwrap()` policy in Rust `core`.
-
-4. **Test coverage keeps pace with features.** 73 test files map close to
-   1:1 with source modules (e.g. every engine tool, every UI widget, every
-   CLI subcommand has a dedicated test file), and the git log shows tests
-   landing in the same commits as the features they cover
-   (`feat(cli): add doctor subcommand checks`, etc.) rather than trailing.
-
-5. **No dead-letter debt markers.** Zero `TODO`/`FIXME` comments in `src`.
-   Combined with the low `any`/assertion counts, this suggests either genuine
-   discipline or a codebase too young to have accumulated debt yet — worth
-   revisiting this metric in a few months to see which it was.
-
-6. **Deliberate provider abstraction.** `src/engine/api.ts` /
-   `src/engine/openaiApi.ts` split Anthropic-native and OpenAI-compatible
-   request paths without leaking provider-specific shapes into `loop.ts`,
-   which is what makes the llama.cpp/NIM support in the README plausible
-   rather than bolted-on.
-
-### Concerns and technical debt
-
-1. **No CI.** There is no `.github/workflows` (or any CI config) in the
-   repository at all. `npm test` (vitest), `npm run build` (tsc), and any
-   lint step only run locally, on whatever the last person to touch the
-   branch happened to run. For a project already shipping compiled binaries
-   and an installer, this is the single highest-leverage gap: nothing
-   currently stops a broken build or a red test from being merged to
-   `master`.
-
-2. **No linter configured.** No `.eslintrc*`/`eslint.config.*` and no lint
-   script in `package.json`. `tsc --strict` catches type errors but not
-   style/correctness issues (unused vars beyond `noUnusedLocals` settings,
-   `console.log` left in, inconsistent patterns) that Codex's Rust side
-   enforces via `clippy` deny-lists. Nothing currently prevents drift as more
-   contributors touch the code.
-
-3. **Dependency pins on prerelease/edge versions.** `package.json` pins
-   `"typescript": "^7.0.2"` and `"@types/node": "^26.1.1"` — TypeScript 7
-   and Node types 26 are ahead of any current stable release track. This is
-   presumably intentional (early adoption of the Go-ported `tsc`), but it's
-   an undocumented risk: no note in README/docs about why, and no fallback
-   plan if a 7.x prerelease introduces a breaking change picked up by `^`.
-
-4. **`src/ui/nativeApp.ts` is trending toward a gravity well.** At 668 lines
-   it's not large in absolute terms, but it's already 2.7× the next-biggest
-   UI file (`render.ts`, 349) and by name/role sounds like the place new UI
-   wiring gets added by default — the same shape that produced Codex's
-   12.3k-line `chat_composer.rs`, just three orders of magnitude earlier in
-   its life. Worth deciding on an extraction seam (e.g. input handling vs.
-   render orchestration vs. overlay/menu wiring) before it becomes the
-   default dumping ground.
-
-5. **No documented architecture rules.** Codex's `AGENTS.md` codifies a
-   500/800-LoC module ceiling and crate-placement conventions; cloudcode has
-   no equivalent `AGENTS.md`/`CONTRIBUTING.md`. `docs/` currently contains a
-   single file (`docs/research/memory-system-reference.md`). At 15k LoC this
-   is not yet costly, but the Codex review's core lesson — debt like this is
-   cheap to prevent early and expensive to reverse later — applies directly
-   here while the project is still small enough for one page of rules to
-   cover it.
-
-6. **Thin error-handling surface.** Only 13 `try/catch` blocks in all of
-   `src`, and no swallowed (empty) catches, which is good — but for a CLI
-   that shells out to `bash` tool execution, hits network APIs (Anthropic/
-   OpenAI-compatible/MCP), and touches the filesystem across three OSes, 13
-   catch sites is worth a deliberate audit rather than an implicit
-   assumption that failures are rare. Compare to Codex, where
-   error/sandbox-failure handling is a first-class, heavily tested surface.
-
-7. **Packaging scripts are unverified by tests.** `scripts/build-binaries.ps1`,
-   `scripts/build-binaries.sh`, `scripts/build-installer.ps1`, and
-   `installer/cloudcode.iss` have no test coverage and — absent CI — no
-   automated verification they still work as the source tree changes. A
-   broken packaging script would only surface at release time.
+| 2026-07-19 gap | Status at `c038a21` |
+|---|---|
+| No CI | ✅ `.github/workflows/ci.yml` — lint + type-check/build + test matrix over Node 18/20/22, plus a separate `npm audit --audit-level=high` job; `release-smoke-test.yml` added alongside |
+| No linter | ✅ oxlint configured (`.oxlintrc.json`), wired into `npm run lint` and CI |
+| No documented architecture rules | ✅ `AGENTS.md` written — layer boundaries, provider-abstraction pattern, ~600/1000-line module ceiling, testing convention, error-handling boundaries |
+| No dependency automation | ✅ `.github/dependabot.yml` present + CI audit job |
+| TS 7 / `@types/node` 26 prerelease pins undocumented | ◻️ Still pinned via `^`; rationale still not written down (see §5) |
+| `nativeApp.ts` trending toward a gravity well | ⚠️ Now **677 lines** (was 668) — has crossed AGENTS.md's own 600-line "deliberate decision to split" threshold (see §4) |
 
 ## 3. Security posture
 
-- The `bash` tool (`src/engine/tools/bash.ts`, 54 LoC) and file tools
-  (`read`/`write`/`edit`/`glob`/`grep`) are the primary attack surface for a
-  coding agent — arbitrary command execution and filesystem access driven by
-  model output. Unlike Codex, there is **no sandbox layer** (no
-  Landlock/Seatbelt/Windows-sandbox equivalent); safety instead relies on
-  `src/agent/permissionStore.ts` (118 LoC) and `src/engine/permissions.ts`
-  (40 LoC) — a permission-prompt model, not process isolation.
-- Print mode auto-denies prompting tool calls by default (per README), which
-  is the right default for non-interactive/scripted use; `acceptEdits`/
-  `bypassPermissions` exist as explicit opt-outs rather than being default-on.
-- No dependency-audit tooling analogous to `cargo-deny` (e.g. no `npm audit`
-  step, no `.github/dependabot.yml`) is present in the repo.
-- Credentials: `ANTHROPIC_API_KEY` via environment variable only (per
-  README); no keyring/secrets crate equivalent, which is appropriate at this
-  scale but worth noting if provider-config files
-  (`~/.cloudcode/providers.json`) ever come to hold secrets on disk.
+The `bash` tool and file tools (`read`/`write`/`edit`/`glob`/`grep`) are the
+primary attack surface: arbitrary command execution and filesystem access
+driven by model output. There is **no sandbox layer** (no Landlock/Seatbelt/
+Windows-sandbox equivalent); safety relies on a permission-prompt model
+(`src/agent/permissionStore.ts`, `src/engine/permissions.ts`). Within that
+model the reasoning is unusually careful — the allow-prefix-only-for-simple-
+commands logic shows real thought about shell injection — but this pass found
+two gaps in it, both now fixed in the working tree.
 
-## 4. Developer experience
+### Finding 1 — compound-command detection missed newline injection *(fixed)*
 
-- **Good:** `npm run dev` (tsx, no build step) for iteration, `npm test`
-  (vitest) for verification, and one `tsconfig.json`/`vitest.config.ts` each —
-  the whole toolchain is legible in under a minute, a sharp contrast to
-  Codex's Cargo+Bazel dual-build tax. Scripts are self-descriptive
-  (`package:npm`, `package:bin`, `package:installer`).
-- **Friction:** With no CI and no lint config, "does this pass" currently
-  means "did whoever wrote it remember to run `npm test` and `tsc`
-  locally" — fine solo, fragile the moment a second contributor or an
-  agent-driven PR enters the picture.
+`isCompoundCommand` (`src/agent/permissionStore.ts`) exists so that a remembered
+"allow `git`" rule cannot be ridden by a chained command. It caught `;`, `&&`,
+`||`, `|`, backtick, `$(`, and `>` — but **not a newline**. Because `bash.ts`
+hands the whole string to `sh -c` / `powershell -Command`, both of which treat
+a newline as a statement separator, `git status\nrm -rf ~` had a
+`commandPrefix` of `git`, was classified as *simple*, and was auto-allowed by a
+`git` allow-rule. Bare `&` (background/chain) and `<` also slipped through.
+
+**Fix:** pattern widened to `/[;&|` + "`" + `\n\r<>]|\$\(/`, covering newline,
+`\r`, bare `&`, and `<`. Tab is deliberately excluded (argument whitespace, not
+a separator). Tests added for newline/`\r\n`/`&`/`<` and a tab-negative case.
+
+### Finding 2 — reads were unconfined (data-exfiltration path) *(fixed)*
+
+`decidePermission` auto-allowed `Read` for *any* absolute path, in every mode,
+with no cwd check — unlike edits, which enforce `isInsideCwd`. In default mode
+the agent could read `~/.ssh/id_rsa`, `~/.aws/credentials`, or any `.env` with
+no prompt, then exfiltrate via a Bash network call. This is the more likely
+real-world exfiltration path than command execution, and the prior review's
+security section did not cover it.
+
+**Fix:** a `Read` resolving outside cwd now returns `"ask"`, mirroring the
+existing outside-cwd edit guard (including under `bypassPermissions`); an
+explicit remembered allow-rule for the path still wins. Scoped deliberately to
+`Read` — `Glob`/`Grep` take a `pattern`/`path` rather than `file_path` and
+remain unconfined; that residual is documented in-code and pinned by a test so
+it is explicit rather than silent. Closing it is the natural follow-up (§5).
+
+### Other notes
+
+- Print/non-interactive mode auto-denies prompting tool calls by default;
+  `acceptEdits`/`bypassPermissions` are explicit opt-outs, not default-on.
+- `npm audit --audit-level=high` now runs in CI (new since the prior review).
+- Credentials via `ANTHROPIC_API_KEY` env var only; no keyring equivalent —
+  appropriate at this scale, worth revisiting if `~/.cloudcode/providers.json`
+  ever holds secrets on disk.
+
+## 4. Architecture assessment
+
+### Strengths
+
+1. **No accidental complexity from vendoring.** Talks to `/v1/messages` (and an
+   OpenAI-compatible equivalent) directly, removing a whole class of
+   subprocess/IPC/version-skew bugs and keeping `loop.ts` small enough to read
+   in one sitting.
+2. **Clean, now-documented module boundaries.** `engine` / `agent` / `commands`
+   / `ui` are cleanly separated, and `AGENTS.md` codifies where new code goes
+   and the `api.ts` vs `openaiApi.ts` provider pattern.
+3. **Real type discipline.** `strict: true`, held to in practice.
+4. **Test coverage keeps pace.** 71 test files map close to 1:1 with source
+   modules; tests land in the same commits as features.
+5. **Careful correctness details.** e.g. `bash.ts` disambiguates interrupt vs.
+   timeout (checks `signal.aborted` before `killed`); `loop.ts` uses a
+   non-mutating cache-control marker, a `MAX_LOOP_TURNS` circuit breaker, and a
+   `finalizePendingToolInput` safety net for providers that drop
+   `content_block_stop`.
+
+### Concerns / technical debt
+
+1. **`src/ui/nativeApp.ts` has crossed the project's own size line (677 > 600).**
+   AGENTS.md says >600 lines needs "a deliberate decision to split," along the
+   input / render-orchestration / overlay-menu seams already named there. This
+   is the first file to test the rule the project just wrote for itself — a
+   good candidate for the first extraction, though not urgent.
+2. **The module-size ceiling is unmechanized.** It's a written guideline with
+   no CI check; drift will only be caught by reviewer memory.
+3. **Prerelease toolchain pins undocumented.** `typescript: ^7.0.2` and
+   `@types/node: ^26.1.1` remain ahead of stable tracks with no recorded
+   rationale or fallback.
+4. **Packaging scripts remain untested.** `scripts/build-*.ps1/.sh` and
+   `installer/cloudcode.iss` have no automated verification beyond the release
+   smoke-test workflow; a broken packaging script would still mostly surface at
+   release time.
 
 ## 5. Recommendations (prioritized)
 
-1. **Add CI** (GitHub Actions: `npm run build` + `npm test` on push/PR,
-   matrix over Node 18/20/22 given `"engines": ">=18"`). This is the biggest
-   gap relative to Codex's ~25-workflow setup and the cheapest to close —
-   the project already has the scripts CI would just need to invoke.
-2. **Add a linter** (ESLint with `@typescript-eslint`, or `oxlint` given
-   `@oxc-project`/`rolldown` are already in the dependency tree) and wire it
-   into the CI job above.
-3. **Write a short `AGENTS.md`/`CONTRIBUTING.md`** now, while it can still
-   fit on one page: module-size guidance, where new engine tools vs. UI
-   widgets vs. commands belong, and the provider-abstraction pattern in
-   `engine/api.ts` vs `openaiApi.ts` so it's copied correctly for future
-   providers.
-4. **Watch `src/ui/nativeApp.ts`.** No action needed yet, but flag it as the
-   file to split first if it crosses ~1,200–1,500 lines, using the same
-   input/render/overlay seams already implicit in the `ui/` directory
-   structure.
-5. **Pin or document the TypeScript 7 / `@types/node` 26 prerelease choice.**
-   Either note the rationale in README/docs, or move to `~` pinning so a
-   prerelease patch can't silently change build behavior.
-6. **Add `npm audit` (or equivalent) to CI** once CI exists, and consider a
-   `dependabot.yml` given the project already depends on the MCP SDK and
-   several fast-moving toolchain packages (`tsx`, `vite`, `rolldown`).
+1. **Confine `Glob`/`Grep` like `Read`** (Finding 2 residual). Apply the same
+   outside-cwd "ask" to their `path`/`pattern` inputs so directory-walk reads
+   can't sidestep the read confinement just added.
+2. **Split `src/ui/nativeApp.ts`** along the input / render / overlay seams
+   before it grows further — it is now over AGENTS.md's 600-line threshold.
+3. **Mechanize the module-size ceiling** — a tiny CI step (or oxlint rule)
+   failing on files over ~1,000 lines turns the AGENTS.md guideline into an
+   enforced invariant.
+4. **Document the TS 7 / `@types/node` 26 choice** in README/docs, or move to
+   `~` pinning so a prerelease patch can't silently change build behavior.
+5. **Add packaging-script coverage** (or lean harder on the release smoke test)
+   so a broken installer surfaces before a release, not during one.
 
 ## 6. Verdict
 
-For a codebase that is nine days old, cloudcode is unusually disciplined:
-strict TypeScript held to in practice (not just configured), tests landing
-alongside every feature, no accumulated `TODO` debt, and clean separation
-between engine/agent/commands/ui. Its gaps are exactly the ones you'd expect
-from moving this fast solo — no CI, no linter, no written architecture
-rules, permission-based rather than sandboxed tool execution — and all of
-them are cheap to close right now precisely because the project is still
-small. The main structural risk to watch is `nativeApp.ts` starting to play
-the role Codex's `chat_composer.rs` and `core` play at scale; nothing here
-is a crisis, but the same "governance now is cheap, governance later is a
-rewrite" lesson from the Codex review applies with more urgency here, not
-less, given how quickly this repo is already accumulating commits.
+At 11 days and 329 commits, cloudcode remains unusually disciplined, and it has
+visibly acted on the last review: CI, linting, dependency automation, and a
+written `AGENTS.md` all landed since `a5e0cf5`. This pass went a level deeper
+into the permission model — the one part of the system standing in for a
+sandbox — and found two real gaps: a newline-injection bypass of the
+allow-prefix guard, and entirely unconfined reads as a data-exfiltration path.
+Both are now fixed in the working tree, with tests, and the full suite is green
+(648 passing). The remaining items are small and mostly preventive: finish read
+confinement for `Glob`/`Grep`, split `nativeApp.ts` before it grows, and
+mechanize the size ceiling the project has already committed to on paper.

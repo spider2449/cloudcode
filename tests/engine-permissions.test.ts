@@ -95,4 +95,38 @@ describe("Bash command rules", () => {
     store.rememberCommand("git", "deny");
     expect(decidePermission("Bash", { command: "git status; rm -rf ~" }, "default", store, CWD)).toBe("deny");
   });
+
+  it("does not auto-allow a newline-injected command even with a matching allow prefix", () => {
+    const store = freshStore();
+    store.rememberCommand("git", "allow");
+    expect(decidePermission("Bash", { command: "git status\nrm -rf ~" }, "default", store, CWD)).toBe("ask");
+  });
+});
+
+describe("out-of-cwd reads", () => {
+  const OUTSIDE = join(tmpdir(), "cc-perm-outside", "secret.txt");
+
+  it("asks before reading a file outside cwd in default mode", () => {
+    expect(decidePermission("Read", { file_path: OUTSIDE }, "default", freshStore(), CWD)).toBe("ask");
+  });
+
+  it("still asks for an outside-cwd read even in bypassPermissions", () => {
+    expect(decidePermission("Read", { file_path: OUTSIDE }, "bypassPermissions", freshStore(), CWD)).toBe("ask");
+  });
+
+  it("auto-allows a read inside cwd", () => {
+    expect(decidePermission("Read", { file_path: join(CWD, "src", "x.ts") }, "default", freshStore(), CWD)).toBe("allow");
+  });
+
+  it("an explicit remembered allow rule for an outside path still wins", () => {
+    const store = freshStore();
+    store.remember("Read", OUTSIDE, "allow");
+    expect(decidePermission("Read", { file_path: OUTSIDE }, "default", store, CWD)).toBe("allow");
+  });
+
+  it("still auto-allows Glob/Grep (pattern tools are not path-confined here)", () => {
+    const store = freshStore();
+    expect(decidePermission("Glob", { pattern: "*", path: OUTSIDE }, "default", store, CWD)).toBe("allow");
+    expect(decidePermission("Grep", { pattern: "x", path: OUTSIDE }, "default", store, CWD)).toBe("allow");
+  });
 });
