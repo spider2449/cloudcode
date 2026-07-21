@@ -9,6 +9,7 @@ import { costUsd } from "./pricing.js";
 import { compactHistory } from "./compact.js";
 import { EFFORT_BUDGETS, clampEffortBudget, type EffortLevel } from "./effort.js";
 import { DEFAULT_CONTEXT_WINDOW } from "../agent/providers.js";
+import type { LspManager } from "./lsp/manager.js";
 
 const MAX_TOKENS = 8192;
 const MAX_LOOP_TURNS = 100;
@@ -21,6 +22,7 @@ export interface EngineOptions {
   cwd: string;
   permissionMode: PermissionMode;
   store: PermissionStore;
+  lsp?: LspManager;
   effort?: EffortLevel;
   contextWindow?: number;
   onMessage(msg: EngineMessage): void;
@@ -291,7 +293,7 @@ export class EngineLoop {
     }
     if (decision === "deny") return deniedResult("User denied this tool use");
     try {
-      const out = await tool.execute(block.input, { cwd: this.opts.cwd, signal });
+      const out = await tool.execute(block.input, { cwd: this.opts.cwd, signal, lsp: this.opts.lsp });
       return { type: "tool_result", tool_use_id: block.id, content: out.content, is_error: out.isError === true };
     } catch (err) {
       return deniedResult(`Tool failed: ${err instanceof Error ? err.message : String(err)}`);

@@ -1,8 +1,11 @@
+import type { LspManager } from "../lsp/manager.js";
+
 export interface ToolContext {
   cwd: string;
   // Aborts when the user interrupts the turn; long-running tools should
   // honor it and stop early.
   signal?: AbortSignal;
+  lsp?: LspManager;
 }
 
 export interface ToolOutput {
