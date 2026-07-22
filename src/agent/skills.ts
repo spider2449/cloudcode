@@ -32,7 +32,24 @@ function parseSkillFile(raw: string): ParsedSkillFile | undefined {
   };
 }
 
-function scanSkillDir(dir: string, source: Skill["source"]): Skill[] {
+function isDirLike(entry: Dirent): boolean {
+  // junctions and symlinks report isSymbolicLink(), not isDirectory()
+  return entry.isDirectory() || entry.isSymbolicLink();
+}
+
+function readSkillAt(dir: string, fallbackName: string, source: Skill["source"]): Skill | undefined {
+  let raw;
+  try {
+    raw = readFileSync(join(dir, "SKILL.md"), "utf8");
+  } catch {
+    return undefined; // missing or unreadable SKILL.md
+  }
+  const parsed = parseSkillFile(raw);
+  if (!parsed) return undefined;
+  return { name: parsed.name || fallbackName, description: parsed.description, content: parsed.content, source };
+}
+
+function scanSkillDir(dir: string, source: Skill["source"], repoNames: ReadonlySet<string> = new Set()): Skill[] {
   const skills: Skill[] = [];
   let entries;
   try {
@@ -41,20 +58,25 @@ function scanSkillDir(dir: string, source: Skill["source"]): Skill[] {
     return skills;
   }
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+    if (!isDirLike(entry)) continue;
+    const sub = join(dir, entry.name);
+    const skill = readSkillAt(sub, entry.name, source);
+    if (skill) {
+      skills.push(skill);
+      continue;
+    }
+    // no SKILL.md: treat as a namespace dir and scan one level deeper
+    const nestedSource = repoNames.has(entry.name) ? (`repo:${entry.name}` as const) : source;
+    let children;
     try {
-      const raw = readFileSync(join(dir, entry.name, "SKILL.md"), "utf8");
-      const parsed = parseSkillFile(raw);
-      if (parsed) {
-        skills.push({
-          name: parsed.name || entry.name,
-          description: parsed.description,
-          content: parsed.content,
-          source
-        });
-      }
+      children = readdirSync(sub, { withFileTypes: true });
     } catch {
-      // missing or unreadable SKILL.md: skip this directory
+      continue;
+    }
+    for (const child of children) {
+      if (!isDirLike(child)) continue;
+      const nested = readSkillAt(join(sub, child.name), child.name, nestedSource);
+      if (nested) skills.push(nested);
     }
   }
   return skills;
@@ -134,24 +156,29 @@ export function loadSkills(
   userDir: string = join(configDir(), "skills"),
   reposDir: string = join(configDir(), "skill-repos")
 ): Skill[] {
-  const byName = new Map<string, Skill>();
-  const scans: Skill[] = [
-    ...scanSkillDir(userDir, "user"),
-    ...scanSkillDir(join(cwd, ".claude", "skills"), "claude"),
-    ...scanSkillDir(join(cwd, ".cloudcode", "skills"), "project")
-  ];
-  for (const skill of scans) byName.set(skill.name, skill);
   let repoEntries: Dirent[];
   try {
-    repoEntries = readdirSync(reposDir, { withFileTypes: true });
+    repoEntries = readdirSync(reposDir, { withFileTypes: true }).filter(e => e.isDirectory());
   } catch {
     repoEntries = [];
   }
-  for (const entry of repoEntries) {
-    if (!entry.isDirectory()) continue;
-    for (const skill of scanRepoSkills(join(reposDir, entry.name), entry.name)) {
-      if (!byName.has(skill.name)) byName.set(skill.name, skill);
-    }
+  const repoNames = new Set(repoEntries.map(e => e.name));
+  // backfill: repos installed before link-based discovery have no namespace dir yet
+  for (const name of repoNames) {
+    if (!existsSync(join(userDir, name))) linkRepoSkills(join(reposDir, name), name, userDir);
+  }
+  const scans: Skill[] = [
+    ...scanSkillDir(userDir, "user", repoNames),
+    ...scanSkillDir(join(cwd, ".claude", "skills"), "claude"),
+    ...scanSkillDir(join(cwd, ".cloudcode", "skills"), "project")
+  ];
+  const byName = new Map<string, Skill>();
+  for (const skill of scans) {
+    if (!skill.source.startsWith("repo:")) byName.set(skill.name, skill);
+  }
+  // repo skills have lowest precedence: only fill names no local skill claimed
+  for (const skill of scans) {
+    if (skill.source.startsWith("repo:") && !byName.has(skill.name)) byName.set(skill.name, skill);
   }
   return [...byName.values()];
 }

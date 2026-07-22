@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdirSync, writeFileSync, rmSync, mkdtempSync, existsSync, readFileSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { loadSkills, formatSkillList, scanRepoSkills, linkRepoSkills, relinkRepoSkills } from "../src/agent/skills.js";
+import { loadSkills, formatSkillList, linkRepoSkills, relinkRepoSkills } from "../src/agent/skills.js";
 
 let root: string;
 
@@ -99,18 +99,6 @@ describe("loadSkills", () => {
 });
 
 describe("repo skills", () => {
-  it("scanRepoSkills finds nested SKILL.md dirs and tags the source", () => {
-    const repo = join(root, "repos", "obra--superpowers");
-    writeSkill(join(repo, "skills"), "brainstorm", "---\nname: brainstorm\ndescription: Ideate\n---\nBody");
-    writeSkill(join(repo, "plugins", "extra", "skills"), "deep", "---\nname: deep\n---\nDeep body");
-    writeSkill(join(repo, ".git"), "ignored", "---\nname: ignored\n---\nno");
-    writeSkill(join(repo, "node_modules", "x"), "ignored2", "---\nname: ignored2\n---\nno");
-    const skills = scanRepoSkills(repo, "obra--superpowers");
-    const names = skills.map(s => s.name).sort();
-    expect(names).toEqual(["brainstorm", "deep"]);
-    expect(skills[0].source).toBe("repo:obra--superpowers");
-  });
-
   it("loadSkills includes repo skills with lowest precedence", () => {
     const cwd = join(root, "proj");
     const reposDir = join(root, "skill-repos");
@@ -122,6 +110,53 @@ describe("repo skills", () => {
     const solo = skills.find(s => s.name === "solo")!;
     expect(dup.content).toBe("project version");
     expect(solo.source).toBe("repo:obra--superpowers");
+  });
+
+  it("loadSkills backfills links for a repo installed before link-based discovery", () => {
+    const reposDir = join(root, "skill-repos");
+    const userDir = join(root, "user-skills");
+    writeSkill(join(reposDir, "obra--superpowers", "skills"), "solo", "---\nname: solo\ndescription: s\n---\nrepo only");
+    const skills = loadSkills(join(root, "proj"), userDir, reposDir);
+    expect(skills.map(s => s.name)).toEqual(["solo"]);
+    expect(skills[0].source).toBe("repo:obra--superpowers");
+    expect(existsSync(join(userDir, "obra--superpowers", "solo"))).toBe(true);
+  });
+
+  it("loadSkills discovers namespaced links without walking the repo", () => {
+    const reposDir = join(root, "skill-repos");
+    const userDir = join(root, "user-skills");
+    writeSkill(join(reposDir, "a--r", "skills"), "linked", "---\nname: linked\n---\nBody");
+    linkRepoSkills(join(reposDir, "a--r"), "a--r", userDir);
+    // a skill added to the repo AFTER linking is not discovered (no runtime walk)
+    writeSkill(join(reposDir, "a--r", "skills"), "unlinked", "---\nname: unlinked\n---\nBody");
+    const skills = loadSkills(join(root, "proj"), userDir, reposDir);
+    expect(skills.map(s => s.name)).toEqual(["linked"]);
+    expect(skills[0].source).toBe("repo:a--r");
+  });
+
+  it("namespaced dirs not matching a repo keep the base source", () => {
+    const userDir = join(root, "user-skills");
+    writeSkill(join(userDir, "my-group"), "grouped", "---\nname: grouped\n---\nBody");
+    const skills = loadSkills(join(root, "proj"), userDir, join(root, "no-repos"));
+    expect(skills).toEqual([{ name: "grouped", description: "", content: "Body", source: "user" }]);
+  });
+
+  it("does not scan deeper than two levels", () => {
+    const userDir = join(root, "user-skills");
+    writeSkill(join(userDir, "a", "b"), "too-deep", "---\nname: too-deep\n---\nBody");
+    expect(loadSkills(join(root, "proj"), userDir, join(root, "no-repos"))).toEqual([]);
+  });
+
+  it("a local skill overrides a linked repo skill with the same name", () => {
+    const reposDir = join(root, "skill-repos");
+    const userDir = join(root, "user-skills");
+    const cwd = join(root, "proj");
+    writeSkill(join(reposDir, "a--r", "skills"), "dup", "---\nname: dup\n---\nrepo version");
+    writeSkill(join(cwd, ".cloudcode", "skills"), "dup", "---\nname: dup\n---\nproject version");
+    const skills = loadSkills(cwd, userDir, reposDir);
+    expect(skills).toHaveLength(1);
+    expect(skills[0].content).toBe("project version");
+    expect(skills[0].source).toBe("project");
   });
 
   it("loadSkills tolerates a missing repos dir", () => {
