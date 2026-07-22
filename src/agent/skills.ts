@@ -117,15 +117,6 @@ function walkRepoSkills(repoDir: string): RepoSkillDir[] {
   return found;
 }
 
-export function scanRepoSkills(repoDir: string, repoName: string): Skill[] {
-  return walkRepoSkills(repoDir).map(({ name, parsed }) => ({
-    name,
-    description: parsed.description,
-    content: parsed.content,
-    source: `repo:${repoName}` as const
-  }));
-}
-
 export function linkRepoSkills(repoDir: string, repoName: string, skillsDir: string): number {
   const found = walkRepoSkills(repoDir);
   if (found.length === 0) return 0;

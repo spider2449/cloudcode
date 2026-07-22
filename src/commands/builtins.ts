@@ -8,9 +8,8 @@ import { dirname, basename, join, resolve } from "node:path";
 import { resolveProjectPath } from "./projectPath.js";
 import {
   installRepo, updateRepos, removeRepo, listRepoNames,
-  skillReposDir, defaultGitRunner
+  skillReposDir, userSkillsDir, defaultGitRunner
 } from "../agent/skillRepos.js";
-import { scanRepoSkills } from "../agent/skills.js";
 import { EFFORT_LEVELS, isEffortLevel } from "../engine/effort.js";
 
 const MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
@@ -327,15 +326,16 @@ const commands: Command[] = [
       const [sub, ...rest] = args.split(/\s+/).filter(Boolean);
       const usage = "Usage: /skill install <github-url> | update [name] | remove <name> --yes | list";
       const reposDir = skillReposDir();
+      const skillsDir = userSkillsDir();
       switch (sub) {
         case "install": {
           if (!rest[0]) { ctx.notice(usage); return; }
-          ctx.notice(await installRepo(rest[0], reposDir, defaultGitRunner));
+          ctx.notice(await installRepo(rest[0], reposDir, skillsDir, defaultGitRunner));
           ctx.reloadSkills();
           return;
         }
         case "update": {
-          ctx.notice(await updateRepos(rest[0], reposDir, defaultGitRunner));
+          ctx.notice(await updateRepos(rest[0], reposDir, skillsDir, defaultGitRunner));
           ctx.reloadSkills();
           return;
         }
@@ -345,7 +345,7 @@ const commands: Command[] = [
             ctx.notice(`This deletes ${join(reposDir, rest[0])}. Re-run: /skill remove ${rest[0]} --yes`);
             return;
           }
-          ctx.notice(removeRepo(rest[0], reposDir));
+          ctx.notice(removeRepo(rest[0], reposDir, skillsDir));
           ctx.reloadSkills();
           return;
         }
@@ -356,8 +356,15 @@ const commands: Command[] = [
             return;
           }
           const repoLines = names.map(name => {
-            const skills = scanRepoSkills(join(reposDir, name), name);
-            const skillNames = skills.map(s => `/${s.name}`).join(", ") || "(no skills)";
+            let skillNames = "(no skills)";
+            try {
+              const linked = readdirSync(join(skillsDir, name), { withFileTypes: true })
+                .filter(e => e.isDirectory())
+                .map(e => `/${e.name}`);
+              if (linked.length) skillNames = linked.join(", ");
+            } catch {
+              // no linked skills for this repo yet
+            }
             return `${name}: ${skillNames}`;
           });
           ctx.notice(repoLines.join("\n") + "\n\nAll skills:\n" + ctx.listSkills());
