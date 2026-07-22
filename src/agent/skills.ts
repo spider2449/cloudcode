@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, type Dirent } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, type Dirent } from "node:fs";
 import { join } from "node:path";
 import { configDir } from "./providers.js";
 
@@ -63,8 +63,10 @@ function scanSkillDir(dir: string, source: Skill["source"]): Skill[] {
 const SCAN_SKIP = new Set(["node_modules"]);
 const MAX_REPO_DEPTH = 5;
 
-export function scanRepoSkills(repoDir: string, repoName: string): Skill[] {
-  const skills: Skill[] = [];
+interface RepoSkillDir { name: string; dir: string; parsed: ParsedSkillFile; }
+
+function walkRepoSkills(repoDir: string): RepoSkillDir[] {
+  const found: RepoSkillDir[] = [];
   const walk = (dir: string, depth: number): void => {
     if (depth > MAX_REPO_DEPTH) return;
     let entries;
@@ -80,12 +82,7 @@ export function scanRepoSkills(repoDir: string, repoName: string): Skill[] {
       try {
         const parsed = parseSkillFile(readFileSync(join(sub, "SKILL.md"), "utf8"));
         if (parsed) {
-          skills.push({
-            name: parsed.name || entry.name,
-            description: parsed.description,
-            content: parsed.content,
-            source: `repo:${repoName}`
-          });
+          found.push({ name: parsed.name || entry.name, dir: sub, parsed });
           continue; // a skill dir is a leaf
         }
       } catch {
@@ -95,7 +92,41 @@ export function scanRepoSkills(repoDir: string, repoName: string): Skill[] {
     }
   };
   walk(repoDir, 0);
-  return skills;
+  return found;
+}
+
+export function scanRepoSkills(repoDir: string, repoName: string): Skill[] {
+  return walkRepoSkills(repoDir).map(({ name, parsed }) => ({
+    name,
+    description: parsed.description,
+    content: parsed.content,
+    source: `repo:${repoName}` as const
+  }));
+}
+
+export function linkRepoSkills(repoDir: string, repoName: string, skillsDir: string): number {
+  const found = walkRepoSkills(repoDir);
+  if (found.length === 0) return 0;
+  const nsDir = join(skillsDir, repoName);
+  mkdirSync(nsDir, { recursive: true });
+  let linked = 0;
+  for (const { name, dir } of found) {
+    const linkPath = join(nsDir, name);
+    if (existsSync(linkPath)) continue; // duplicate skill name within the repo: first wins
+    try {
+      // "junction" on Windows (no admin rights needed); ignored on POSIX (plain symlink)
+      symlinkSync(dir, linkPath, "junction");
+      linked++;
+    } catch {
+      // link creation failed (exotic filesystem): skip; /skill update can retry
+    }
+  }
+  return linked;
+}
+
+export function relinkRepoSkills(repoDir: string, repoName: string, skillsDir: string): number {
+  rmSync(join(skillsDir, repoName), { recursive: true, force: true });
+  return linkRepoSkills(repoDir, repoName, skillsDir);
 }
 
 export function loadSkills(

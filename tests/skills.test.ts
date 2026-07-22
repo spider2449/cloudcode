@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdirSync, writeFileSync, rmSync, mkdtempSync } from "node:fs";
+import { mkdirSync, writeFileSync, rmSync, mkdtempSync, existsSync, readFileSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { loadSkills, formatSkillList, scanRepoSkills } from "../src/agent/skills.js";
+import { loadSkills, formatSkillList, scanRepoSkills, linkRepoSkills, relinkRepoSkills } from "../src/agent/skills.js";
 
 let root: string;
 
@@ -126,6 +126,42 @@ describe("repo skills", () => {
 
   it("loadSkills tolerates a missing repos dir", () => {
     expect(loadSkills(join(root, "proj2"), join(root, "nouser"), join(root, "no-repos"))).toEqual([]);
+  });
+});
+
+describe("linkRepoSkills", () => {
+  it("links each nested skill under skillsDir/<repo>/<skill>", () => {
+    const repo = join(root, "skill-repos", "obra--superpowers");
+    const skillsDir = join(root, "skills");
+    writeSkill(join(repo, "skills"), "brainstorm", "---\nname: brainstorm\ndescription: Ideate\n---\nBody");
+    writeSkill(join(repo, "plugins", "extra", "skills"), "deep", "---\nname: deep\n---\nDeep body");
+    writeSkill(join(repo, ".git"), "ignored", "---\nname: ignored\n---\nno");
+    const count = linkRepoSkills(repo, "obra--superpowers", skillsDir);
+    expect(count).toBe(2);
+    const link = join(skillsDir, "obra--superpowers", "brainstorm");
+    expect(lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(readFileSync(join(link, "SKILL.md"), "utf8")).toContain("Ideate");
+    expect(existsSync(join(skillsDir, "obra--superpowers", "deep"))).toBe(true);
+    expect(existsSync(join(skillsDir, "obra--superpowers", "ignored"))).toBe(false);
+  });
+
+  it("creates no namespace dir for a repo without skills", () => {
+    const repo = join(root, "skill-repos", "obra--empty");
+    mkdirSync(repo, { recursive: true });
+    expect(linkRepoSkills(repo, "obra--empty", join(root, "skills"))).toBe(0);
+    expect(existsSync(join(root, "skills", "obra--empty"))).toBe(false);
+  });
+
+  it("relinkRepoSkills drops links for skills that no longer exist", () => {
+    const repo = join(root, "skill-repos", "r");
+    const skillsDir = join(root, "skills");
+    writeSkill(join(repo, "skills"), "old", "---\nname: old\n---\nBody");
+    linkRepoSkills(repo, "r", skillsDir);
+    rmSync(join(repo, "skills", "old"), { recursive: true, force: true });
+    writeSkill(join(repo, "skills"), "new", "---\nname: new\n---\nBody");
+    relinkRepoSkills(repo, "r", skillsDir);
+    expect(existsSync(join(skillsDir, "r", "old"))).toBe(false);
+    expect(existsSync(join(skillsDir, "r", "new"))).toBe(true);
   });
 });
 
