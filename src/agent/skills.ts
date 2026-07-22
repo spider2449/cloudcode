@@ -32,7 +32,7 @@ function parseSkillFile(raw: string): ParsedSkillFile | undefined {
   };
 }
 
-function isDirLike(entry: Dirent): boolean {
+export function isDirLike(entry: Dirent): boolean {
   // junctions and symlinks report isSymbolicLink(), not isDirectory()
   return entry.isDirectory() || entry.isSymbolicLink();
 }

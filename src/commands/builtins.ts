@@ -10,9 +10,23 @@ import {
   installRepo, updateRepos, removeRepo, listRepoNames,
   skillReposDir, userSkillsDir, defaultGitRunner
 } from "../agent/skillRepos.js";
+import { isDirLike } from "../agent/skills.js";
 import { EFFORT_LEVELS, isEffortLevel } from "../engine/effort.js";
 
 const MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
+
+// Exported for testing: linked skills show up as junctions/symlinks under
+// skillsDir/<repo>/, so Dirent.isDirectory() alone misses them (isDirLike also
+// accepts isSymbolicLink()).
+export function listLinkedSkillNames(skillsDir: string, repoName: string): string[] {
+  try {
+    return readdirSync(join(skillsDir, repoName), { withFileTypes: true })
+      .filter(isDirLike)
+      .map(e => `/${e.name}`);
+  } catch {
+    return [];
+  }
+}
 
 const CONFIG_KEYS = ["provider", "model", "permissionMode", "theme", "effort", "autoMemory"] as const;
 type ConfigKey = (typeof CONFIG_KEYS)[number];
@@ -356,16 +370,8 @@ const commands: Command[] = [
             return;
           }
           const repoLines = names.map(name => {
-            let skillNames = "(no skills)";
-            try {
-              const linked = readdirSync(join(skillsDir, name), { withFileTypes: true })
-                .filter(e => e.isDirectory())
-                .map(e => `/${e.name}`);
-              if (linked.length) skillNames = linked.join(", ");
-            } catch {
-              // no linked skills for this repo yet
-            }
-            return `${name}: ${skillNames}`;
+            const linked = listLinkedSkillNames(skillsDir, name);
+            return `${name}: ${linked.length ? linked.join(", ") : "(no skills)"}`;
           });
           ctx.notice(repoLines.join("\n") + "\n\nAll skills:\n" + ctx.listSkills());
           return;
