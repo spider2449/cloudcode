@@ -1,6 +1,8 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { configDir, loadProviders, type ProviderConfig } from "../../agent/providers.js";
+import { loadRegistry, type ServerConfig } from "../../engine/lsp/config.js";
+import { commandExists as realCommandExists } from "../../engine/lsp/detect.js";
 
 export interface DoctorCheck {
   name: string;
@@ -62,6 +64,20 @@ export function checkProviderKeys(
   });
 }
 
+export function checkLspServers(
+  registry: Record<string, ServerConfig> = loadRegistry(),
+  exists: (command: string) => boolean = realCommandExists
+): DoctorCheck[] {
+  return Object.entries(registry).map(([lang, cfg]) => {
+    const found = exists(cfg.command);
+    return {
+      name: `lsp:${lang}`,
+      ok: true,
+      detail: found ? `${cfg.command} found` : `${cfg.command} not installed (optional)`
+    };
+  });
+}
+
 export function runDoctor(
   opts: { cwd?: string; dir?: string; env?: NodeJS.ProcessEnv } = {}
 ): DoctorCheck[] {
@@ -75,7 +91,8 @@ export function runDoctor(
     checkJsonFile("providers.json", providersPath),
     ...checkProviderKeys(loadProviders(providersPath), env),
     checkJsonFile("user mcp.json", join(dir, "mcp.json")),
-    checkJsonFile("project .mcp.json", join(cwd, ".mcp.json"))
+    checkJsonFile("project .mcp.json", join(cwd, ".mcp.json")),
+    ...checkLspServers()
   ];
 }
 

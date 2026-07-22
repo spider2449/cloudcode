@@ -6,6 +6,7 @@ import { builtinTools } from "../engine/registry.js";
 import { PermissionStore } from "./permissionStore.js";
 import { SessionFile } from "../engine/sessions.js";
 import { McpManager } from "../engine/mcpClient.js";
+import { LspManager } from "../engine/lsp/manager.js";
 import { buildSystemPrompt } from "../engine/systemPrompt.js";
 import type { ProviderConfig } from "./providers.js";
 import type { McpServerConfig, McpServerStatusEntry } from "./mcp.js";
@@ -52,6 +53,7 @@ export class AgentSession {
   sessionId: string | undefined;
   tools: string[] = [];
   private mcp = new McpManager();
+  private lsp = new LspManager();
   private mcpReady: Promise<void> | undefined;
   private extractCursor = 0;
 
@@ -71,6 +73,7 @@ export class AgentSession {
       contextWindow: this.opts.provider.model_context_window,
       permissionMode: this.opts.permissionMode,
       store,
+      lsp: this.lsp,
       onMessage: this.opts.onMessage,
       requestPermission: (toolName, input) =>
         new Promise(resolve => this.opts.onPermissionRequest({ toolName, input, resolve }))
@@ -183,5 +186,6 @@ export class AgentSession {
   async dispose(): Promise<void> {
     this.abortController?.abort();
     await this.mcp.dispose();
+    this.lsp.shutdown();
   }
 }
