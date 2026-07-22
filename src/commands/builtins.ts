@@ -8,25 +8,12 @@ import { dirname, basename, join, resolve } from "node:path";
 import { resolveProjectPath } from "./projectPath.js";
 import {
   installRepo, updateRepos, removeRepo, listRepoNames,
-  skillReposDir, userSkillsDir, defaultGitRunner
+  skillReposDir, defaultGitRunner
 } from "../agent/skillRepos.js";
-import { isDirLike } from "../agent/skills.js";
+import { scanRepoSkills } from "../agent/skills.js";
 import { EFFORT_LEVELS, isEffortLevel } from "../engine/effort.js";
 
 const MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
-
-// Exported for testing: linked skills show up as junctions/symlinks under
-// skillsDir/<repo>/, so Dirent.isDirectory() alone misses them (isDirLike also
-// accepts isSymbolicLink()).
-export function listLinkedSkillNames(skillsDir: string, repoName: string): string[] {
-  try {
-    return readdirSync(join(skillsDir, repoName), { withFileTypes: true })
-      .filter(isDirLike)
-      .map(e => `/${e.name}`);
-  } catch {
-    return [];
-  }
-}
 
 const CONFIG_KEYS = ["provider", "model", "permissionMode", "theme", "effort", "autoMemory"] as const;
 type ConfigKey = (typeof CONFIG_KEYS)[number];
@@ -340,16 +327,15 @@ const commands: Command[] = [
       const [sub, ...rest] = args.split(/\s+/).filter(Boolean);
       const usage = "Usage: /skill install <github-url> | update [name] | remove <name> --yes | list";
       const reposDir = skillReposDir();
-      const skillsDir = userSkillsDir();
       switch (sub) {
         case "install": {
           if (!rest[0]) { ctx.notice(usage); return; }
-          ctx.notice(await installRepo(rest[0], reposDir, skillsDir, defaultGitRunner));
+          ctx.notice(await installRepo(rest[0], reposDir, defaultGitRunner));
           ctx.reloadSkills();
           return;
         }
         case "update": {
-          ctx.notice(await updateRepos(rest[0], reposDir, skillsDir, defaultGitRunner));
+          ctx.notice(await updateRepos(rest[0], reposDir, defaultGitRunner));
           ctx.reloadSkills();
           return;
         }
@@ -359,7 +345,7 @@ const commands: Command[] = [
             ctx.notice(`This deletes ${join(reposDir, rest[0])}. Re-run: /skill remove ${rest[0]} --yes`);
             return;
           }
-          ctx.notice(removeRepo(rest[0], reposDir, skillsDir));
+          ctx.notice(removeRepo(rest[0], reposDir));
           ctx.reloadSkills();
           return;
         }
@@ -370,8 +356,9 @@ const commands: Command[] = [
             return;
           }
           const repoLines = names.map(name => {
-            const linked = listLinkedSkillNames(skillsDir, name);
-            return `${name}: ${linked.length ? linked.join(", ") : "(no skills)"}`;
+            const skills = scanRepoSkills(join(reposDir, name), name);
+            const skillNames = skills.map(s => `/${s.name}`).join(", ") || "(no skills)";
+            return `${name}: ${skillNames}`;
           });
           ctx.notice(repoLines.join("\n") + "\n\nAll skills:\n" + ctx.listSkills());
           return;

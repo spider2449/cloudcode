@@ -41,17 +41,10 @@ describe("normalizeRepoUrl", () => {
   });
 });
 
-let root: string;
 let reposDir: string;
-let skillsDir: string;
 
-beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "skill-repos-test-"));
-  reposDir = join(root, "skill-repos");
-  skillsDir = join(root, "skills");
-  mkdirSync(reposDir, { recursive: true });
-});
-afterEach(() => { rmSync(root, { recursive: true, force: true }); });
+beforeEach(() => { reposDir = mkdtempSync(join(tmpdir(), "skill-repos-test-")); });
+afterEach(() => { rmSync(reposDir, { recursive: true, force: true }); });
 
 function fakeGit(result: { ok: boolean; output: string }, onCall?: (args: string[], cwd: string) => void): GitRunner {
   return async (args, cwd) => { onCall?.(args, cwd); return result; };
@@ -73,32 +66,32 @@ describe("installRepo", () => {
       cloned = args;
       fakeRepo("obra--superpowers"); // simulate the clone creating the dir
     });
-    const msg = await installRepo("obra/superpowers", reposDir, skillsDir, git);
+    const msg = await installRepo("obra/superpowers", reposDir, git);
     expect(cloned.slice(0, 3)).toEqual(["clone", "--depth", "1"]);
     expect(msg).toContain("1 skill");
   });
 
   it("warns when the repo has no skills", async () => {
     const git = fakeGit({ ok: true, output: "" }, () => fakeRepo("obra--empty", false));
-    const msg = await installRepo("obra/empty", reposDir, skillsDir, git);
+    const msg = await installRepo("obra/empty", reposDir, git);
     expect(msg.toLowerCase()).toContain("no skill");
   });
 
   it("rejects an already-installed repo without calling git", async () => {
     fakeRepo("obra--superpowers");
     let called = false;
-    const msg = await installRepo("obra/superpowers", reposDir, skillsDir, fakeGit({ ok: true, output: "" }, () => { called = true; }));
+    const msg = await installRepo("obra/superpowers", reposDir, fakeGit({ ok: true, output: "" }, () => { called = true; }));
     expect(called).toBe(false);
     expect(msg).toContain("already installed");
   });
 
   it("surfaces git failure output", async () => {
-    const msg = await installRepo("obra/superpowers", reposDir, skillsDir, fakeGit({ ok: false, output: "fatal: repository not found" }));
+    const msg = await installRepo("obra/superpowers", reposDir, fakeGit({ ok: false, output: "fatal: repository not found" }));
     expect(msg).toContain("fatal: repository not found");
   });
 
   it("rejects invalid input", async () => {
-    const msg = await installRepo("nonsense", reposDir, skillsDir, fakeGit({ ok: true, output: "" }));
+    const msg = await installRepo("nonsense", reposDir, fakeGit({ ok: true, output: "" }));
     expect(msg).toContain("Unsupported repo");
   });
 });
@@ -107,7 +100,7 @@ describe("updateRepos", () => {
   it("pulls a named repo", async () => {
     fakeRepo("obra--superpowers");
     const cwds: string[] = [];
-    const msg = await updateRepos("obra--superpowers", reposDir, skillsDir, fakeGit({ ok: true, output: "Already up to date." }, (_a, cwd) => cwds.push(cwd)));
+    const msg = await updateRepos("obra--superpowers", reposDir, fakeGit({ ok: true, output: "Already up to date." }, (_a, cwd) => cwds.push(cwd)));
     expect(cwds).toEqual([join(reposDir, "obra--superpowers")]);
     expect(msg).toContain("Already up to date.");
   });
@@ -116,18 +109,18 @@ describe("updateRepos", () => {
     fakeRepo("a--one");
     fakeRepo("b--two");
     const cwds: string[] = [];
-    await updateRepos(undefined, reposDir, skillsDir, fakeGit({ ok: true, output: "ok" }, (_a, cwd) => cwds.push(cwd)));
+    await updateRepos(undefined, reposDir, fakeGit({ ok: true, output: "ok" }, (_a, cwd) => cwds.push(cwd)));
     expect(cwds.sort()).toEqual([join(reposDir, "a--one"), join(reposDir, "b--two")]);
   });
 
   it("lists installed names for an unknown repo", async () => {
     fakeRepo("a--one");
-    const msg = await updateRepos("nope", reposDir, skillsDir, fakeGit({ ok: true, output: "" }));
+    const msg = await updateRepos("nope", reposDir, fakeGit({ ok: true, output: "" }));
     expect(msg).toContain("a--one");
   });
 
   it("reports when nothing is installed", async () => {
-    const msg = await updateRepos(undefined, reposDir, skillsDir, fakeGit({ ok: true, output: "" }));
+    const msg = await updateRepos(undefined, reposDir, fakeGit({ ok: true, output: "" }));
     expect(msg.toLowerCase()).toContain("no skill repos");
   });
 });
@@ -135,14 +128,14 @@ describe("updateRepos", () => {
 describe("removeRepo / listRepoNames", () => {
   it("removes an installed repo", () => {
     fakeRepo("a--one");
-    const msg = removeRepo("a--one", reposDir, skillsDir);
+    const msg = removeRepo("a--one", reposDir);
     expect(existsSync(join(reposDir, "a--one"))).toBe(false);
     expect(msg).toContain("Removed");
   });
 
   it("lists installed names for an unknown repo", () => {
     fakeRepo("a--one");
-    expect(removeRepo("nope", reposDir, skillsDir)).toContain("a--one");
+    expect(removeRepo("nope", reposDir)).toContain("a--one");
   });
 
   it("listRepoNames returns directory names", () => {
@@ -150,31 +143,5 @@ describe("removeRepo / listRepoNames", () => {
     fakeRepo("b--two");
     expect(listRepoNames(reposDir).sort()).toEqual(["a--one", "b--two"]);
     expect(listRepoNames(join(reposDir, "missing"))).toEqual([]);
-  });
-});
-
-describe("skill links", () => {
-  it("installRepo links skills into skillsDir/<repo>/", async () => {
-    const git = fakeGit({ ok: true, output: "" }, () => fakeRepo("obra--superpowers"));
-    const msg = await installRepo("obra/superpowers", reposDir, skillsDir, git);
-    expect(msg).toContain("1 skill");
-    expect(existsSync(join(skillsDir, "obra--superpowers", "demo"))).toBe(true);
-  });
-
-  it("updateRepos relinks after pull", async () => {
-    fakeRepo("obra--superpowers");
-    // stale link from a previous install
-    mkdirSync(join(skillsDir, "obra--superpowers", "gone"), { recursive: true });
-    await updateRepos("obra--superpowers", reposDir, skillsDir, fakeGit({ ok: true, output: "ok" }));
-    expect(existsSync(join(skillsDir, "obra--superpowers", "gone"))).toBe(false);
-    expect(existsSync(join(skillsDir, "obra--superpowers", "demo"))).toBe(true);
-  });
-
-  it("removeRepo removes the namespace dir too", () => {
-    fakeRepo("a--one");
-    mkdirSync(join(skillsDir, "a--one"), { recursive: true });
-    removeRepo("a--one", reposDir, skillsDir);
-    expect(existsSync(join(reposDir, "a--one"))).toBe(false);
-    expect(existsSync(join(skillsDir, "a--one"))).toBe(false);
   });
 });

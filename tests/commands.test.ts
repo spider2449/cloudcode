@@ -1,11 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { parseSlash } from "../src/commands/registry.js";
-import { buildRegistry, listLinkedSkillNames } from "../src/commands/builtins.js";
+import { buildRegistry } from "../src/commands/builtins.js";
 import { mergeSkillCommands } from "../src/commands/skillCommands.js";
-import { linkRepoSkills, type Skill } from "../src/agent/skills.js";
+import type { Skill } from "../src/agent/skills.js";
 import type { CommandContext } from "../src/commands/types.js";
 import { loadSettings, saveSetting } from "../src/agent/settings.js";
 import { loadThemeName } from "../src/ui/theme.js";
@@ -443,37 +440,6 @@ describe("/context", () => {
     vi.mocked(ctx.contextInfo).mockReturnValue({ snapshot: undefined, model: "m", contextWindow: 200_000 });
     await buildRegistry().get("context")!.run(ctx, "");
     expect(vi.mocked(ctx.notice).mock.calls[0][0]).toContain("No context yet");
-  });
-});
-
-describe("listLinkedSkillNames", () => {
-  // Regression test: linkRepoSkills creates junctions/symlinks under
-  // skillsDir/<repo>/, and Dirent.isDirectory() is false for those — only
-  // isSymbolicLink() is true. A plain isDirectory() filter (as /skill list
-  // used before this fix) silently reports "(no skills)" for every repo.
-  let root: string;
-  let repoDir: string;
-  let skillsDir: string;
-
-  beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "list-linked-skills-test-"));
-    repoDir = join(root, "repo");
-    skillsDir = join(root, "skills");
-    mkdirSync(join(repoDir, "skills", "demo"), { recursive: true });
-    writeFileSync(join(repoDir, "skills", "demo", "SKILL.md"), "---\nname: demo\ndescription: d\n---\nBody");
-  });
-  afterEach(() => { rmSync(root, { recursive: true, force: true }); });
-
-  it("finds skills linked as junctions/symlinks, not just plain directories", () => {
-    const linked = linkRepoSkills(repoDir, "obra--superpowers", skillsDir);
-    expect(linked).toBe(1); // sanity: linking actually happened
-
-    const names = listLinkedSkillNames(skillsDir, "obra--superpowers");
-    expect(names).toEqual(["/demo"]);
-  });
-
-  it("returns an empty list for a repo with no linked skills dir", () => {
-    expect(listLinkedSkillNames(skillsDir, "nonexistent")).toEqual([]);
   });
 });
 

@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { configDir } from "./providers.js";
-import { linkRepoSkills, relinkRepoSkills } from "./skills.js";
+import { scanRepoSkills } from "./skills.js";
 
 export type NormalizedRepo =
   | { ok: true; url: string; dirName: string }
@@ -43,10 +43,6 @@ export function skillReposDir(): string {
   return join(configDir(), "skill-repos");
 }
 
-export function userSkillsDir(): string {
-  return join(configDir(), "skills");
-}
-
 export function listRepoNames(reposDir: string): string[] {
   try {
     return readdirSync(reposDir, { withFileTypes: true })
@@ -64,7 +60,7 @@ function unknownRepoMessage(name: string, reposDir: string): string {
     : `Unknown skill repo: ${name}. No skill repos installed.`;
 }
 
-export async function installRepo(input: string, reposDir: string, skillsDir: string, git: GitRunner): Promise<string> {
+export async function installRepo(input: string, reposDir: string, git: GitRunner): Promise<string> {
   const normalized = normalizeRepoUrl(input);
   if (!normalized.ok) return normalized.error;
   const target = join(reposDir, normalized.dirName);
@@ -74,7 +70,7 @@ export async function installRepo(input: string, reposDir: string, skillsDir: st
   mkdirSync(reposDir, { recursive: true });
   const result = await git(["clone", "--depth", "1", normalized.url, target], reposDir);
   if (!result.ok) return `Clone failed: ${result.output}`;
-  const count = linkRepoSkills(target, normalized.dirName, skillsDir);
+  const count = scanRepoSkills(target, normalized.dirName).length;
   return count > 0
     ? `Installed ${normalized.dirName} (${count} skill${count === 1 ? "" : "s"}).`
     : `Installed ${normalized.dirName}, but it contains no skills (no SKILL.md files found).`;
@@ -83,7 +79,6 @@ export async function installRepo(input: string, reposDir: string, skillsDir: st
 export async function updateRepos(
   name: string | undefined,
   reposDir: string,
-  skillsDir: string,
   git: GitRunner
 ): Promise<string> {
   const installed = listRepoNames(reposDir);
@@ -93,15 +88,13 @@ export async function updateRepos(
   const lines: string[] = [];
   for (const repo of targets) {
     const result = await git(["pull", "--ff-only"], join(reposDir, repo));
-    if (result.ok) relinkRepoSkills(join(reposDir, repo), repo, skillsDir);
     lines.push(`${repo}: ${result.ok ? result.output || "updated" : `update failed: ${result.output}`}`);
   }
   return lines.join("\n");
 }
 
-export function removeRepo(name: string, reposDir: string, skillsDir: string): string {
+export function removeRepo(name: string, reposDir: string): string {
   if (!listRepoNames(reposDir).includes(name)) return unknownRepoMessage(name, reposDir);
   rmSync(join(reposDir, name), { recursive: true, force: true });
-  rmSync(join(skillsDir, name), { recursive: true, force: true });
   return `Removed ${name}.`;
 }

@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdirSync, writeFileSync, rmSync, mkdtempSync, existsSync, readFileSync, lstatSync } from "node:fs";
+import { mkdirSync, writeFileSync, rmSync, mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { loadSkills, formatSkillList, linkRepoSkills, relinkRepoSkills } from "../src/agent/skills.js";
+import { loadSkills, formatSkillList, scanRepoSkills } from "../src/agent/skills.js";
 
 let root: string;
 
@@ -99,6 +99,18 @@ describe("loadSkills", () => {
 });
 
 describe("repo skills", () => {
+  it("scanRepoSkills finds nested SKILL.md dirs and tags the source", () => {
+    const repo = join(root, "repos", "obra--superpowers");
+    writeSkill(join(repo, "skills"), "brainstorm", "---\nname: brainstorm\ndescription: Ideate\n---\nBody");
+    writeSkill(join(repo, "plugins", "extra", "skills"), "deep", "---\nname: deep\n---\nDeep body");
+    writeSkill(join(repo, ".git"), "ignored", "---\nname: ignored\n---\nno");
+    writeSkill(join(repo, "node_modules", "x"), "ignored2", "---\nname: ignored2\n---\nno");
+    const skills = scanRepoSkills(repo, "obra--superpowers");
+    const names = skills.map(s => s.name).sort();
+    expect(names).toEqual(["brainstorm", "deep"]);
+    expect(skills[0].source).toBe("repo:obra--superpowers");
+  });
+
   it("loadSkills includes repo skills with lowest precedence", () => {
     const cwd = join(root, "proj");
     const reposDir = join(root, "skill-repos");
@@ -112,91 +124,8 @@ describe("repo skills", () => {
     expect(solo.source).toBe("repo:obra--superpowers");
   });
 
-  it("loadSkills backfills links for a repo installed before link-based discovery", () => {
-    const reposDir = join(root, "skill-repos");
-    const userDir = join(root, "user-skills");
-    writeSkill(join(reposDir, "obra--superpowers", "skills"), "solo", "---\nname: solo\ndescription: s\n---\nrepo only");
-    const skills = loadSkills(join(root, "proj"), userDir, reposDir);
-    expect(skills.map(s => s.name)).toEqual(["solo"]);
-    expect(skills[0].source).toBe("repo:obra--superpowers");
-    expect(existsSync(join(userDir, "obra--superpowers", "solo"))).toBe(true);
-  });
-
-  it("loadSkills discovers namespaced links without walking the repo", () => {
-    const reposDir = join(root, "skill-repos");
-    const userDir = join(root, "user-skills");
-    writeSkill(join(reposDir, "a--r", "skills"), "linked", "---\nname: linked\n---\nBody");
-    linkRepoSkills(join(reposDir, "a--r"), "a--r", userDir);
-    // a skill added to the repo AFTER linking is not discovered (no runtime walk)
-    writeSkill(join(reposDir, "a--r", "skills"), "unlinked", "---\nname: unlinked\n---\nBody");
-    const skills = loadSkills(join(root, "proj"), userDir, reposDir);
-    expect(skills.map(s => s.name)).toEqual(["linked"]);
-    expect(skills[0].source).toBe("repo:a--r");
-  });
-
-  it("namespaced dirs not matching a repo keep the base source", () => {
-    const userDir = join(root, "user-skills");
-    writeSkill(join(userDir, "my-group"), "grouped", "---\nname: grouped\n---\nBody");
-    const skills = loadSkills(join(root, "proj"), userDir, join(root, "no-repos"));
-    expect(skills).toEqual([{ name: "grouped", description: "", content: "Body", source: "user" }]);
-  });
-
-  it("does not scan deeper than two levels", () => {
-    const userDir = join(root, "user-skills");
-    writeSkill(join(userDir, "a", "b"), "too-deep", "---\nname: too-deep\n---\nBody");
-    expect(loadSkills(join(root, "proj"), userDir, join(root, "no-repos"))).toEqual([]);
-  });
-
-  it("a local skill overrides a linked repo skill with the same name", () => {
-    const reposDir = join(root, "skill-repos");
-    const userDir = join(root, "user-skills");
-    const cwd = join(root, "proj");
-    writeSkill(join(reposDir, "a--r", "skills"), "dup", "---\nname: dup\n---\nrepo version");
-    writeSkill(join(cwd, ".cloudcode", "skills"), "dup", "---\nname: dup\n---\nproject version");
-    const skills = loadSkills(cwd, userDir, reposDir);
-    expect(skills).toHaveLength(1);
-    expect(skills[0].content).toBe("project version");
-    expect(skills[0].source).toBe("project");
-  });
-
   it("loadSkills tolerates a missing repos dir", () => {
     expect(loadSkills(join(root, "proj2"), join(root, "nouser"), join(root, "no-repos"))).toEqual([]);
-  });
-});
-
-describe("linkRepoSkills", () => {
-  it("links each nested skill under skillsDir/<repo>/<skill>", () => {
-    const repo = join(root, "skill-repos", "obra--superpowers");
-    const skillsDir = join(root, "skills");
-    writeSkill(join(repo, "skills"), "brainstorm", "---\nname: brainstorm\ndescription: Ideate\n---\nBody");
-    writeSkill(join(repo, "plugins", "extra", "skills"), "deep", "---\nname: deep\n---\nDeep body");
-    writeSkill(join(repo, ".git"), "ignored", "---\nname: ignored\n---\nno");
-    const count = linkRepoSkills(repo, "obra--superpowers", skillsDir);
-    expect(count).toBe(2);
-    const link = join(skillsDir, "obra--superpowers", "brainstorm");
-    expect(lstatSync(link).isSymbolicLink()).toBe(true);
-    expect(readFileSync(join(link, "SKILL.md"), "utf8")).toContain("Ideate");
-    expect(existsSync(join(skillsDir, "obra--superpowers", "deep"))).toBe(true);
-    expect(existsSync(join(skillsDir, "obra--superpowers", "ignored"))).toBe(false);
-  });
-
-  it("creates no namespace dir for a repo without skills", () => {
-    const repo = join(root, "skill-repos", "obra--empty");
-    mkdirSync(repo, { recursive: true });
-    expect(linkRepoSkills(repo, "obra--empty", join(root, "skills"))).toBe(0);
-    expect(existsSync(join(root, "skills", "obra--empty"))).toBe(false);
-  });
-
-  it("relinkRepoSkills drops links for skills that no longer exist", () => {
-    const repo = join(root, "skill-repos", "r");
-    const skillsDir = join(root, "skills");
-    writeSkill(join(repo, "skills"), "old", "---\nname: old\n---\nBody");
-    linkRepoSkills(repo, "r", skillsDir);
-    rmSync(join(repo, "skills", "old"), { recursive: true, force: true });
-    writeSkill(join(repo, "skills"), "new", "---\nname: new\n---\nBody");
-    relinkRepoSkills(repo, "r", skillsDir);
-    expect(existsSync(join(skillsDir, "r", "old"))).toBe(false);
-    expect(existsSync(join(skillsDir, "r", "new"))).toBe(true);
   });
 });
 
