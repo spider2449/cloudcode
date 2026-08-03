@@ -111,13 +111,17 @@ export class EngineLoop {
       costKnown = true;
       totalCost = (totalCost ?? 0) + c;
     };
+    let hitTurnLimit = true;
     try {
       for (let i = 0; i < MAX_LOOP_TURNS; i++) {
         const turn = await this.streamOnce(signal);
         usage = turn.usage ?? usage;
         addCost(turn.usage);
-        this.messages.push({ role: "assistant", content: turn.blocks });
+        // An empty content array is not valid API input, so keep it out of the
+        // history entirely rather than poisoning the next turn's request.
+        if (turn.blocks.length > 0) this.messages.push({ role: "assistant", content: turn.blocks });
         if (turn.stopReason !== "tool_use") {
+          hitTurnLimit = false;
           // No tool calls this turn: emit the whole batch as one assistant
           // message, same as before.
           this.opts.onMessage(assistantMessage(turn.blocks));
@@ -147,8 +151,30 @@ export class EngineLoop {
           results.push(result);
           this.opts.onMessage(toolResultMessage(result.tool_use_id, result.content, result.is_error === true));
         }
+        // stop_reason said "tool_use" but the turn carried no tool_use block
+        // (seen with OpenAI-compatible providers). Pushing an empty content
+        // array would be rejected by the API on the next request and the loop
+        // would spin until MAX_LOOP_TURNS, so stop here instead.
+        if (results.length === 0) {
+          hitTurnLimit = false;
+          this.opts.onMessage(assistantMessage([
+            { type: "text", text: "\n[Provider reported a tool call but sent no tool input; stopping this turn]" }
+          ]));
+          break;
+        }
         this.messages.push({ role: "user", content: results });
-        if (signal.aborted) break;
+        if (signal.aborted) {
+          hitTurnLimit = false;
+          break;
+        }
+      }
+      if (hitTurnLimit) {
+        // UI-only notice, like the max_tokens one above: the history stays
+        // exactly what the model produced, but the user is told why the turn
+        // ended without a final answer.
+        this.opts.onMessage(assistantMessage([
+          { type: "text", text: `\n[Stopped after ${MAX_LOOP_TURNS} tool-use turns without a final answer]` }
+        ]));
       }
       this.opts.onMessage({
         type: "result",

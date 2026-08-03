@@ -43,6 +43,28 @@ describe("loadSkills", () => {
     expect(skills[0].content).toBe("Instructions.");
   });
 
+  it("sanitizes a name that could never be matched as a slash command", () => {
+    const cwd = join(root, "proj");
+    writeSkill(join(cwd, ".cloudcode", "skills"), "dirname",
+      "---\nname: code review!\n---\nBody");
+    expect(loadSkills(cwd, join(root, "nouser"), join(root, "no-repos"))[0].name).toBe("code-review");
+  });
+
+  it("falls back to the directory name when the frontmatter name sanitizes to nothing", () => {
+    const cwd = join(root, "proj");
+    writeSkill(join(cwd, ".cloudcode", "skills"), "usable", "---\nname: ***\n---\nBody");
+    expect(loadSkills(cwd, join(root, "nouser"), join(root, "no-repos"))[0].name).toBe("usable");
+  });
+
+  it("collapses and caps a description before it reaches the system prompt", () => {
+    const cwd = join(root, "proj");
+    writeSkill(join(cwd, ".cloudcode", "skills"), "verbose",
+      `---\ndescription: a\tb${"x".repeat(400)}\n---\nBody`);
+    const description = loadSkills(cwd, join(root, "nouser"), join(root, "no-repos"))[0].description;
+    expect(description.startsWith("a b")).toBe(true);
+    expect(description.length).toBe(201); // 200 chars + the ellipsis
+  });
+
   it("skips files without a frontmatter block", () => {
     const cwd = join(root, "proj");
     writeSkill(join(cwd, ".cloudcode", "skills"), "plain", "Just markdown, no frontmatter.");
@@ -180,11 +202,32 @@ describe("linkRepoSkills", () => {
     expect(existsSync(join(skillsDir, "obra--superpowers", "ignored"))).toBe(false);
   });
 
-  it("creates no namespace dir for a repo without skills", () => {
+  it("creates an empty namespace dir for a repo without skills, so loadSkills stops re-walking it", () => {
     const repo = join(root, "skill-repos", "obra--empty");
     mkdirSync(repo, { recursive: true });
     expect(linkRepoSkills(repo, "obra--empty", join(root, "skills"))).toBe(0);
-    expect(existsSync(join(root, "skills", "obra--empty"))).toBe(false);
+    expect(existsSync(join(root, "skills", "obra--empty"))).toBe(true);
+  });
+
+  it("does not re-link a skill-less repo on every loadSkills call", () => {
+    const reposDir = join(root, "skill-repos");
+    const userDir = join(root, "user-skills");
+    const repo = join(reposDir, "obra--empty");
+    mkdirSync(repo, { recursive: true });
+    loadSkills(join(root, "proj"), userDir, reposDir); // backfill runs once
+    // A skill added afterwards must not be picked up: proof the second call
+    // did not walk the repo again (same no-runtime-walk contract as above).
+    writeSkill(join(repo, "skills"), "late", "---\nname: late\n---\nBody");
+    expect(loadSkills(join(root, "proj"), userDir, reposDir)).toEqual([]);
+  });
+
+  it("sanitizes an untrusted frontmatter name instead of using it as a link path", () => {
+    const repo = join(root, "skill-repos", "evil--repo");
+    const skillsDir = join(root, "skills");
+    writeSkill(join(repo, "skills"), "innocent", "---\nname: ../../escaped\n---\nBody");
+    expect(linkRepoSkills(repo, "evil--repo", skillsDir)).toBe(1);
+    expect(existsSync(join(root, "escaped"))).toBe(false);
+    expect(existsSync(join(skillsDir, "evil--repo", "escaped"))).toBe(true);
   });
 
   it("relinkRepoSkills drops links for skills that no longer exist", () => {

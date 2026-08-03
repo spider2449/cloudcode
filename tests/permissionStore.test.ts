@@ -42,11 +42,17 @@ describe("PermissionStore", () => {
     expect(store.check("Write", join(cwd, "src", "c.ts"))).toBe("allow");
   });
 
-  it("matches case-insensitively", () => {
+  it("folds path case on Windows only, where the filesystem does too", () => {
+    // On a case-sensitive filesystem "Src" and "src" are different
+    // directories, so folding there would widen an allow-rule to a directory
+    // the user never approved.
     const cwd = tempCwd();
     const store = new PermissionStore(cwd);
     store.remember("Read", join(cwd, "Src", "a.ts"), "allow");
-    expect(store.check("Read", join(cwd, "src", "B.TS"))).toBe("allow");
+    const ruling = store.check("Read", join(cwd, "src", "B.TS"));
+    expect(ruling).toBe(process.platform === "win32" ? "allow" : undefined);
+    // Same-case lookups match on every platform.
+    expect(store.check("Read", join(cwd, "Src", "b.ts"))).toBe("allow");
   });
 
   it("persists across instances and clears", () => {

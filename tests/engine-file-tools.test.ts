@@ -47,6 +47,18 @@ describe("editTool", () => {
     const out = await editTool.execute({ file_path: p, old_string: "foo", new_string: "x" }, ctx());
     expect(out.isError).toBe(true);
   });
+  it("writes $-sequences in new_string literally instead of as replacement patterns", async () => {
+    // String.replace() would expand "$$", "$&", "$`", "$'" and "$1" here and
+    // silently corrupt the file (e.g. a template literal `$${amount}`).
+    const p = join(dir, "e4.ts");
+    writeFileSync(p, "const s = OLD;");
+    await editTool.execute(
+      { file_path: p, old_string: "OLD", new_string: "`$${amount} $& $1 $'`" },
+      ctx()
+    );
+    expect(readFileSync(p, "utf8")).toBe("const s = `$${amount} $& $1 $'`;");
+  });
+
   it("replaces all occurrences with replace_all", async () => {
     const p = join(dir, "e3.txt");
     writeFileSync(p, "foo foo");

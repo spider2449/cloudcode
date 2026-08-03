@@ -12,8 +12,12 @@ export interface PermissionRule {
   prefix?: string;
 }
 
+// Case folding is Windows-only on purpose: on a case-sensitive filesystem
+// "/srv/App" and "/srv/app" are different directories, so lowercasing there
+// would let an allow-rule for one silently cover the other.
 function normalizePath(p: string): string {
-  return resolve(p).replace(/\\/g, "/").toLowerCase();
+  const normalized = resolve(p).replace(/\\/g, "/");
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
 function isValidRule(r: unknown): r is PermissionRule {

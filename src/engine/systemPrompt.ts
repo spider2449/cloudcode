@@ -30,9 +30,19 @@ export function buildSystemPrompt(cwd: string, opts: SystemPromptOptions = {}): 
   const projectMd = readIfPresent(join(cwd, "CLAUDE.md"));
   if (projectMd !== "") prompt += `\n\n# Project instructions (CLAUDE.md)\n${projectMd}`;
 
-  const skills = loadSkills(cwd);
+  // Skills follow `configBase` like every other config read here; without it a
+  // caller-supplied base (and every test) would still pick up whatever lives
+  // in the real ~/.cloudcode.
+  const skills = loadSkills(cwd, join(base, "skills"), join(base, "skill-repos"));
   if (skills.length > 0) {
-    const list = skills.map(s => `- ${s.name}: ${s.description}`).join("\n");
+    // Repo skills come from a third-party clone (`/skill install`), so their
+    // descriptions are untrusted text sitting in the system prompt. Labelling
+    // the source keeps that visible instead of presenting every skill as if
+    // the user had written it.
+    const list = skills.map(s => {
+      const origin = s.source.startsWith("repo:") ? ` (third-party skill from ${s.source.slice(5)})` : "";
+      return `- ${s.name}: ${s.description}${origin}`;
+    }).join("\n");
     prompt += `\n\n# Available skills\nWhen a task matches a skill, follow that skill's instructions.\n${list}`;
   }
 
