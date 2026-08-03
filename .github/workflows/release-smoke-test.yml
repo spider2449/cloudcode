@@ -33,6 +33,12 @@ jobs:
             binary: release/cloudcode-win-x64.exe
           - os: ubuntu-latest
             binary: release/cloudcode-linux-x64
+          # build-binaries.sh emits macOS binaries too; run each on a runner
+          # of its own architecture (macos-latest is arm64, macos-13 x64).
+          - os: macos-latest
+            binary: release/cloudcode-macos-arm64
+          - os: macos-13
+            binary: release/cloudcode-macos-x64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -50,14 +56,14 @@ jobs:
         run: npm run build
 
       # npm's package:bin script shells out to PowerShell, which is not
-      # present on the ubuntu-latest bash image; run the platform-matched
-      # build script directly so both legs of this matrix work.
+      # present on the Linux/macOS images; run the platform-matched build
+      # script directly so every leg of this matrix works.
       - name: Build compiled binary (Windows)
         if: runner.os == 'Windows'
         run: npm run package:bin
 
-      - name: Build compiled binary (Linux)
-        if: runner.os == 'Linux'
+      - name: Build compiled binaries (Linux/macOS)
+        if: runner.os != 'Windows'
         run: bash scripts/build-binaries.sh
 
       - name: Smoke test compiled binary

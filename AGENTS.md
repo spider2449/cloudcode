@@ -125,6 +125,16 @@ script before users hit it). Note: that workflow calls
 `scripts/build-binaries.sh` directly on Linux rather than
 `npm run package:bin`, because that npm script shells out to Windows
 PowerShell specifically — `build-binaries.sh` covers Linux/macOS but isn't
-wired to any npm script; the smoke test doesn't cover macOS or the Inno
-Setup installer (`installer/cloudcode.iss`, Windows-only, needs ISCC on the
-runner) yet.
+wired to any npm script.
+
+Packaging coverage (added after the 2026-07-21 review): the release smoke
+test now runs every binary `build-binaries.sh` emits, including both macOS
+architectures (`macos-latest` for arm64, `macos-13` for x64), and
+`tests/packaging.test.ts` pins the static agreement those files need —
+`package.json` / `src/version.ts` / `cloudcode.iss` stating one version, the
+build scripts and the installer naming the same artifact, and every binary
+the build script produces being covered by the smoke test. CI also parses
+the bash and PowerShell build scripts on every PR (`packaging-scripts` job),
+since a syntax error in one would otherwise surface mid-release. Still not
+covered: actually compiling the Inno Setup installer (`installer/cloudcode.iss`
+is Windows-only and needs ISCC on the runner).

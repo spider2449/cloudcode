@@ -173,7 +173,7 @@ it is explicit rather than silent. Closing it is the natural follow-up (§5).
 | 2 | ✅ Done — `App` is ~575 lines; the extracted collaborators are listed in AGENTS.md |
 | 3 | ✅ Done — `npm run lint:size` (`scripts/check-file-size.mjs`), its own CI step |
 | 4 | ✅ Done — rationale recorded in AGENTS.md ("Dependency version policy") |
-| 5 | ◻️ Open |
+| 5 | ✅ Done — `tests/packaging.test.ts` pins version/artifact agreement, CI parses the build scripts, and the release smoke test now covers both macOS binaries. Compiling the Inno Setup installer still needs a Windows runner with ISCC and remains uncovered. |
 
 ## 6. Verdict
 

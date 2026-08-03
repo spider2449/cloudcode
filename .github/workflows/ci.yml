@@ -34,6 +34,31 @@ jobs:
       - name: Test
         run: npm test
 
+  # The packaging scripts are only executed by a tagged release, so a syntax
+  # error in one sits undetected until a release is already under way. Parsing
+  # them on every PR is cheap and catches exactly that class of breakage.
+  packaging-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse bash build script
+        run: bash -n scripts/build-binaries.sh
+
+      - name: Parse PowerShell build scripts
+        shell: pwsh
+        run: |
+          $failed = $false
+          foreach ($file in Get-ChildItem -Path scripts -Filter *.ps1) {
+              $errors = $null
+              [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$null, [ref]$errors) | Out-Null
+              if ($errors -and $errors.Count -gt 0) {
+                  $failed = $true
+                  foreach ($e in $errors) { Write-Host "::error file=scripts/$($file.Name)::$($e.Message)" }
+              }
+          }
+          if ($failed) { exit 1 }
+
   audit:
     runs-on: ubuntu-latest
     steps:
