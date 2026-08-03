@@ -337,6 +337,78 @@ describe("EngineLoop", () => {
     expect(JSON.stringify(loop.messages).toLowerCase()).not.toContain("truncated");
   });
 
+  it("stops the turn when the provider reports tool_use but sends no tool_use block", async () => {
+    // stop_reason "tool_use" with only a text block: seen from
+    // OpenAI-compatible providers. There is nothing to answer with, so the
+    // loop must not push an empty tool_result array (rejected by the API) and
+    // must not keep requesting until MAX_LOOP_TURNS.
+    const bogusTurn = [
+      { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+      { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "calling a tool" } },
+      { type: "content_block_stop", index: 0 },
+      { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { input_tokens: 10, output_tokens: 5 } },
+      { type: "message_stop" }
+    ];
+    const requests: unknown[] = [];
+    const received: unknown[] = [];
+    const loop = new EngineLoop({
+      client: capturingClient([bogusTurn, textTurn("never reached")], requests),
+      model: "m",
+      systemPrompt: "s",
+      tools: [echoTool],
+      cwd: process.cwd(),
+      permissionMode: "bypassPermissions",
+      store: new PermissionStore(mkdtempSync(join(tmpdir(), "cc-loop-empty-"))),
+      onMessage: m => received.push(m),
+      requestPermission: async () => true
+    });
+    await loop.runTurn("go", new AbortController().signal);
+    expect(requests).toHaveLength(1); // no follow-up request
+    // History holds the assistant text only — no empty user content array.
+    const emptyUserContent = loop.messages.some(
+      m => (m as { role?: string; content?: unknown }).role === "user" && Array.isArray((m as { content?: unknown[] }).content)
+        && ((m as { content: unknown[] }).content).length === 0
+    );
+    expect(emptyUserContent).toBe(false);
+    const notices = received
+      .filter(m => (m as { type: string }).type === "assistant")
+      .flatMap(m => (m as { message: { content: Array<{ type: string; text?: string }> } }).message.content)
+      .map(c => c.text ?? "");
+    expect(notices.some(t => t.includes("no tool input"))).toBe(true);
+  });
+
+  it("surfaces a notice when the tool loop hits MAX_LOOP_TURNS without a final answer", async () => {
+    // A provider stuck in a tool_use loop: every turn asks for another tool.
+    const received: unknown[] = [];
+    const requests: unknown[] = [];
+    const endlessClient = {
+      async *create(req: unknown) {
+        requests.push(req);
+        for (const e of toolUseTurn()) yield e as never;
+      }
+    };
+    const loop = new EngineLoop({
+      client: endlessClient,
+      model: "m",
+      systemPrompt: "s",
+      tools: [echoTool],
+      cwd: process.cwd(),
+      permissionMode: "bypassPermissions",
+      store: new PermissionStore(mkdtempSync(join(tmpdir(), "cc-loop-max-"))),
+      onMessage: m => received.push(m),
+      requestPermission: async () => true
+    });
+    await loop.runTurn("go", new AbortController().signal);
+    expect(requests).toHaveLength(100); // MAX_LOOP_TURNS
+    const texts = received
+      .filter(m => (m as { type: string }).type === "assistant")
+      .flatMap(m => (m as { message: { content: Array<{ type: string; text?: string }> } }).message.content)
+      .map(c => c.text ?? "");
+    expect(texts.some(t => t.includes("Stopped after 100 tool-use turns"))).toBe(true);
+    // UI-only, like the max_tokens notice: never written into the history.
+    expect(JSON.stringify(loop.messages)).not.toContain("Stopped after");
+  });
+
   it("denied permission produces an error tool_result and still continues", async () => {
     const received: unknown[] = [];
     const loop = new EngineLoop({
