@@ -1,9 +1,9 @@
 import type { EngineMessage } from "../engine/messages.js";
-import { AgentSession, type PermissionMode, type PermissionRequest } from "../agent/session.js";
+import { AgentSession, type PermissionMode } from "../agent/session.js";
 import { History } from "../agent/history.js";
 import { DEFAULT_CONTEXT_WINDOW, type ProviderConfig } from "../agent/providers.js";
 import { SessionIndex } from "../agent/sessionIndex.js";
-import { PermissionStore, commandPrefix } from "../agent/permissionStore.js";
+import { PermissionStore } from "../agent/permissionStore.js";
 import { buildRegistry } from "../commands/builtins.js";
 import { parseSlash } from "../commands/registry.js";
 import type { CommandContext } from "../commands/types.js";
@@ -17,8 +17,11 @@ import { mergeSkillCommands } from "../commands/skillCommands.js";
 import { THEMES, loadThemeName, saveThemeName } from "./theme.js";
 import { loadWelcome, splitWelcomeLogo } from "./welcome.js";
 import { VERSION } from "../version.js";
-import { recentProjects, resolveProjectPath } from "../commands/projectPath.js";
 import { GitStatusPoller } from "./useGitStatus.js";
+import { PermissionController } from "./permissionController.js";
+import { KeyRouter, type KeyRouterHost } from "./keyRouter.js";
+import { UsageTracker } from "./usageTracker.js";
+import { openMemoryPicker, openProjectPicker, openResumePicker, type PickerDeps } from "./appPickers.js";
 import { Buffer } from "./buffer.js";
 import { InputBox } from "./widgets/inputBox.js";
 import { OverlayManager } from "./widgets/overlay.js";
@@ -29,9 +32,6 @@ import type { ITerminal } from "./term/terminal.js";
 import type { Key } from "./input.js";
 import { loadSettings, saveSetting } from "../agent/settings.js";
 import type { EffortLevel } from "../engine/effort.js";
-import { buildMemoryOptions } from "./MemoryPicker.js";
-import { openInEditor, openFolder } from "../commands/editor.js";
-import { ensureMemoryDir } from "../engine/memoryPaths.js";
 
 export interface AppProps {
   cwd: string;
@@ -48,7 +48,6 @@ export interface AppProps {
 type Phase = "idle" | "streaming" | "permission";
 
 const MODE_CYCLE: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
-const AUTO_COMPACT_THRESHOLD_PCT = 80;
 
 export class App {
   /** Test hook: called whenever auto-compact fires. */
@@ -68,14 +67,11 @@ export class App {
   private effort: EffortLevel = loadSettings().effort ?? "off";
   private servedModel: string | undefined;
   private mode: PermissionMode;
-  private permissionQueue: PermissionRequest[] = [];
+  private permissions: PermissionController;
   // Messages submitted while a turn was in flight; sent FIFO, one per turn,
   // when the agent returns to idle.
   private queuedMessages: string[] = [];
-  private cost = 0;
-  private tokens = 0;
-  private contextPct: number | undefined;
-  private compactPct: number | undefined;
+  private usage: UsageTracker;
   private turnCount = 0;
   private startedAt = Date.now();
   private workStartedAt = 0;
@@ -84,15 +80,14 @@ export class App {
 
   private firstMessage: string | undefined;
   private session: AgentSession | undefined;
-  private lastCtrlCAt = 0;
   private history = new History();
+  private keys: KeyRouter;
   private permissionStore: PermissionStore;
   private registry = buildRegistry();
   private skills: Skill[] = [];
   private fileIndex: FileIndex;
   private availableModels: string[] = [];
   private mcpServers: Record<string, Record<string, unknown>> = {};
-  private autoCompacting = false;
   private git: GitStatusPoller;
   private running = false;
   private tickTimer: ReturnType<typeof setInterval> | undefined;
@@ -110,6 +105,22 @@ export class App {
     this.completionCtx = this.completionCtxRef();
     this.inputBox = new InputBox(this.completionCtx, this.history);
     this.inputBox.onSubmit = text => this.handleSubmit(text);
+    this.usage = new UsageTracker({
+      contextWindow: () => this.contextWindowFor(this.providerName),
+      compact: onProgress => this.session?.compact(onProgress) ?? Promise.resolve(undefined),
+      notice: text => this.notice(text),
+      onError: text => this.buffer.append({ kind: "error", text }),
+      recompute: () => this.recompute(),
+      onAutoCompact: () => this.onAutoCompactForTest?.()
+    });
+    this.permissions = new PermissionController({
+      overlay: this.overlay,
+      store: this.permissionStore,
+      onError: text => this.buffer.append({ kind: "error", text }),
+      onQueueEmpty: () => { this.phase = "streaming"; },
+      recompute: () => this.recompute()
+    });
+    this.keys = new KeyRouter(this.keyRouterHost());
     this.ctx = this.buildCommandContext();
 
     this.appendWelcome();
@@ -162,26 +173,14 @@ export class App {
     this.buffer.append({ kind: "notice", text });
   }
 
-  private async runAutoCompact(): Promise<void> {
-    if (this.autoCompacting) return;
-    this.autoCompacting = true;
-    this.onAutoCompactForTest?.();
-    this.compactPct = 0;
-    this.recompute();
-    try {
-      const estimatedTokens = await this.session?.compact(pct => { this.compactPct = pct; this.recompute(); });
-      if (typeof estimatedTokens === "number") {
-        this.tokens = estimatedTokens;
-        this.contextPct = Math.min(100, Math.round((estimatedTokens / this.contextWindowFor(this.providerName)) * 100));
-      }
-      this.notice("Context was getting full — compacted automatically.");
-    } catch (err) {
-      this.buffer.append({ kind: "error", text: `Auto-compact failed: ${err instanceof Error ? err.message : String(err)}` });
-    } finally {
-      this.compactPct = undefined;
-      this.autoCompacting = false;
-      this.recompute();
-    }
+  private pickerDeps(): PickerDeps {
+    return {
+      overlay: this.overlay,
+      cwd: this.props.cwd,
+      sessionIndex: this.props.sessionIndex,
+      notice: text => this.notice(text),
+      recompute: () => this.recompute()
+    };
   }
 
   handleMessage(msg: EngineMessage): void {
@@ -207,19 +206,9 @@ export class App {
       this.activeTool = undefined;
       this.phase = "idle";
       const cost = (msg as { total_cost_usd?: number }).total_cost_usd;
-      if (typeof cost === "number") this.cost += cost;
+      if (typeof cost === "number") this.usage.addCost(cost);
       const usage = (msg as { usage?: Record<string, number> }).usage;
-      if (usage) {
-        const input = (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
-        const output = usage.output_tokens ?? 0;
-        // Current context size, not a running lifetime sum: `input` already
-        // covers the whole resent history, so summing it turn over turn would
-        // double-count and drift away from what /context reports.
-        this.tokens = input + output;
-        const pct = Math.min(100, Math.round((input / this.contextWindowFor(this.providerName)) * 100));
-        this.contextPct = pct;
-        if (pct >= AUTO_COMPACT_THRESHOLD_PCT) void this.runAutoCompact();
-      }
+      if (usage) this.usage.applyTurnUsage(usage);
       this.turnCount += 1;
       void this.git.refresh().then(() => this.recompute());
       this.drainQueueIfIdle();
@@ -255,41 +244,13 @@ export class App {
       mcpServers: this.mcpServers,
       onMessage: msg => this.handleMessage(msg),
       onPermissionRequest: req => {
-        this.permissionQueue.push(req);
         this.phase = "permission";
-        this.openNextPermission();
+        this.permissions.enqueue(req);
       },
       onSessionId: id => { if (this.firstMessage) this.recordSession(id, name); }
     });
     session.start();
     return session;
-  }
-
-  private openNextPermission(): void {
-    const active = this.permissionQueue[0];
-    if (!active) return;
-    this.overlay.openPermission(active, (allow, rememberAs) => this.decidePermission(allow, rememberAs));
-    this.recompute();
-  }
-
-  private decidePermission(allow: boolean, rememberAs?: "allow" | "deny"): void {
-    const active = this.permissionQueue[0];
-    if (rememberAs && active) {
-      try {
-        if (typeof active.input.file_path === "string") {
-          this.permissionStore.remember(active.toolName, active.input.file_path, rememberAs);
-        } else if (active.toolName === "Bash" && typeof active.input.command === "string") {
-          this.permissionStore.rememberCommand(commandPrefix(String(active.input.command)), rememberAs);
-        }
-      } catch (err) {
-        this.buffer.append({ kind: "error", text: `Failed to save permission rule: ${err instanceof Error ? err.message : String(err)}` });
-      }
-    }
-    active?.resolve(allow);
-    this.permissionQueue = this.permissionQueue.slice(1);
-    if (this.permissionQueue.length === 0) this.phase = "streaming";
-    else this.openNextPermission();
-    this.recompute();
   }
 
   private recordSession(id: string, provider: string): void {
@@ -301,13 +262,7 @@ export class App {
   private async restartSession(name: string, resume?: string, modeOverride?: PermissionMode): Promise<void> {
     await this.session?.dispose();
     this.firstMessage = undefined;
-    // The cached token/context-usage numbers describe the session being torn
-    // down. Clearing them keeps the status bar from advertising the old
-    // session's usage against the fresh (usually empty) one — which is also
-    // what makes it disagree with the live figure /context reports until the
-    // next turn's result would otherwise overwrite it.
-    this.tokens = 0;
-    this.contextPct = undefined;
+    this.usage.resetForNewSession();
     this.session = this.createSession(name, resume, modeOverride);
     this.model = this.modelFor(name);
     this.servedModel = undefined;
@@ -369,18 +324,12 @@ export class App {
       },
       compact: async onProgress => {
         const estimatedTokens = await this.session?.compact(onProgress);
-        if (typeof estimatedTokens === "number") {
-          this.tokens = estimatedTokens;
-          this.contextPct = Math.min(100, Math.round((estimatedTokens / this.contextWindowFor(this.providerName)) * 100));
-        }
+        this.usage.applyCompactedSize(estimatedTokens);
         return estimatedTokens;
       },
-      setCompactProgress: pct => { this.compactPct = pct; this.recompute(); },
-      openResumePicker: () => {
-        this.overlay.openResume(this.props.sessionIndex.listForCwd(this.props.cwd), e => this.pickResume(e), () => { this.overlay.close(); this.recompute(); });
-        this.recompute();
-      },
-      costSummary: () => `Session cost: $${this.cost.toFixed(4)}`,
+      setCompactProgress: pct => { this.usage.setCompactProgress(pct); this.recompute(); },
+      openResumePicker: () => openResumePicker(this.pickerDeps(), e => this.pickResume(e)),
+      costSummary: () => `Session cost: $${this.usage.cost.toFixed(4)}`,
       contextInfo: () => ({
         snapshot: this.session?.contextSnapshot(),
         model: this.modelFor(this.providerName) ?? "unknown",
@@ -408,37 +357,9 @@ export class App {
         void this.session?.dispose();
         this.stop();
       },
-      openProjectPicker: () => {
-        this.overlay.openProject(
-          recentProjects(this.props.sessionIndex.list(), this.props.cwd),
-          this.props.cwd,
-          p => {
-            const result = resolveProjectPath(p, this.props.cwd);
-            if (!result.ok) { this.notice(result.error); return; }
-            this.ctx.switchProject(result.path);
-          },
-          () => { this.overlay.close(); this.recompute(); }
-        );
-        this.recompute();
-      },
-      openMemoryPicker: () => {
-        this.overlay.openMemory(
-          buildMemoryOptions(this.props.cwd),
-          o => {
-            if (o.kind === "folder") {
-              ensureMemoryDir(o.path);
-              openFolder(o.path);
-              this.notice(`Opened ${o.path}`);
-              return;
-            }
-            const r = openInEditor(o.path);
-            this.notice(r.hint);
-            if (r.ok) void this.session?.refreshSystemPrompt();
-          },
-          () => { this.overlay.close(); this.recompute(); }
-        );
-        this.recompute();
-      },
+      openProjectPicker: () => openProjectPicker(this.pickerDeps(), path => this.ctx.switchProject(path)),
+      openMemoryPicker: () =>
+        openMemoryPicker(this.pickerDeps(), () => { void this.session?.refreshSystemPrompt(); }),
       currentCwd: () => this.props.cwd
     };
   }
@@ -549,62 +470,39 @@ export class App {
   }
 
   tick(): void {
-    if (this.phase === "idle" && this.compactPct === undefined) return;
+    if (this.phase === "idle" && this.usage.compactPct === undefined) return;
     this.workIndFrame += 1;
     this.recompute();
   }
 
+  private keyRouterHost(): KeyRouterHost {
+    return {
+      isStreaming: () => this.phase === "streaming",
+      isOverlayOpen: () => this.overlay.isOpen,
+      interrupt: () => { void this.session?.interrupt(); },
+      clearScreen: () => { this.terminal.write(CLEAR_AND_HOME); this.renderer.invalidate(); },
+      exit: () => this.ctx.exit(),
+      notice: text => this.notice(text),
+      cyclePermissionMode: () => {
+        const next = MODE_CYCLE[(MODE_CYCLE.indexOf(this.mode) + 1) % MODE_CYCLE.length];
+        this.ctx.setPermissionMode(next).catch(err => {
+          this.buffer.append({ kind: "error", text: err instanceof Error ? err.message : String(err) });
+          this.recompute();
+        });
+      },
+      handleOverlayKey: (k, input) => this.overlay.handleKey(k, input),
+      handlePaste: text => this.inputBox.handlePaste(text),
+      handleInputKey: k => this.inputBox.handleKey(k),
+      recompute: () => this.recompute()
+    };
+  }
+
   handleKeys(ks: Key[]): void {
-    for (const k of ks) this.handleKey(k);
+    this.keys.handleKeys(ks);
   }
 
   handleKey(k: Key): void {
-    // Phase 1: globals.
-    if (k.t === "esc" && this.phase === "streaming" && this.overlay.mode === "none") {
-      void this.session?.interrupt();
-      return;
-    }
-    if (k.t === "ctrl" && k.ch === "l") {
-      this.terminal.write(CLEAR_AND_HOME);
-      this.renderer.invalidate();
-      this.recompute();
-      return;
-    }
-    if (k.t === "ctrl" && k.ch === "c") {
-      const now = Date.now();
-      if (now - this.lastCtrlCAt < 2000) {
-        this.ctx.exit();
-      } else {
-        this.lastCtrlCAt = now;
-        void this.session?.interrupt();
-        this.notice("Press Ctrl+C again to exit.");
-        this.recompute();
-      }
-      return;
-    }
-
-    // Phase 3: focus owner.
-    if (this.overlay.isOpen) {
-      const input = k.t === "printable" ? k.ch : undefined;
-      this.overlay.handleKey(k, input);
-      this.recompute();
-      return;
-    }
-    if (k.t === "backtab") {
-      const next = MODE_CYCLE[(MODE_CYCLE.indexOf(this.mode) + 1) % MODE_CYCLE.length];
-      this.ctx.setPermissionMode(next).catch(err => {
-        this.buffer.append({ kind: "error", text: err instanceof Error ? err.message : String(err) });
-        this.recompute();
-      });
-      return;
-    }
-    if (k.t === "paste") {
-      this.inputBox.handlePaste(k.text);
-      this.recompute();
-      return;
-    }
-    this.inputBox.handleKey(k);
-    this.recompute();
+    this.keys.handleKey(k);
   }
 
   recompute(): void {
@@ -621,7 +519,7 @@ export class App {
       streamingText: this.streamText,
       thinkingText: this.thinkingText,
       activeTool: this.activeTool,
-      compactPct: this.compactPct,
+      compactPct: this.usage.compactPct,
       queuedRows,
       inputRender: inputVisible
         ? this.inputBox.render(this.theme, size.columns, this.phase === "streaming")
@@ -634,11 +532,11 @@ export class App {
         effort: this.effort,
         mode: this.mode,
         cwd: this.props.cwd,
-        costUsd: this.cost,
+        costUsd: this.usage.cost,
         gitBranch: this.git.status.branch,
         gitDirty: this.git.status.dirty,
-        tokens: this.tokens,
-        contextPct: this.contextPct,
+        tokens: this.usage.tokens,
+        contextPct: this.usage.contextPct,
         elapsedMs: Date.now() - this.startedAt
       },
       workIndFrame: this.workIndFrame,

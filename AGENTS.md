@@ -41,10 +41,19 @@ add a third file following that same contract rather than branching inside
 No file in `src/` should grow past **~600 lines** without a deliberate
 decision to split it, and past **~1,000 lines** without actually splitting
 it. This is a guideline, not yet a mechanized check (see Open gaps below).
-`src/ui/nativeApp.ts` (currently ~670 lines) is the file most likely to hit
-this first — when it does, split along the seams already implicit in
-`ui/`: input handling, render orchestration, and overlay/menu wiring should
-become separate modules rather than growing in place.
+
+`src/ui/nativeApp.ts` crossed 600 first and has been split back under it
+(~575 lines) along the seams named here: key dispatch went to
+`ui/keyRouter.ts`, the permission-overlay queue to
+`ui/permissionController.ts`, the resume/project/memory overlays to
+`ui/appPickers.ts`, and cost/token/auto-compact accounting to
+`ui/usageTracker.ts`. Those extractions moved *state ownership*, not just
+code: `App` no longer holds the fields each collaborator owns. That is the
+pattern to repeat — relocating a method that closes over a dozen `App`
+fields buys nothing, since the field access has to be plumbed back in.
+`App.recompute()` is deliberately **not** extracted for that reason: every
+value in the frame is `App`'s own, so a `buildBottomState(...)` helper would
+trade 38 lines of assembly for 38 lines of argument passing.
 
 ## Testing convention
 
