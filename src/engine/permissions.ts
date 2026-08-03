@@ -5,8 +5,34 @@ import { type PermissionStore, isCompoundCommand } from "../agent/permissionStor
 const READ_ONLY = new Set(["Read", "Glob", "Grep"]);
 const EDIT_TOOLS = new Set(["Write", "Edit"]);
 const FILE_TOOLS = new Set(["Read", "Write", "Edit"]);
+// Take a directory `path` (defaulting to cwd) rather than a `file_path`.
+const SEARCH_TOOLS = new Set(["Glob", "Grep"]);
 
 export type PermissionDecision = "allow" | "deny" | "ask";
+
+export interface RuleScope {
+  path: string;
+  /** "file": scope a remembered rule to the containing directory. "dir": the
+   * path already is the directory (Glob/Grep search a directory directly). */
+  kind: "file" | "dir";
+}
+
+/**
+ * The path a remembered rule for this tool call would be scoped to, or
+ * undefined if the tool takes none. Single source of truth for three callers:
+ * the decision below, the overlay deciding whether to offer an "always for
+ * this directory" answer, and the controller storing that answer. They must
+ * agree, or the UI offers to remember a rule nothing ever consults.
+ */
+export function ruleScope(toolName: string, input: Record<string, unknown>): RuleScope | undefined {
+  if (FILE_TOOLS.has(toolName) && typeof input.file_path === "string") {
+    return { path: input.file_path, kind: "file" };
+  }
+  if (SEARCH_TOOLS.has(toolName) && typeof input.path === "string") {
+    return { path: input.path, kind: "dir" };
+  }
+  return undefined;
+}
 
 // True for paths at or inside `cwd`. Resolves both sides first so ".."
 // segments and relative paths can't produce a false "inside" result.
@@ -33,15 +59,21 @@ export function decidePermission(
   // Reads are otherwise unconditionally allowed (see READ_ONLY below), but a
   // read resolving outside cwd is the primary data-exfiltration path for a
   // coding agent (e.g. ~/.ssh/id_rsa, ~/.aws/credentials) and so needs the
-  // same cwd confinement as edits. Glob/Grep take a `pattern`/`path` rather
-  // than a `file_path` and are not confined here — targeted secret-file reads
-  // are the concrete vector this closes.
+  // same cwd confinement as edits.
   const outsideCwdRead = toolName === "Read" && outsideCwdFile;
+  // Same confinement for the search tools, which walk and read every file
+  // under their `path`: unconfined, `Grep` over ~/.aws with a pattern like
+  // "secret" is the same exfiltration path as a targeted Read, only broader.
+  // An omitted (or empty) `path` means cwd, which is inside by definition.
+  const outsideCwdSearch =
+    SEARCH_TOOLS.has(toolName) && typeof input.path === "string" && !isInsideCwd(input.path, cwd);
 
-  if (mode === "bypassPermissions" && !outsideCwdEdit && !outsideCwdRead) return "allow";
-  // Per-directory rules (deny beats allow) apply to file tools.
-  if (FILE_TOOLS.has(toolName) && typeof input.file_path === "string") {
-    const ruling = store.check(toolName, input.file_path);
+  if (mode === "bypassPermissions" && !outsideCwdEdit && !outsideCwdRead && !outsideCwdSearch) return "allow";
+  // Per-directory rules (deny beats allow) apply to every tool that names a
+  // path, keyed on the input that tool actually takes.
+  const scope = ruleScope(toolName, input);
+  if (scope) {
+    const ruling = store.check(toolName, scope.path);
     if (ruling === "deny") return "deny";
     if (ruling === "allow") return "allow";
   }
@@ -59,7 +91,7 @@ export function decidePermission(
     // to approve "git status; rm -rf ~" — that's the whole bug this guards.
     if (ruling === "allow" && !compound) return "allow";
   }
-  if (READ_ONLY.has(toolName)) return outsideCwdRead ? "ask" : "allow";
+  if (READ_ONLY.has(toolName)) return outsideCwdRead || outsideCwdSearch ? "ask" : "allow";
   if (mode === "acceptEdits" && EDIT_TOOLS.has(toolName)) return outsideCwdEdit ? "ask" : "allow";
   return "ask";
 }

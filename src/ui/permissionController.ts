@@ -1,4 +1,5 @@
 import { commandPrefix, type PermissionStore } from "../agent/permissionStore.js";
+import { ruleScope } from "../engine/permissions.js";
 import type { PermissionRequest } from "../agent/session.js";
 import type { OverlayManager } from "./widgets/overlay.js";
 
@@ -38,8 +39,12 @@ export class PermissionController {
     const active = this.queue[0];
     if (rememberAs && active) {
       try {
-        if (typeof active.input.file_path === "string") {
-          this.deps.store.remember(active.toolName, active.input.file_path, rememberAs);
+        const scope = ruleScope(active.toolName, active.input);
+        if (scope) {
+          // "dir" inputs (Glob/Grep) already name the directory to scope to;
+          // "file" inputs are scoped to their containing directory.
+          if (scope.kind === "dir") this.deps.store.rememberDir(active.toolName, scope.path, rememberAs);
+          else this.deps.store.remember(active.toolName, scope.path, rememberAs);
         } else if (active.toolName === "Bash" && typeof active.input.command === "string") {
           this.deps.store.rememberCommand(commandPrefix(String(active.input.command)), rememberAs);
         }

@@ -82,10 +82,20 @@ export class PermissionStore {
     return undefined;
   }
 
+  /** Scopes the rule to the directory containing `filePath`. */
   remember(tool: string, filePath: string, decision: PermissionDecision): void {
-    const dir = normalizePath(dirname(resolve(filePath)));
-    this.rules = this.rules.filter(r => !(r.tool === tool && r.dir !== undefined && normalizePath(r.dir) === dir));
-    this.rules.push({ tool, dir, decision });
+    this.rememberDir(tool, dirname(resolve(filePath)), decision);
+  }
+
+  /**
+   * Scopes the rule to `dir` itself. Glob/Grep take a directory to search
+   * rather than a file inside one, so taking their dirname would widen the
+   * rule to the parent of what the user actually approved.
+   */
+  rememberDir(tool: string, dir: string, decision: PermissionDecision): void {
+    const normalized = normalizePath(dir);
+    this.rules = this.rules.filter(r => !(r.tool === tool && r.dir !== undefined && normalizePath(r.dir) === normalized));
+    this.rules.push({ tool, dir: normalized, decision });
     // The in-memory rule applies even if persisting fails; the caller reports
     // the failure to the user.
     this.persist();

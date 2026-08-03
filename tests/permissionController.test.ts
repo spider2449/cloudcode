@@ -65,6 +65,17 @@ describe("PermissionController", () => {
     expect(store.check("Write", "/repo/src/b.ts")).toBe("allow");
   });
 
+  it("remembers a search directory rule for tools that take a path", () => {
+    const { overlay, store, controller } = setup();
+    const answers: boolean[] = [];
+    controller.enqueue(request("Grep", { pattern: "x", path: "/outside/logs" }, answers));
+    overlay.handleKey({ t: "printable", ch: "a" }, "a"); // "always allow" hotkey
+    expect(answers).toEqual([true]);
+    // Scoped to the searched directory, not to /outside.
+    expect(store.check("Grep", "/outside/logs/app.log")).toBe("allow");
+    expect(store.check("Grep", "/outside/other.log")).toBeUndefined();
+  });
+
   it("reports a failed rule write without dropping the answer", () => {
     const { overlay, store, controller, errors } = setup();
     const answers: boolean[] = [];

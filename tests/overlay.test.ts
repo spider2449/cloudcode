@@ -159,6 +159,22 @@ describe("OverlayManager permission sub-mode", () => {
     expect(joined).not.toContain("Always for this directory");
   });
 
+  it("offers Always/Never for a Grep request, whose rule is keyed on its search path", () => {
+    const onDecision = vi.fn();
+    const mgr = new OverlayManager();
+    mgr.openPermission({ toolName: "Grep", input: { pattern: "x", path: "/logs" } } as never, onDecision);
+    expect(mgr.render(THEMES.dark, 80).join("\n")).toContain("Always for this directory");
+    mgr.handleKey({ t: "printable", ch: "a" }, "a");
+    expect(onDecision).toHaveBeenCalledWith(true, "allow");
+  });
+
+  it("does not offer Always/Never for a path input no rule would be checked against", () => {
+    const mgr = new OverlayManager();
+    // Not a search tool: a remembered directory rule would never be consulted.
+    mgr.openPermission({ toolName: "WebFetch", input: { path: "/v1/users" } } as never, () => {});
+    expect(mgr.render(THEMES.dark, 80).join("\n")).not.toContain("Always for this directory");
+  });
+
   it("offers Always/Never allow '<prefix>' commands for Bash requests", () => {
     const mgr = new OverlayManager();
     mgr.openPermission(bashRequest as never, () => {});

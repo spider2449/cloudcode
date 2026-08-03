@@ -7,6 +7,7 @@ import { sgr, SGR_RESET } from "../term/ansi.js";
 import type { Theme } from "../theme.js";
 import type { MemoryOption } from "../MemoryPicker.js";
 import { commandPrefix } from "../../agent/permissionStore.js";
+import { ruleScope } from "../../engine/permissions.js";
 
 export type OverlayMode = "none" | "resume" | "project" | "permission" | "memory";
 
@@ -95,9 +96,12 @@ export class OverlayManager {
 
   openPermission(request: PermissionRequest, onDecision: (allow: boolean, rememberAs?: "allow" | "deny") => void): void {
     this._mode = "permission";
-    const hasFilePath = typeof request.input.file_path === "string";
+    // Offer "always for this directory" exactly when a rule scoped that way
+    // would actually be consulted (see ruleScope) — Read/Write/Edit by their
+    // file_path, Glob/Grep by the directory they search.
+    const hasPathRule = ruleScope(request.toolName, request.input) !== undefined;
     const isBashCommand = request.toolName === "Bash" && typeof request.input.command === "string";
-    const options = hasFilePath
+    const options = hasPathRule
       ? FILE_OPTIONS
       : isBashCommand
         ? commandOptions(commandPrefix(String(request.input.command)))

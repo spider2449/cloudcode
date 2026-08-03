@@ -124,9 +124,40 @@ describe("out-of-cwd reads", () => {
     expect(decidePermission("Read", { file_path: OUTSIDE }, "default", store, CWD)).toBe("allow");
   });
 
-  it("still auto-allows Glob/Grep (pattern tools are not path-confined here)", () => {
+  it("asks before searching a path outside cwd", () => {
     const store = freshStore();
-    expect(decidePermission("Glob", { pattern: "*", path: OUTSIDE }, "default", store, CWD)).toBe("allow");
+    expect(decidePermission("Glob", { pattern: "*", path: OUTSIDE }, "default", store, CWD)).toBe("ask");
+    expect(decidePermission("Grep", { pattern: "x", path: OUTSIDE }, "default", store, CWD)).toBe("ask");
+    // Confinement holds in bypassPermissions too, as it does for reads.
+    expect(decidePermission("Grep", { pattern: "x", path: OUTSIDE }, "bypassPermissions", store, CWD)).toBe("ask");
+    // A relative path that climbs out of cwd is the same case.
+    expect(decidePermission("Grep", { pattern: "x", path: "../.." }, "default", store, CWD)).toBe("ask");
+  });
+
+  it("auto-allows a search with no path, an empty path, or a path inside cwd", () => {
+    const store = freshStore();
+    expect(decidePermission("Glob", { pattern: "*" }, "default", store, CWD)).toBe("allow");
+    expect(decidePermission("Glob", { pattern: "*", path: "" }, "default", store, CWD)).toBe("allow");
+    expect(decidePermission("Grep", { pattern: "x", path: join(CWD, "src") }, "default", store, CWD)).toBe("allow");
+    expect(decidePermission("Grep", { pattern: "x", path: "src" }, "default", store, CWD)).toBe("allow");
+  });
+
+  it("a remembered rule for the searched directory wins over the cwd guard", () => {
+    const store = freshStore();
+    store.rememberDir("Grep", OUTSIDE, "allow");
     expect(decidePermission("Grep", { pattern: "x", path: OUTSIDE }, "default", store, CWD)).toBe("allow");
+    // Per-tool, as everywhere else in the store.
+    expect(decidePermission("Glob", { pattern: "*", path: OUTSIDE }, "default", store, CWD)).toBe("ask");
+  });
+
+  it("a remembered deny blocks a search of a directory inside cwd", () => {
+    const store = freshStore();
+    store.rememberDir("Grep", join(CWD, "secrets"), "deny");
+    expect(decidePermission("Grep", { pattern: "x", path: join(CWD, "secrets") }, "default", store, CWD)).toBe("deny");
+    // Subdirectories of a denied directory are covered by the same rule.
+    expect(decidePermission("Grep", { pattern: "x", path: join(CWD, "secrets", "keys") }, "default", store, CWD)).toBe("deny");
+    // bypassPermissions still short-circuits inside cwd, as it does for every
+    // other tool — deny rules only apply in the modes that consult them.
+    expect(decidePermission("Grep", { pattern: "x", path: join(CWD, "secrets") }, "bypassPermissions", store, CWD)).toBe("allow");
   });
 });

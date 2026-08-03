@@ -97,6 +97,13 @@ explicit remembered allow-rule for the path still wins. Scoped deliberately to
 remain unconfined; that residual is documented in-code and pinned by a test so
 it is explicit rather than silent. Closing it is the natural follow-up (§5).
 
+> **Update (2026-08-03):** the residual is closed. `Glob`/`Grep` now ask when
+> their `path` resolves outside cwd (including under `bypassPermissions`), and
+> a remembered rule can be scoped to the searched directory itself via
+> `PermissionStore.rememberDir`. `ruleScope()` in `engine/permissions.ts` is
+> the single source of truth shared by the decision, the overlay's answer
+> options, and the rule writer.
+
 ### Other notes
 
 - Print/non-interactive mode auto-denies prompting tool calls by default;
@@ -157,6 +164,16 @@ it is explicit rather than silent. Closing it is the natural follow-up (§5).
    `~` pinning so a prerelease patch can't silently change build behavior.
 5. **Add packaging-script coverage** (or lean harder on the release smoke test)
    so a broken installer surfaces before a release, not during one.
+
+### Status (2026-08-03)
+
+| # | Status |
+|---|---|
+| 1 | ✅ Done — see the update under Finding 2 |
+| 2 | ✅ Done — `App` is ~575 lines; the extracted collaborators are listed in AGENTS.md |
+| 3 | ✅ Done — `npm run lint:size` (`scripts/check-file-size.mjs`), its own CI step |
+| 4 | ✅ Done — rationale recorded in AGENTS.md ("Dependency version policy") |
+| 5 | ◻️ Open |
 
 ## 6. Verdict
 

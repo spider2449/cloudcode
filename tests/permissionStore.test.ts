@@ -55,6 +55,16 @@ describe("PermissionStore", () => {
     expect(store.check("Read", join(cwd, "Src", "b.ts"))).toBe("allow");
   });
 
+  it("rememberDir scopes the rule to the directory itself, not its parent", () => {
+    const cwd = tempCwd();
+    const store = new PermissionStore(cwd);
+    store.rememberDir("Grep", join(cwd, "logs"), "allow");
+    expect(store.check("Grep", join(cwd, "logs", "app.log"))).toBe("allow");
+    expect(store.check("Grep", join(cwd, "logs", "deep", "app.log"))).toBe("allow");
+    // remember() would have stored `cwd` here; rememberDir must not.
+    expect(store.check("Grep", join(cwd, "other.txt"))).toBeUndefined();
+  });
+
   it("persists across instances and clears", () => {
     const cwd = tempCwd();
     const a = new PermissionStore(cwd);
