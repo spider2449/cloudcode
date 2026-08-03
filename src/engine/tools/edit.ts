@@ -31,7 +31,12 @@ export const editTool: ToolDef = {
     if (count > 1 && input.replace_all !== true) {
       return { content: `old_string occurs ${count} times in ${abs}; pass replace_all: true or make it unique`, isError: true };
     }
-    const next = input.replace_all === true ? text.split(oldStr).join(newStr) : text.replace(oldStr, newStr);
+    // split/join for both paths, never String.replace: replace() interprets
+    // "$$", "$&", "$`", "$'" and "$1" in the replacement, so a new_string like
+    // "`$${amount}`" would be silently written as "`${amount}`". The count
+    // check above already rejects a non-unique old_string, so joining every
+    // occurrence is equivalent to a single replace here.
+    const next = text.split(oldStr).join(newStr);
     writeFileSync(abs, next);
     return { content: `Edited ${abs}` };
   }
