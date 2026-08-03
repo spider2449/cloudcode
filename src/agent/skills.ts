@@ -15,6 +15,28 @@ interface ParsedSkillFile {
   content: string;
 }
 
+// Slash commands are parsed with /^\/([\w-]+)/ (commands/registry.ts), so a
+// skill whose name contains anything else registers a command nobody can
+// invoke. The name is also used as a link path segment by linkRepoSkills, and
+// frontmatter from a cloned third-party repo is untrusted input there — an
+// unsanitized "../../evil" would place a junction outside the skills dir.
+export function sanitizeSkillName(raw: string): string | undefined {
+  const name = raw.trim().replace(/[^\w-]+/g, "-").replace(/^-+|-+$/g, "");
+  return name === "" ? undefined : name;
+}
+
+// Descriptions are concatenated into the system prompt (engine/systemPrompt.ts)
+// and `/skill install` lets any GitHub repo supply one, so collapse whitespace
+// and control characters and cap the length rather than passing it through.
+const MAX_DESCRIPTION_LENGTH = 200;
+
+function sanitizeDescription(raw: string): string {
+  const flat = raw.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim();
+  return flat.length > MAX_DESCRIPTION_LENGTH
+    ? flat.slice(0, MAX_DESCRIPTION_LENGTH).trimEnd() + "…"
+    : flat;
+}
+
 function parseSkillFile(raw: string): ParsedSkillFile | undefined {
   const lines = raw.split(/\r?\n/);
   if (lines[0]?.trim() !== "---") return undefined;
@@ -27,7 +49,7 @@ function parseSkillFile(raw: string): ParsedSkillFile | undefined {
   }
   return {
     name: frontmatter.name,
-    description: frontmatter.description ?? "",
+    description: sanitizeDescription(frontmatter.description ?? ""),
     content: lines.slice(end + 1).join("\n").trim()
   };
 }
@@ -46,7 +68,11 @@ function readSkillAt(dir: string, fallbackName: string, source: Skill["source"])
   }
   const parsed = parseSkillFile(raw);
   if (!parsed) return undefined;
-  return { name: parsed.name || fallbackName, description: parsed.description, content: parsed.content, source };
+  // Frontmatter name wins, but only if it survives sanitizing; otherwise fall
+  // back to the directory name. A skill that can produce neither is skipped.
+  const name = sanitizeSkillName(parsed.name ?? "") ?? sanitizeSkillName(fallbackName);
+  if (name === undefined) return undefined;
+  return { name, description: parsed.description, content: parsed.content, source };
 }
 
 function scanSkillDir(dir: string, source: Skill["source"], repoNames: ReadonlySet<string> = new Set()): Skill[] {
@@ -104,8 +130,11 @@ function walkRepoSkills(repoDir: string): RepoSkillDir[] {
       try {
         const parsed = parseSkillFile(readFileSync(join(sub, "SKILL.md"), "utf8"));
         if (parsed) {
-          found.push({ name: parsed.name || entry.name, dir: sub, parsed });
-          continue; // a skill dir is a leaf
+          // Sanitized before it becomes a link path segment: the name comes
+          // from a cloned third-party repo (see sanitizeSkillName).
+          const name = sanitizeSkillName(parsed.name ?? "") ?? sanitizeSkillName(entry.name);
+          if (name !== undefined) found.push({ name, dir: sub, parsed });
+          continue; // a skill dir is a leaf either way
         }
       } catch {
         // no SKILL.md here: recurse
@@ -119,9 +148,12 @@ function walkRepoSkills(repoDir: string): RepoSkillDir[] {
 
 export function linkRepoSkills(repoDir: string, repoName: string, skillsDir: string): number {
   const found = walkRepoSkills(repoDir);
-  if (found.length === 0) return 0;
+  // The namespace dir is created even for a repo with no skills: loadSkills
+  // treats its absence as "not linked yet" and re-walks the whole repo tree on
+  // every call, so an empty dir is what stops that walk from repeating.
   const nsDir = join(skillsDir, repoName);
   mkdirSync(nsDir, { recursive: true });
+  if (found.length === 0) return 0;
   let linked = 0;
   for (const { name, dir } of found) {
     const linkPath = join(nsDir, name);
