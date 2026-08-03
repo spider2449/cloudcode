@@ -25,6 +25,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Check module size ceiling
+        run: npm run lint:size
+
       - name: Type-check and build
         run: npm run build
 

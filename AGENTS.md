@@ -40,7 +40,9 @@ add a third file following that same contract rather than branching inside
 
 No file in `src/` should grow past **~600 lines** without a deliberate
 decision to split it, and past **~1,000 lines** without actually splitting
-it. This is a guideline, not yet a mechanized check (see Open gaps below).
+it. `npm run lint:size` (`scripts/check-file-size.mjs`, also a CI step)
+enforces this over `src/` and `tests/`: a file past ~600 lines is reported
+as a warning, one past ~1,000 fails the build.
 
 `src/ui/nativeApp.ts` crossed 600 first and has been split back under it
 (~575 lines) along the seams named here: key dispatch went to
@@ -111,8 +113,9 @@ Re-evaluate `typescript-eslint` once it supports TS 7.
 
 None currently tracked. See "Closed" below for what's been addressed.
 
-Closed: CI (`.github/workflows/ci.yml`, runs lint/build/test/audit on push
-and PR to `master`), linting (`oxlint`, via `npm run lint`), dependency
+Closed: CI (`.github/workflows/ci.yml`, runs lint/size-check/build/test/audit
+on push and PR to `master`), linting (`oxlint`, via `npm run lint`), the
+module-size ceiling (`npm run lint:size`), dependency
 auditing (`npm audit --audit-level=high` in CI plus `.github/dependabot.yml`
 for weekly npm/Actions update PRs), the missing `LICENSE` file, and a
 release smoke test (`.github/workflows/release-smoke-test.yml`, triggered
