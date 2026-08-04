@@ -7,7 +7,7 @@ import type { PermissionStore } from "../agent/permissionStore.js";
 import { decidePermission } from "./permissions.js";
 import { costUsd } from "./pricing.js";
 import { compactHistory } from "./compact.js";
-import { EFFORT_BUDGETS, clampEffortBudget, type EffortLevel } from "./effort.js";
+import { EFFORT_HEADROOM, clampEffortHeadroom, allowsDisabledThinking, type EffortLevel } from "./effort.js";
 import { DEFAULT_CONTEXT_WINDOW } from "../agent/providers.js";
 import type { LspManager } from "./lsp/manager.js";
 import { appendDiagnostics } from "./lsp/autoInject.js";
@@ -230,20 +230,30 @@ export class EngineLoop {
       }
       pendingJson = "";
     };
-    // With extended thinking enabled, budget_tokens counts against
-    // max_tokens, so raise the cap to keep MAX_TOKENS available for the
-    // visible answer.
-    const clamped = this.effort === "off"
+    // "off" must send thinking explicitly disabled: current models treat an
+    // omitted thinking param as adaptive-on, so omitting it would silently
+    // ignore the user's setting. On models that refuse to switch thinking off
+    // at all, "off" degrades to the lowest effort level — the closest thing to
+    // "spend as little as possible on reasoning" those models offer.
+    const effectiveEffort: Exclude<EffortLevel, "off"> | undefined =
+      this.effort !== "off" ? this.effort
+        : allowsDisabledThinking(this.model) ? undefined
+          : "low";
+    // Adaptive thinking shares max_tokens with the visible answer, so raise
+    // the cap by the level's headroom to keep MAX_TOKENS available for the
+    // answer itself.
+    const headroom = effectiveEffort === undefined
       ? 0
-      : clampEffortBudget(EFFORT_BUDGETS[this.effort], this.opts.contextWindow ?? DEFAULT_CONTEXT_WINDOW, MAX_TOKENS);
-    const budget = clamped > 0 ? clamped : undefined;
+      : clampEffortHeadroom(EFFORT_HEADROOM[effectiveEffort], this.opts.contextWindow ?? DEFAULT_CONTEXT_WINDOW, MAX_TOKENS);
     const req = {
       model: this.model,
       system: [{ type: "text" as const, text: this.systemPrompt, cache_control: { type: "ephemeral" as const } }],
       messages: withCacheControlOnLastBlock(this.messages),
       tools: this.tools.map(t => ({ name: t.name, description: t.description, input_schema: t.input_schema })),
-      max_tokens: budget === undefined ? MAX_TOKENS : budget + MAX_TOKENS,
-      ...(budget === undefined ? {} : { thinking: { type: "enabled" as const, budget_tokens: budget } })
+      max_tokens: MAX_TOKENS + headroom,
+      ...(effectiveEffort === undefined
+        ? { thinking: { type: "disabled" as const } }
+        : { thinking: { type: "adaptive" as const }, output_config: { effort: effectiveEffort } })
     };
     this.lastSnapshot = {
       systemTokens: estimate(this.systemPrompt),

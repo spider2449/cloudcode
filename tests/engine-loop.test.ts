@@ -428,10 +428,13 @@ describe("EngineLoop", () => {
 });
 
 describe("EngineLoop thinking", () => {
-  function makeEffortLoop(turns: object[][], received: unknown[], requests: unknown[], effort: "off" | "low" | "medium" | "high") {
+  function makeEffortLoop(
+    turns: object[][], received: unknown[], requests: unknown[],
+    effort: "off" | "low" | "medium" | "high", model = "test-model"
+  ) {
     return new EngineLoop({
       client: capturingClient(turns, requests),
-      model: "test-model",
+      model,
       systemPrompt: "sys",
       tools: [echoTool],
       cwd: process.cwd(),
@@ -443,21 +446,36 @@ describe("EngineLoop thinking", () => {
     });
   }
 
-  it("omits thinking param when effort is off", async () => {
+  it("disables thinking explicitly when effort is off", async () => {
     const requests: unknown[] = [];
     const loop = makeEffortLoop([textTurn("hi")], [], requests, "off");
     await loop.runTurn("q", new AbortController().signal);
-    const req = requests[0] as { thinking?: unknown; max_tokens: number };
-    expect(req.thinking).toBeUndefined();
+    const req = requests[0] as { thinking?: unknown; output_config?: unknown; max_tokens: number };
+    // Omitting `thinking` would mean adaptive-on on current models, so "off"
+    // has to say so explicitly.
+    expect(req.thinking).toEqual({ type: "disabled" });
+    expect(req.output_config).toBeUndefined();
     expect(req.max_tokens).toBe(8192);
   });
 
-  it("sends thinking budget and raised max_tokens when effort is medium", async () => {
+  it("degrades effort off to low on models that cannot disable thinking", async () => {
+    const requests: unknown[] = [];
+    const loop = makeEffortLoop([textTurn("hi")], [], requests, "off", "claude-fable-5");
+    await loop.runTurn("q", new AbortController().signal);
+    const req = requests[0] as { thinking?: unknown; output_config?: unknown; max_tokens: number };
+    // thinking: disabled is a 400 on Fable/Mythos, so never send it there.
+    expect(req.thinking).toEqual({ type: "adaptive" });
+    expect(req.output_config).toEqual({ effort: "low" });
+    expect(req.max_tokens).toBe(4096 + 8192);
+  });
+
+  it("sends adaptive thinking, an effort level, and raised max_tokens when effort is medium", async () => {
     const requests: unknown[] = [];
     const loop = makeEffortLoop([textTurn("hi")], [], requests, "medium");
     await loop.runTurn("q", new AbortController().signal);
-    const req = requests[0] as { thinking?: unknown; max_tokens: number };
-    expect(req.thinking).toEqual({ type: "enabled", budget_tokens: 16384 });
+    const req = requests[0] as { thinking?: unknown; output_config?: unknown; max_tokens: number };
+    expect(req.thinking).toEqual({ type: "adaptive" });
+    expect(req.output_config).toEqual({ effort: "medium" });
     expect(req.max_tokens).toBe(16384 + 8192);
   });
 
@@ -467,10 +485,12 @@ describe("EngineLoop thinking", () => {
     await loop.runTurn("q1", new AbortController().signal);
     loop.setEffort("high");
     await loop.runTurn("q2", new AbortController().signal);
-    expect((requests[1] as { thinking?: unknown }).thinking).toEqual({ type: "enabled", budget_tokens: 32768 });
+    const req = requests[1] as { thinking?: unknown; output_config?: unknown };
+    expect(req.thinking).toEqual({ type: "adaptive" });
+    expect(req.output_config).toEqual({ effort: "high" });
   });
 
-  it("disables thinking entirely when the context window is too small for a useful budget", async () => {
+  it("keeps thinking on but drops the headroom when the context window is too small", async () => {
     const requests: unknown[] = [];
     const loop = new EngineLoop({
       client: capturingClient([textTurn("hi")], requests),
@@ -481,13 +501,14 @@ describe("EngineLoop thinking", () => {
       permissionMode: "bypassPermissions",
       store: new PermissionStore(mkdtempSync(join(tmpdir(), "cc-loop-"))),
       effort: "low",
-      contextWindow: 9000, // 9000 - 8192 < 1024: no room for a real budget
+      contextWindow: 8192, // no room above max_tokens for any headroom
       onMessage: () => {},
       requestPermission: async () => true
     });
     await loop.runTurn("q", new AbortController().signal);
-    const req = requests[0] as { thinking?: unknown; max_tokens: number };
-    expect(req.thinking).toBeUndefined();
+    const req = requests[0] as { thinking?: unknown; output_config?: unknown; max_tokens: number };
+    expect(req.thinking).toEqual({ type: "adaptive" });
+    expect(req.output_config).toEqual({ effort: "low" });
     expect(req.max_tokens).toBe(8192);
   });
 

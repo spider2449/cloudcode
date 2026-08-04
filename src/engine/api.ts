@@ -8,7 +8,8 @@ export interface StreamRequest {
   messages: unknown[];
   tools: unknown[];
   max_tokens: number;
-  thinking?: { type: "enabled"; budget_tokens: number };
+  thinking?: { type: "adaptive" } | { type: "disabled" };
+  output_config?: { effort: "low" | "medium" | "high" };
 }
 
 export interface MessagesClient {
