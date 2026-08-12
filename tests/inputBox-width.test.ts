@@ -34,5 +34,16 @@ describe("InputBox CJK wrapping", () => {
     expect(() => box.render(theme, 5, false)).not.toThrow();
     const joined = r.contentRows.join("");
     expect(joined).toContain("中");
+    expect(r.contentRows[r.cursorRow]).toContain("█");
+  });
+
+  it("moves the IME anchor to the next row when the marker wraps", () => {
+    const box = new InputBox(ctx, new History());
+    for (const ch of "中中") box.handleKey({ t: "printable", ch });
+    // innerWidth = 6: "> " plus two CJK characters fills the first row,
+    // so the one-cell marker starts the next row.
+    const r = box.render(theme, 10, false);
+    expect(r.contentRows).toEqual(["> 中中", "█"]);
+    expect({ row: r.cursorRow, column: r.cursorColumn }).toEqual({ row: 1, column: 0 });
   });
 });

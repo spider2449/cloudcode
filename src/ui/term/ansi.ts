@@ -41,6 +41,10 @@ export function cursorUp(n: number): string {
   return n > 0 ? `\x1b[${n}A` : "";
 }
 
+export function cursorForward(n: number): string {
+  return n > 0 ? `\x1b[${n}C` : "";
+}
+
 // DECSTBM: confine scrolling to rows top..bottom (1-indexed, inclusive).
 // Used to pin the footer band below the scroll region to the terminal's
 // bottom edge while the transcript above it scrolls independently.

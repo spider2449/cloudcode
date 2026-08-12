@@ -6,7 +6,7 @@ import type { InputBoxRender } from "../widgets/inputBox.js";
 import type { OverlayMode } from "../widgets/overlay.js";
 import { tailForHeight } from "../streamTail.js";
 import { wrapText } from "../layout.js";
-import { ERASE_DOWN, cursorTo, cursorUp, setScrollRegion, RESET_SCROLL_REGION, CLEAR_ALL_AND_HOME, sgr, SGR_RESET } from "./ansi.js";
+import { ERASE_DOWN, cursorTo, cursorUp, cursorForward, setScrollRegion, RESET_SCROLL_REGION, CLEAR_ALL_AND_HOME, sgr, SGR_RESET } from "./ansi.js";
 import type { Theme } from "../theme.js";
 import { appendFileSync } from "node:fs";
 
@@ -42,6 +42,11 @@ export interface BottomState {
   workStartedAt: number;
 }
 
+interface FooterRender {
+  rows: string[];
+  cursor?: { row: number; column: number };
+}
+
 /**
  * Claude Code-style inline renderer with a pinned-bottom footer. The
  * transcript lives in a terminal scroll region (rows 1..scrollBottom) that
@@ -69,6 +74,9 @@ export class InlineRenderer {
   // printed footer occupied, so the next frame can erase exactly that much
   // before reprinting, and whether a frame has been printed yet.
   private footerHeight = 0;
+  // Row where the real cursor was parked within the previous simple-mode
+  // block. It normally points at the input marker rather than the last row.
+  private simpleCursorRow = 0;
   private simpleFirstFrame = true;
   private lastColumnsSimple = -1;
 
@@ -96,11 +104,12 @@ export class InlineRenderer {
       : this.frameSimple(buffer, theme, size, footer);
   }
 
-  private buildFooter(bottom: BottomState, theme: Theme, size: { rows: number; columns: number }): string[] {
+  private buildFooter(bottom: BottomState, theme: Theme, size: { rows: number; columns: number }): FooterRender {
     const { rows, columns } = size;
 
     // Footer content, built bottom-up (same assembly as before).
     const dyn: string[] = [];
+    let inputCursorRow: number | undefined;
     dyn.push(...renderStatusBar(bottom.statusBarProps, theme, columns));
     if (bottom.overlay !== "none") {
       dyn.unshift(...bottom.overlayRows);
@@ -110,36 +119,51 @@ export class InlineRenderer {
       dyn.unshift(...bottom.inputRender.contentRows);
       dyn.unshift(...bottom.inputRender.borderRows);
       dyn.unshift(...bottom.queuedRows);
+      if (bottom.inputRender.contentRows.length > 0) {
+        inputCursorRow = bottom.queuedRows.length + bottom.inputRender.borderRows.length + bottom.inputRender.cursorRow;
+      }
     }
-    if (bottom.compactPct !== undefined) dyn.unshift(renderProgress("Compacting", bottom.compactPct, theme, 20));
-    if (bottom.streaming) dyn.unshift(renderWorkInd(bottom.workIndFrame, bottom.activeTool ? `Running ${bottom.activeTool}` : "Thinking", Date.now() - bottom.workStartedAt, theme));
+    const prepend = (lines: string[]): void => {
+      dyn.unshift(...lines);
+      if (inputCursorRow !== undefined) inputCursorRow += lines.length;
+    };
+    if (bottom.compactPct !== undefined) prepend([renderProgress("Compacting", bottom.compactPct, theme, 20)]);
+    if (bottom.streaming) prepend([renderWorkInd(bottom.workIndFrame, bottom.activeTool ? `Running ${bottom.activeTool}` : "Thinking", Date.now() - bottom.workStartedAt, theme)]);
     // Tail lines are hard-wrapped to the terminal width instead of relying on
     // autowrap-off (CSI ?7l): legacy conhost ignores DECAWM, so an over-width
     // row written at the bottom of the screen wraps, scrolls the viewport, and
     // strands stale footer copies in the transcript region.
     if (bottom.streamingText !== "") {
       const streamTailCap = Math.max(3, rows - dyn.length - 3);
-      dyn.unshift(...wrapText(tailForHeight(bottom.streamingText, streamTailCap, columns), columns));
+      prepend(wrapText(tailForHeight(bottom.streamingText, streamTailCap, columns), columns));
     }
     if (bottom.thinkingText !== "") {
       const thinkTailCap = Math.max(2, Math.min(6, rows - dyn.length - 3));
       const thinkingCode = sgr(theme.thinking);
       const lines = wrapText(tailForHeight(bottom.thinkingText, thinkTailCap, Math.max(1, columns - 2)), Math.max(1, columns - 2));
-      dyn.unshift(...lines.map((l, i) => `${thinkingCode}${i === 0 ? "○ " : "  "}${l}${SGR_RESET}`));
+      prepend(lines.map((l, i) => `${thinkingCode}${i === 0 ? "○ " : "  "}${l}${SGR_RESET}`));
     }
 
     // Cap the footer so the scroll region always keeps at least 1 row.
-    return dyn.slice(Math.max(0, dyn.length - (rows - 1)));
+    const sliceStart = Math.max(0, dyn.length - (rows - 1));
+    const footerRows = dyn.slice(sliceStart);
+    const visibleCursorRow = inputCursorRow === undefined ? undefined : inputCursorRow - sliceStart;
+    return {
+      rows: footerRows,
+      cursor: visibleCursorRow !== undefined && visibleCursorRow >= 0 && visibleCursorRow < footerRows.length
+        ? { row: visibleCursorRow, column: bottom.inputRender.cursorColumn }
+        : undefined
+    };
   }
 
   private frameScrollRegion(
     buffer: Buffer,
     theme: Theme,
     size: { rows: number; columns: number },
-    footer: string[]
+    footer: FooterRender
   ): string {
     const { rows, columns } = size;
-    const scrollBottom = Math.max(1, rows - footer.length);
+    const scrollBottom = Math.max(1, rows - footer.rows.length);
 
     let out = "";
     const firstFrame = this.lastScrollBottom < 0;
@@ -253,7 +277,10 @@ export class InlineRenderer {
       traceLog(`commit staticRows.length=${staticRows.length} printedRows(after)=${this.printedRows} recentRows.length(after)=${this.recentRows.length}`);
     }
     out += cursorTo(scrollBottom, 1) + staticRows.map(r => r + "\r\n").join("");
-    out += cursorTo(scrollBottom + 1, 1) + ERASE_DOWN + footer.join("\r\n");
+    out += cursorTo(scrollBottom + 1, 1) + ERASE_DOWN + footer.rows.join("\r\n");
+    if (footer.cursor) {
+      out += cursorTo(scrollBottom + 1 + footer.cursor.row, footer.cursor.column + 1);
+    }
     return out;
   }
 
@@ -270,7 +297,7 @@ export class InlineRenderer {
     buffer: Buffer,
     theme: Theme,
     size: { rows: number; columns: number },
-    footer: string[]
+    footer: FooterRender
   ): string {
     const { columns } = size;
     let out = "";
@@ -289,7 +316,7 @@ export class InlineRenderer {
       // one row, and erasing without returning to column 1 first only wipes
       // part of a line: either bug leaves stale content behind or wipes the
       // last transcript line too, creeping the footer up by one row/frame.
-      out += cursorUp(this.footerHeight - 1) + "\r" + ERASE_DOWN;
+      out += cursorUp(this.simpleCursorRow) + "\r" + ERASE_DOWN;
     }
 
     const staticRows = buffer.takeCommitRows(columns, theme);
@@ -306,11 +333,18 @@ export class InlineRenderer {
     // the difference, so the footer's position only ever moves when real
     // content displaces it, never when a preview merely shrinks -- and the
     // status bar (footer's own last line) stays the last thing written.
-    const blockHeight = staticRows.length + footer.length;
+    const blockHeight = staticRows.length + footer.rows.length;
     const pad = this.simpleFirstFrame ? 0 : Math.max(0, this.footerHeight - blockHeight);
     if (pad > 0) out += "\r\n".repeat(pad);
-    out += footer.join("\r\n");
-    this.footerHeight = pad + footer.length;
+    out += footer.rows.join("\r\n");
+    this.footerHeight = pad + footer.rows.length;
+    if (footer.cursor) {
+      const rowsBelowCursor = footer.rows.length - 1 - footer.cursor.row;
+      out += cursorUp(rowsBelowCursor) + "\r" + cursorForward(footer.cursor.column);
+      this.simpleCursorRow = pad + footer.cursor.row;
+    } else {
+      this.simpleCursorRow = this.footerHeight - 1;
+    }
     this.simpleFirstFrame = false;
     return out;
   }
@@ -324,6 +358,7 @@ export class InlineRenderer {
     this.recentRows = [];
     this.simpleFirstFrame = true;
     this.footerHeight = 0;
+    this.simpleCursorRow = 0;
     this.lastColumnsSimple = -1;
   }
 
@@ -334,7 +369,7 @@ export class InlineRenderer {
     // last-painted footer (input box + status bar) is left on screen and the
     // shell's next prompt gets printed overlapping it.
     const eraseFooter = !this.useScrollRegion && !this.simpleFirstFrame
-      ? cursorUp(this.footerHeight - 1) + "\r" + ERASE_DOWN
+      ? cursorUp(this.simpleCursorRow) + "\r" + ERASE_DOWN
       : "";
     this.lastScrollBottom = -1;
     this.lastRows = -1;
@@ -343,6 +378,7 @@ export class InlineRenderer {
     this.recentRows = [];
     this.simpleFirstFrame = true;
     this.footerHeight = 0;
+    this.simpleCursorRow = 0;
     this.lastColumnsSimple = -1;
     return (this.useScrollRegion ? RESET_SCROLL_REGION : eraseFooter) + "\r\n";
   }

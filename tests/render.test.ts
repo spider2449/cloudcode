@@ -8,7 +8,10 @@ const theme = THEMES.dark;
 const size = { rows: 24, columns: 80 };
 
 function emptyInputRender() {
-  return { borderRows: ["╭─╮", "╰─╯"], contentRows: ["> "], menuRows: [], hintRow: null, totalRows: 3 };
+  return {
+    borderRows: ["╭─╮", "╰─╯"], contentRows: ["> █"], menuRows: [], hintRow: null,
+    totalRows: 3, cursorRow: 0, cursorColumn: 2
+  };
 }
 
 function baseBottom(overrides: Partial<BottomState> = {}): BottomState {
@@ -83,6 +86,14 @@ describe("InlineRenderer", () => {
     expect(anchorIdx).toBeGreaterThanOrEqual(0);
     expect(out.includes(footerAnchor + "\x1b[0J")).toBe(true);
     expect(out).toContain("anthropic"); // status bar, part of the footer
+  });
+
+  it("parks the real terminal cursor on the input marker for IME candidates", () => {
+    const r = new InlineRenderer(true);
+    const out = r.frame(new Buffer(), baseBottom(), theme, size);
+    // Footer starts at row 21; two border rows put the input on row 23.
+    // Its zero-based display column 2 maps to terminal column 3.
+    expect(out.endsWith("\x1b[23;3H")).toBe(true);
   });
 
   it("repaints the footer every frame (status bar redrawn even with no new transcript rows)", () => {
@@ -462,14 +473,15 @@ describe("InlineRenderer (simple mode, no scroll region)", () => {
   });
 
   it("erases exactly the previous footer height before reprinting on the next frame", () => {
-    // The cursor is parked on the footer's LAST row after a frame (no
-    // trailing "\r\n"), so returning to its first row is footerHeight-1 rows
-    // up, followed by a carriage return to reach column 1 before erasing.
+    // The cursor is parked on the input row after a frame so the IME can
+    // anchor there. Returning to the footer's first row moves up by that
+    // input row's zero-based index before erasing.
     const r = new InlineRenderer(false);
     const buf = new Buffer();
     r.frame(buf, baseBottom(), theme, size);
     const out = r.frame(buf, baseBottom(), theme, size);
-    expect(out).toContain(`\x1b[${FOOTER_HEIGHT - 1}A\r\x1b[0J`);
+    expect(out).toContain("\x1b[2A\r\x1b[0J");
+    expect(out.endsWith("\x1b[1A\r\x1b[2C")).toBe(true);
   });
 
   it("does not creep the footer upward or delete transcript rows across repeated no-op frames", () => {
@@ -523,7 +535,7 @@ describe("InlineRenderer (simple mode, no scroll region)", () => {
     const buf = new Buffer();
     r.frame(buf, baseBottom(), theme, size);
     const out = r.finalize();
-    expect(out).toBe(`\x1b[${FOOTER_HEIGHT - 1}A\r\x1b[0J\r\n`);
+    expect(out).toBe("\x1b[2A\r\x1b[0J\r\n");
   });
 
   it("does not clear the screen itself on a column-width change (nativeApp's debounced resize handles that)", () => {

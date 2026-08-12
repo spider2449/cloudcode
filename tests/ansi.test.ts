@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { BRACKETED_PASTE_ON, BRACKETED_PASTE_OFF,
-  CURSOR_HIDE, CURSOR_SHOW, CLEAR_AND_HOME, cursorTo, sgr, SGR_RESET, ERASE_DOWN, cursorUp,
+  CURSOR_HIDE, CURSOR_SHOW, CLEAR_AND_HOME, cursorTo, sgr, SGR_RESET, ERASE_DOWN, cursorUp, cursorForward,
   setScrollRegion, RESET_SCROLL_REGION } from "../src/ui/term/ansi.js";
 
 describe("ansi", () => {
@@ -45,6 +45,11 @@ describe("relative movement helpers", () => {
   it("cursorUp emits nothing for zero or negative counts", () => {
     expect(cursorUp(0)).toBe("");
     expect(cursorUp(-2)).toBe("");
+  });
+
+  it("cursorForward emits CUF only for positive counts", () => {
+    expect(cursorForward(3)).toBe("\x1b[3C");
+    expect(cursorForward(0)).toBe("");
   });
 });
 

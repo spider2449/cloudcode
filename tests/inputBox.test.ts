@@ -30,6 +30,25 @@ describe("InputBox", () => {
     expect(r.borderRows.join("\n") + r.contentRows.join("\n")).toContain("> hi");
   });
 
+  it("reports the display-cell position of the insertion marker for IME anchoring", () => {
+    const box = new InputBox(ctx(), new History());
+    type(box, "中文");
+    const r = box.render(theme, 80, false);
+    expect(r.contentRows[r.cursorRow]).toBe("> 中文█");
+    expect(r.cursorColumn).toBe(6); // prompt (2) + two wide CJK cells (4)
+  });
+
+  it("reports the insertion marker row after an explicit newline", () => {
+    const box = new InputBox(ctx(), new History());
+    type(box, "first");
+    box.handleKey({ t: "shift-enter" });
+    type(box, "中");
+    const r = box.render(theme, 80, false);
+    expect(r.cursorRow).toBe(1);
+    expect(r.cursorColumn).toBe(2);
+    expect(r.contentRows[1]).toBe("中█");
+  });
+
   it("shift-enter inserts a newline instead of submitting", () => {
     const box = new InputBox(ctx(), new History());
     const onSubmit = vi.fn();

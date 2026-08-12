@@ -12,6 +12,9 @@ export interface InputBoxRender {
   menuRows: string[];
   hintRow: string | null;
   totalRows: number;
+  /** Zero-based display-cell location of the drawn insertion marker. */
+  cursorRow: number;
+  cursorColumn: number;
 }
 
 export class InputBox {
@@ -131,7 +134,7 @@ export class InputBox {
     const after = this.value.slice(this.cursor);
     const content = "> " + before + "█" + after;
     const innerWidth = Math.max(1, width - 4);
-    const wrapped = this.wrap(content, innerWidth);
+    const wrapped = this.wrap(content, innerWidth, 2 + before.length);
     // A single muted divider separating the transcript from the input area.
     const dividerCode = sgr(theme.muted);
     const divider = "─".repeat(Math.max(1, width));
@@ -141,17 +144,32 @@ export class InputBox {
     const menuRows = renderMenu(suggestions, Math.min(this.selected, Math.max(0, suggestions.length - 1)), theme, width);
     return {
       borderRows,
-      contentRows: wrapped,
+      contentRows: wrapped.rows,
       menuRows,
       hintRow,
-      totalRows: borderRows.length + wrapped.length + (hintRow ? 1 : 0) + menuRows.length
+      totalRows: borderRows.length + wrapped.rows.length + (hintRow ? 1 : 0) + menuRows.length,
+      cursorRow: wrapped.cursorRow,
+      cursorColumn: wrapped.cursorColumn
     };
   }
 
-  private wrap(text: string, width: number): string[] {
+  private wrap(text: string, width: number, cursorOffset: number): {
+    rows: string[];
+    cursorRow: number;
+    cursorColumn: number;
+  } {
     const out: string[] = [];
-    for (const line of text.split("\n")) {
-      if (line.length === 0) { out.push(""); continue; }
+    let offset = 0;
+    let cursorRow = 0;
+    let cursorColumn = 0;
+    const lines = text.split("\n");
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      const line = lines[lineIndex];
+      if (line.length === 0) {
+        out.push("");
+        if (lineIndex < lines.length - 1) offset++;
+        continue;
+      }
       let row = "";
       let w = 0;
       for (const ch of line) {
@@ -164,18 +182,29 @@ export class InputBox {
             // emit this one character as its own row (even though it
             // overflows) and move on, matching wrapText's resolution in
             // layout.ts for the same unavoidable edge case.
+            if (offset === cursorOffset) {
+              cursorRow = out.length;
+              cursorColumn = 0;
+            }
             out.push(ch);
+            offset += ch.length;
             continue;
           }
           out.push(row);
           row = "";
           w = 0;
         }
+        if (offset === cursorOffset) {
+          cursorRow = out.length;
+          cursorColumn = w;
+        }
         row += ch;
         w += cw;
+        offset += ch.length;
       }
       out.push(row);
+      if (lineIndex < lines.length - 1) offset++;
     }
-    return out;
+    return { rows: out, cursorRow, cursorColumn };
   }
 }
