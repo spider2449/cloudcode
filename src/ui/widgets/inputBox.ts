@@ -129,10 +129,14 @@ export class InputBox {
     this.setValue(this.value.slice(0, this.cursor) + clean + this.value.slice(this.cursor), this.cursor + clean.length);
   }
 
-  render(theme: Theme, width: number, streaming: boolean): InputBoxRender {
+  render(theme: Theme, width: number, streaming: boolean, drawCursor: boolean = true): InputBoxRender {
     const before = this.value.slice(0, this.cursor);
     const after = this.value.slice(this.cursor);
-    const content = "> " + before + "█" + after;
+    // A visible native cursor and the synthetic block must not occupy the same
+    // cell: legacy conhost draws its cursor by inverting that cell, which can
+    // make the block disappear. Keep a one-cell blank placeholder so wrapping
+    // and the IME anchor coordinates stay identical in native-cursor mode.
+    const content = "> " + before + (drawCursor ? "█" : " ") + after;
     const innerWidth = Math.max(1, width - 4);
     const wrapped = this.wrap(content, innerWidth, 2 + before.length);
     // A single muted divider separating the transcript from the input area.

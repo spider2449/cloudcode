@@ -5,6 +5,7 @@ describe("FakeTerminal", () => {
   it("is never a TTY", () => {
     const t = new FakeTerminal();
     expect(t.isTTY).toBe(false);
+    expect(t.usesNativeInputCursor).toBe(false);
   });
 
   it("reports a default size", () => {

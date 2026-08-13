@@ -522,7 +522,12 @@ export class App {
       compactPct: this.usage.compactPct,
       queuedRows,
       inputRender: inputVisible
-        ? this.inputBox.render(this.theme, size.columns, this.phase === "streaming")
+        ? this.inputBox.render(
+            this.theme,
+            size.columns,
+            this.phase === "streaming",
+            !this.terminal.usesNativeInputCursor
+          )
         : { borderRows: [], contentRows: [], menuRows: [], hintRow: null, totalRows: 0, cursorRow: 0, cursorColumn: 0 },
       overlayRows: this.overlay.isOpen ? this.overlay.render(this.theme, size.columns) : [],
       statusBarProps: {

@@ -56,6 +56,8 @@ export function startupSequence(
 
 export interface ITerminal {
   isTTY: boolean;
+  /** Whether the OS-native cursor is the visible input marker. */
+  usesNativeInputCursor: boolean;
   size(): { rows: number; columns: number };
   write(s: string): void;
   onKeys(cb: (keys: Key[]) => void): void;
@@ -67,6 +69,7 @@ export interface ITerminal {
 
 export class Terminal implements ITerminal {
   isTTY: boolean;
+  readonly usesNativeInputCursor = needsVisibleImeCursor();
   private decoder: KeyDecoder | undefined;
   private keysCb: ((keys: Key[]) => void) | undefined;
   private resizeCb: (() => void) | undefined;
@@ -149,6 +152,7 @@ export class Terminal implements ITerminal {
 
 export class FakeTerminal implements ITerminal {
   isTTY = false;
+  usesNativeInputCursor = false;
   writes: string[] = [];
   private sz: { rows: number; columns: number };
   private lineCb: ((line: string) => void) | undefined;

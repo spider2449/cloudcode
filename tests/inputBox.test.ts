@@ -38,6 +38,15 @@ describe("InputBox", () => {
     expect(r.cursorColumn).toBe(6); // prompt (2) + two wide CJK cells (4)
   });
 
+  it("reserves a blank cursor cell when the native cursor is visible", () => {
+    const box = new InputBox(ctx(), new History());
+    type(box, "中文");
+    const r = box.render(theme, 80, false, false);
+    expect(r.contentRows[r.cursorRow]).toBe("> 中文 ");
+    expect(r.cursorColumn).toBe(6);
+    expect(r.contentRows.join("\n")).not.toContain("█");
+  });
+
   it("reports the insertion marker row after an explicit newline", () => {
     const box = new InputBox(ctx(), new History());
     type(box, "first");

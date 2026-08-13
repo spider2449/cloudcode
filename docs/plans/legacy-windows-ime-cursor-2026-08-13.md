@@ -16,3 +16,7 @@ native cursor is hidden.
 3. Add boundary tests for Windows 10 1909, Windows 10 2004, newer Windows, and
    non-Windows platforms.
 4. Run lint, size checks, build, and the full test suite.
+5. Do not paint the synthetic block marker under the visible native cursor on
+   legacy Windows. Reserve the same display cell with a blank so wrapping and
+   the IME anchor remain unchanged without the two cursors visually cancelling
+   each other.

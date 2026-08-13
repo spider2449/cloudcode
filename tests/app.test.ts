@@ -62,6 +62,15 @@ function makeApp(turns: Event[][]) {
 }
 
 describe("App", () => {
+  it("lets the native cursor be the only input marker when required by the terminal", () => {
+    const { app, terminal } = makeApp([textTurn("ok")]);
+    terminal.usesNativeInputCursor = true;
+    app.recompute();
+    const frame = terminal.writes[terminal.writes.length - 1];
+    expect(frame).toContain(">  ");
+    expect(frame).not.toContain("█");
+  });
+
   it("appends a user message to the buffer and renders a frame that shows it", async () => {
     const { app, terminal } = makeApp([textTurn("hi there")]);
     void app.run();
