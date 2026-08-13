@@ -65,9 +65,8 @@ describe("setTitle ANSI sequence", () => {
 // callback registered after a project switch was the root cause of dueling
 // frame writes (blank regions, ghost content, stale footers) on every
 // window resize -- see the 2026-07-16 TUI overhaul plan, Task 9d.
-import { Terminal } from "../src/ui/term/terminal.js";
-
-import { restoreSequence } from "../src/ui/term/terminal.js";
+import { needsVisibleImeCursor, restoreSequence, startupSequence, Terminal } from "../src/ui/term/terminal.js";
+import { CURSOR_HIDE, CURSOR_SHOW } from "../src/ui/term/ansi.js";
 
 describe("restoreSequence", () => {
   it("omits the scroll-region reset on platforms that never set one (win32)", () => {
@@ -81,6 +80,30 @@ describe("restoreSequence", () => {
 
   it("includes the scroll-region reset when a region may have been set", () => {
     expect(restoreSequence(true)).toContain("\x1b[r");
+  });
+});
+
+describe("Windows IME cursor compatibility", () => {
+  it("keeps the native cursor visible on Windows 10 1909", () => {
+    expect(needsVisibleImeCursor("win32", "10.0.18363")).toBe(true);
+    expect(startupSequence("win32", "10.0.18363")).toContain(CURSOR_SHOW);
+  });
+
+  it("also covers older Windows console builds", () => {
+    expect(needsVisibleImeCursor("win32", "10.0.17763")).toBe(true);
+    expect(needsVisibleImeCursor("win32", "6.1.7601")).toBe(true);
+  });
+
+  it("retains the hidden cursor from Windows 10 2004 onward", () => {
+    expect(needsVisibleImeCursor("win32", "10.0.19041")).toBe(false);
+    expect(needsVisibleImeCursor("win32", "10.0.22631")).toBe(false);
+    expect(startupSequence("win32", "10.0.19041")).toContain(CURSOR_HIDE);
+  });
+
+  it("does not enable the workaround on non-Windows or unknown releases", () => {
+    expect(needsVisibleImeCursor("linux", "5.15.0")).toBe(false);
+    expect(needsVisibleImeCursor("darwin", "23.5.0")).toBe(false);
+    expect(needsVisibleImeCursor("win32", "unknown")).toBe(false);
   });
 });
 

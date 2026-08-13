@@ -1,5 +1,6 @@
 import { createInterface } from "node:readline";
 import { appendFileSync } from "node:fs";
+import { release as osRelease } from "node:os";
 import { KeyDecoder, type Key } from "../input.js";
 import { BRACKETED_PASTE_ON, BRACKETED_PASTE_OFF, CURSOR_HIDE, CURSOR_SHOW, AUTOWRAP_OFF, AUTOWRAP_ON, RESET_SCROLL_REGION, KITTY_KEYBOARD_ON, KITTY_KEYBOARD_OFF, setTitle } from "./ansi.js";
 
@@ -29,6 +30,30 @@ export function restoreSequence(useScrollRegion: boolean = process.platform !== 
   return KITTY_KEYBOARD_OFF + (useScrollRegion ? RESET_SCROLL_REGION : "") + AUTOWRAP_ON + BRACKETED_PASTE_OFF + CURSOR_SHOW;
 }
 
+// Legacy conhost/ConPTY builds need a visible native cursor for East Asian
+// IMEs to attach their composition and candidate UI. Windows 10 2004 (build
+// 19041) fixed the path used by current terminals, so keep the existing hidden
+// drawn-cursor presentation there and on newer systems.
+export function needsVisibleImeCursor(
+  platform: string = process.platform,
+  release: string = osRelease()
+): boolean {
+  if (platform !== "win32") return false;
+  const match = /^(\d+)\.(\d+)\.(\d+)/.exec(release);
+  if (!match) return false;
+  const major = Number(match[1]);
+  const build = Number(match[3]);
+  return major < 10 || (major === 10 && build <= 18363);
+}
+
+export function startupSequence(
+  platform: string = process.platform,
+  release: string = osRelease()
+): string {
+  const cursor = needsVisibleImeCursor(platform, release) ? CURSOR_SHOW : CURSOR_HIDE;
+  return BRACKETED_PASTE_ON + cursor + AUTOWRAP_OFF + KITTY_KEYBOARD_ON;
+}
+
 export interface ITerminal {
   isTTY: boolean;
   size(): { rows: number; columns: number };
@@ -54,7 +79,7 @@ export class Terminal implements ITerminal {
       // Inline rendering on the normal screen: the transcript lives in the
       // terminal's own scrollback, so native mouse selection, copy, and wheel
       // scrolling work without any mouse capture.
-      process.stdout.write(BRACKETED_PASTE_ON + CURSOR_HIDE + AUTOWRAP_OFF + KITTY_KEYBOARD_ON);
+      process.stdout.write(startupSequence());
       process.stdin.setRawMode(true);
       this.decoder = new KeyDecoder();
       this.decoder.onTimeout = keys => this.keysCb?.(keys);
