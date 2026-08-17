@@ -11,6 +11,11 @@ export const KITTY_KEYBOARD_ON = "\x1b[>1u";
 export const KITTY_KEYBOARD_OFF = "\x1b[<u";
 export const CURSOR_HIDE = "\x1b[?25l";
 export const CURSOR_SHOW = "\x1b[?25h";
+// DECSCUSR: use a narrow native caret where legacy Windows requires one for
+// IME anchoring. Keeping cloudcode's synthetic block underneath this bar makes
+// the insertion point visible even when Windows renders the native caret black.
+export const CURSOR_DEFAULT_SHAPE = "\x1b[0 q";
+export const CURSOR_STEADY_BAR = "\x1b[6 q";
 // DECAWM: with autowrap on, a row longer than the terminal width wraps; a wrap
 // on the bottom row scrolls the whole screen and misaligns every frame.
 export const AUTOWRAP_OFF = "\x1b[?7l";

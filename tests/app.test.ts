@@ -62,13 +62,11 @@ function makeApp(turns: Event[][]) {
 }
 
 describe("App", () => {
-  it("lets the native cursor be the only input marker when required by the terminal", () => {
+  it("renders its synthetic input marker independently of the native caret", () => {
     const { app, terminal } = makeApp([textTurn("ok")]);
-    terminal.usesNativeInputCursor = true;
     app.recompute();
     const frame = terminal.writes[terminal.writes.length - 1];
-    expect(frame).toContain(">  ");
-    expect(frame).not.toContain("█");
+    expect(frame).toContain("> █");
   });
 
   it("appends a user message to the buffer and renders a frame that shows it", async () => {

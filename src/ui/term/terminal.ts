@@ -2,7 +2,7 @@ import { createInterface } from "node:readline";
 import { appendFileSync } from "node:fs";
 import { release as osRelease } from "node:os";
 import { KeyDecoder, type Key } from "../input.js";
-import { BRACKETED_PASTE_ON, BRACKETED_PASTE_OFF, CURSOR_HIDE, CURSOR_SHOW, AUTOWRAP_OFF, AUTOWRAP_ON, RESET_SCROLL_REGION, KITTY_KEYBOARD_ON, KITTY_KEYBOARD_OFF, setTitle } from "./ansi.js";
+import { BRACKETED_PASTE_ON, BRACKETED_PASTE_OFF, CURSOR_DEFAULT_SHAPE, CURSOR_HIDE, CURSOR_SHOW, CURSOR_STEADY_BAR, AUTOWRAP_OFF, AUTOWRAP_ON, RESET_SCROLL_REGION, KITTY_KEYBOARD_ON, KITTY_KEYBOARD_OFF, setTitle } from "./ansi.js";
 
 // Opt-in raw-output capture for diagnosing rendering bugs that only show up
 // on a real terminal (resize storms, redraw artifacts) and can't be
@@ -26,8 +26,12 @@ function debugLog(line: string): void {
 // a scroll region can actually have been set (InlineRenderer disables the
 // scroll region entirely on win32); otherwise the shell's next prompt prints
 // at the top of the window, overlapping the transcript.
-export function restoreSequence(useScrollRegion: boolean = process.platform !== "win32"): string {
-  return KITTY_KEYBOARD_OFF + (useScrollRegion ? RESET_SCROLL_REGION : "") + AUTOWRAP_ON + BRACKETED_PASTE_OFF + CURSOR_SHOW;
+export function restoreSequence(
+  useScrollRegion: boolean = process.platform !== "win32",
+  resetCursorShape: boolean = needsVisibleImeCursor()
+): string {
+  const cursorShape = resetCursorShape ? CURSOR_DEFAULT_SHAPE : "";
+  return KITTY_KEYBOARD_OFF + (useScrollRegion ? RESET_SCROLL_REGION : "") + AUTOWRAP_ON + BRACKETED_PASTE_OFF + cursorShape + CURSOR_SHOW;
 }
 
 // Legacy conhost/ConPTY builds need a visible native cursor for East Asian
@@ -50,14 +54,14 @@ export function startupSequence(
   platform: string = process.platform,
   release: string = osRelease()
 ): string {
-  const cursor = needsVisibleImeCursor(platform, release) ? CURSOR_SHOW : CURSOR_HIDE;
+  const cursor = needsVisibleImeCursor(platform, release)
+    ? CURSOR_STEADY_BAR + CURSOR_SHOW
+    : CURSOR_HIDE;
   return BRACKETED_PASTE_ON + cursor + AUTOWRAP_OFF + KITTY_KEYBOARD_ON;
 }
 
 export interface ITerminal {
   isTTY: boolean;
-  /** Whether the OS-native cursor is the visible input marker. */
-  usesNativeInputCursor: boolean;
   size(): { rows: number; columns: number };
   write(s: string): void;
   onKeys(cb: (keys: Key[]) => void): void;
@@ -69,7 +73,7 @@ export interface ITerminal {
 
 export class Terminal implements ITerminal {
   isTTY: boolean;
-  readonly usesNativeInputCursor = needsVisibleImeCursor();
+  private readonly resetsCursorShape = needsVisibleImeCursor();
   private decoder: KeyDecoder | undefined;
   private keysCb: ((keys: Key[]) => void) | undefined;
   private resizeCb: (() => void) | undefined;
@@ -145,14 +149,13 @@ export class Terminal implements ITerminal {
     if (this.isTTY) {
       process.stdin.setRawMode(false);
       process.stdin.pause();
-      process.stdout.write(restoreSequence());
+      process.stdout.write(restoreSequence(process.platform !== "win32", this.resetsCursorShape));
     }
   }
 }
 
 export class FakeTerminal implements ITerminal {
   isTTY = false;
-  usesNativeInputCursor = false;
   writes: string[] = [];
   private sz: { rows: number; columns: number };
   private lineCb: ((line: string) => void) | undefined;

@@ -5,7 +5,6 @@ describe("FakeTerminal", () => {
   it("is never a TTY", () => {
     const t = new FakeTerminal();
     expect(t.isTTY).toBe(false);
-    expect(t.usesNativeInputCursor).toBe(false);
   });
 
   it("reports a default size", () => {
@@ -67,7 +66,7 @@ describe("setTitle ANSI sequence", () => {
 // frame writes (blank regions, ghost content, stale footers) on every
 // window resize -- see the 2026-07-16 TUI overhaul plan, Task 9d.
 import { needsVisibleImeCursor, restoreSequence, startupSequence, Terminal } from "../src/ui/term/terminal.js";
-import { CURSOR_HIDE, CURSOR_SHOW } from "../src/ui/term/ansi.js";
+import { CURSOR_DEFAULT_SHAPE, CURSOR_HIDE, CURSOR_SHOW, CURSOR_STEADY_BAR } from "../src/ui/term/ansi.js";
 
 describe("restoreSequence", () => {
   it("omits the scroll-region reset on platforms that never set one (win32)", () => {
@@ -82,12 +81,18 @@ describe("restoreSequence", () => {
   it("includes the scroll-region reset when a region may have been set", () => {
     expect(restoreSequence(true)).toContain("\x1b[r");
   });
+
+  it("restores the user's cursor shape after the legacy Windows workaround", () => {
+    expect(restoreSequence(false, true)).toContain(CURSOR_DEFAULT_SHAPE);
+    expect(restoreSequence(false, false)).not.toContain(CURSOR_DEFAULT_SHAPE);
+  });
 });
 
 describe("Windows IME cursor compatibility", () => {
   it("keeps the native cursor visible on Windows 10 1909", () => {
     expect(needsVisibleImeCursor("win32", "10.0.18363")).toBe(true);
     expect(startupSequence("win32", "10.0.18363")).toContain(CURSOR_SHOW);
+    expect(startupSequence("win32", "10.0.18363")).toContain(CURSOR_STEADY_BAR);
   });
 
   it("also covers older Windows console builds", () => {
@@ -99,6 +104,7 @@ describe("Windows IME cursor compatibility", () => {
     expect(needsVisibleImeCursor("win32", "10.0.19041")).toBe(false);
     expect(needsVisibleImeCursor("win32", "10.0.22631")).toBe(false);
     expect(startupSequence("win32", "10.0.19041")).toContain(CURSOR_HIDE);
+    expect(startupSequence("win32", "10.0.19041")).not.toContain(CURSOR_STEADY_BAR);
   });
 
   it("does not enable the workaround on non-Windows or unknown releases", () => {

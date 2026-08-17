@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { BRACKETED_PASTE_ON, BRACKETED_PASTE_OFF,
-  CURSOR_HIDE, CURSOR_SHOW, CLEAR_AND_HOME, cursorTo, sgr, SGR_RESET, ERASE_DOWN, cursorUp, cursorForward,
+  CURSOR_DEFAULT_SHAPE, CURSOR_HIDE, CURSOR_SHOW, CURSOR_STEADY_BAR, CLEAR_AND_HOME, cursorTo, sgr, SGR_RESET, ERASE_DOWN, cursorUp, cursorForward,
   setScrollRegion, RESET_SCROLL_REGION } from "../src/ui/term/ansi.js";
 
 describe("ansi", () => {
@@ -9,6 +9,8 @@ describe("ansi", () => {
     expect(BRACKETED_PASTE_OFF).toBe("\x1b[?2004l");
     expect(CURSOR_HIDE).toBe("\x1b[?25l");
     expect(CURSOR_SHOW).toBe("\x1b[?25h");
+    expect(CURSOR_DEFAULT_SHAPE).toBe("\x1b[0 q");
+    expect(CURSOR_STEADY_BAR).toBe("\x1b[6 q");
     expect(CLEAR_AND_HOME).toBe("\x1b[2J\x1b[H");
     expect(SGR_RESET).toBe("\x1b[0m");
   });
