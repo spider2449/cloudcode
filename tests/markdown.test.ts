@@ -1,9 +1,14 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { renderMarkdown } from "../src/ui/markdown.js";
+import { detectColorDepth, setColorDepth } from "../src/ui/term/ansi.js";
 
 describe("renderMarkdown", () => {
   beforeAll(() => {
-    process.env.FORCE_COLOR = "3";
+    setColorDepth("truecolor");
+  });
+
+  afterAll(() => {
+    setColorDepth(detectColorDepth());
   });
 
   it("styles bold text (output differs from input, keeps content)", () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   sanitizePath, memoryDir, memoryEntrypoint, isInsideMemoryDir, ensureMemoryDir
 } from "../src/engine/memoryPaths.js";
@@ -20,9 +20,10 @@ describe("sanitizePath", () => {
 describe("memoryDir / memoryEntrypoint", () => {
   it("builds <base>/projects/<sanitized-cwd>/memory", () => {
     const base = tmp();
-    const dir = memoryDir("C:\\work\\app", base);
-    expect(dir).toBe(join(base, "projects", "C--work-app", "memory"));
-    expect(memoryEntrypoint("C:\\work\\app", base)).toBe(join(dir, "MEMORY.md"));
+    const cwd = resolve(base, "work", "app");
+    const dir = memoryDir(cwd, base);
+    expect(dir).toBe(join(base, "projects", sanitizePath(cwd), "memory"));
+    expect(memoryEntrypoint(cwd, base)).toBe(join(dir, "MEMORY.md"));
   });
 
   it("rejects a non-absolute cwd instead of silently building a garbage project directory", () => {
