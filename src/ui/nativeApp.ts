@@ -358,7 +358,11 @@ export class App {
       openProjectPicker: () => openProjectPicker(this.pickerDeps(), path => this.ctx.switchProject(path)),
       openMemoryPicker: () =>
         openMemoryPicker(this.pickerDeps(), () => { void this.session?.refreshSystemPrompt(); }),
-      currentCwd: () => this.props.cwd
+      currentCwd: () => this.props.cwd,
+      changeSummaries: latestOnly => this.session?.changeSummaries(latestOnly) ?? [],
+      changeDiff: path => this.session?.changeDiff(path) ?? { content: "No session-owned changes.", truncated: false },
+      previewUndo: () => this.session?.previewUndo() ?? { operations: [], conflicts: [] },
+      undoLatest: () => this.session?.undoLatest() ?? { applied: false, operations: [], conflicts: [], rollbackErrors: [] }
     };
   }
 

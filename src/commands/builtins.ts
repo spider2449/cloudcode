@@ -12,6 +12,7 @@ import {
 } from "../agent/skillRepos.js";
 import { isDirLike } from "../agent/skills.js";
 import { EFFORT_LEVELS, isEffortLevel } from "../engine/effort.js";
+import { formatChanges, formatUndoPreview, formatUndoResult } from "./changeFormatting.js";
 
 const MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
 
@@ -296,6 +297,39 @@ const commands: Command[] = [
     name: "cost",
     description: "Show token/cost usage for this session",
     async run(ctx) { ctx.notice(ctx.costSummary()); }
+  },
+  {
+    name: "changes",
+    description: "Show native file changes owned by this session: /changes [latest]",
+    async run(ctx, args) {
+      if (args !== "" && args !== "latest") {
+        ctx.notice("Usage: /changes [latest]");
+        return;
+      }
+      ctx.notice(formatChanges(ctx.changeSummaries(args === "latest")));
+    },
+    completeArgs(prefix) { return ["latest"].filter(value => value.startsWith(prefix)); }
+  },
+  {
+    name: "diff",
+    description: "Show the diff for session-owned native edits: /diff [path]",
+    async run(ctx, args) { ctx.notice(ctx.changeDiff(args || undefined).content); }
+  },
+  {
+    name: "undo",
+    description: "Preview or undo the latest native-edit checkpoint: /undo [--yes]",
+    async run(ctx, args) {
+      if (args === "") {
+        ctx.notice(formatUndoPreview(ctx.previewUndo()));
+        return;
+      }
+      if (args !== "--yes") {
+        ctx.notice("Usage: /undo [--yes]");
+        return;
+      }
+      ctx.notice(formatUndoResult(ctx.undoLatest()));
+    },
+    completeArgs(prefix) { return ["--yes"].filter(value => value.startsWith(prefix)); }
   },
   {
     name: "effort",

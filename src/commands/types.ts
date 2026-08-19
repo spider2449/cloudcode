@@ -3,6 +3,7 @@ import type { CompletionContext } from "./completion.js";
 import type { EffortLevel } from "../engine/effort.js";
 import type { ContextSnapshot } from "../engine/loop.js";
 import type { Skill } from "../agent/skills.js";
+import type { ChangeSummary, UndoPreview, UndoResult } from "../agent/changeJournal.js";
 
 export interface CommandContext {
   notice(text: string): void;
@@ -33,6 +34,10 @@ export interface CommandContext {
   openProjectPicker(): void;
   currentCwd(): string;
   openMemoryPicker(): void;
+  changeSummaries(latestOnly?: boolean): ChangeSummary[];
+  changeDiff(path?: string): { content: string; truncated: boolean };
+  previewUndo(): UndoPreview;
+  undoLatest(): UndoResult;
 }
 
 export interface Command {

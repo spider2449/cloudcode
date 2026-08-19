@@ -57,7 +57,11 @@ function mockCtx(): CommandContext {
     currentCwd: vi.fn().mockReturnValue(process.cwd()),
     setEffort: vi.fn().mockResolvedValue(undefined),
     currentEffort: vi.fn().mockReturnValue("off"),
-    openMemoryPicker: vi.fn()
+    openMemoryPicker: vi.fn(),
+    changeSummaries: vi.fn().mockReturnValue([]),
+    changeDiff: vi.fn().mockReturnValue({ content: "No session-owned changes.", truncated: false }),
+    previewUndo: vi.fn().mockReturnValue({ operations: [], conflicts: [] }),
+    undoLatest: vi.fn().mockReturnValue({ applied: false, operations: [], conflicts: [], rollbackErrors: [] })
   };
 }
 
@@ -87,7 +91,7 @@ describe("parseSlash", () => {
 describe("builtins", () => {
   it("registers all v1 commands", () => {
     const names = [...buildRegistry().keys()].sort();
-    expect(names).toEqual(["clear", "compact", "config", "context", "cost", "effort", "exit", "help", "init", "mcp", "memory", "model", "new", "permissions", "provider", "resume", "set", "skill", "skills", "theme"]);
+    expect(names).toEqual(["changes", "clear", "compact", "config", "context", "cost", "diff", "effort", "exit", "help", "init", "mcp", "memory", "model", "new", "permissions", "provider", "resume", "set", "skill", "skills", "theme", "undo"]);
   });
 
   it("/new starts a new session", async () => {
@@ -163,6 +167,44 @@ describe("/compact and /init", () => {
     const ctx = mockCtx();
     await buildRegistry().get("init")!.run(ctx, "");
     expect(ctx.sendPrompt).toHaveBeenCalledWith("/init");
+  });
+});
+
+describe("change commands", () => {
+  it("/changes lists all or only the latest checkpoint", async () => {
+    const ctx = mockCtx();
+    vi.mocked(ctx.changeSummaries).mockReturnValue([{
+      id: "12345678-rest", startedAt: "now", status: "complete",
+      changes: [{ path: "a.ts", kind: "modified", undoAvailable: true }]
+    }]);
+    await buildRegistry().get("changes")!.run(ctx, "latest");
+    expect(ctx.changeSummaries).toHaveBeenCalledWith(true);
+    expect(ctx.notice).toHaveBeenCalledWith(expect.stringContaining("a.ts"));
+  });
+
+  it("/diff delegates an optional path", async () => {
+    const ctx = mockCtx();
+    vi.mocked(ctx.changeDiff).mockReturnValue({ content: "--- a.ts", truncated: false });
+    await buildRegistry().get("diff")!.run(ctx, "a.ts");
+    expect(ctx.changeDiff).toHaveBeenCalledWith("a.ts");
+    expect(ctx.notice).toHaveBeenCalledWith("--- a.ts");
+  });
+
+  it("/undo previews by default and applies only with --yes", async () => {
+    const ctx = mockCtx();
+    vi.mocked(ctx.previewUndo).mockReturnValue({
+      checkpointId: "12345678-rest", operations: [{ path: "a.ts", action: "restore" }], conflicts: []
+    });
+    vi.mocked(ctx.undoLatest).mockReturnValue({
+      checkpointId: "12345678-rest", operations: [{ path: "a.ts", action: "restore" }],
+      conflicts: [], applied: true, rollbackErrors: []
+    });
+    const command = buildRegistry().get("undo")!;
+    await command.run(ctx, "");
+    expect(ctx.undoLatest).not.toHaveBeenCalled();
+    expect(ctx.notice).toHaveBeenCalledWith(expect.stringContaining("/undo --yes"));
+    await command.run(ctx, "--yes");
+    expect(ctx.undoLatest).toHaveBeenCalledOnce();
   });
 });
 
