@@ -8,7 +8,7 @@ import { buildRegistry } from "../commands/builtins.js";
 import { parseSlash } from "../commands/registry.js";
 import type { CommandContext } from "../commands/types.js";
 import { FileIndex } from "../commands/fileIndex.js";
-import type { CompletionContext } from "../commands/completion.js";
+import { liveCompletionContext, type CompletionContext } from "../commands/completion.js";
 import { toDisplayItems, streamDelta, streamThinkingDelta, type DisplayItem } from "./transcript.js";
 import { fetchModels } from "../agent/models.js";
 import { loadMcpServers, formatMcpStatus } from "../agent/mcp.js";
@@ -37,6 +37,7 @@ import { join } from "node:path";
 import type { NetworkDecisionRecorder, NetworkMode } from "../agent/networkPolicy.js";
 import { NetworkController } from "./networkController.js";
 import { SessionPresentation } from "./sessionPresentation.js";
+import { TaskUiController, type TaskUiOptions } from "./taskController.js";
 
 export interface AppProps {
   cwd: string;
@@ -50,6 +51,7 @@ export interface AppProps {
   switchedFrom?: string;
   networkMode?: NetworkMode;
   networkAudit?: NetworkDecisionRecorder;
+  task?: TaskUiOptions;
 }
 
 type Phase = "idle" | "streaming" | "permission";
@@ -76,6 +78,7 @@ export class App {
   private mode: PermissionMode;
   private network: NetworkController;
   private presentation: SessionPresentation;
+  private task: TaskUiController;
   private permissions: PermissionController;
   // Messages submitted while a turn was in flight; sent FIFO, one per turn,
   // when the agent returns to idle.
@@ -108,13 +111,18 @@ export class App {
   constructor(private props: AppProps, private terminal: ITerminal) {
     this.providerName = props.initialProvider;
     this.presentation = new SessionPresentation(props.providers);
+    this.task = new TaskUiController(props.task);
     this.model = this.presentation.modelFor(props.initialProvider);
     this.mode = props.initialMode ?? "default";
     this.network = new NetworkController(props.networkMode ?? "providerOnly", props.providers, props.networkAudit);
     this.permissionStore = new PermissionStore(props.cwd);
     this.fileIndex = new FileIndex(props.cwd);
     this.git = new GitStatusPoller(props.cwd);
-    this.completionCtx = this.completionCtxRef();
+    this.completionCtx = liveCompletionContext({
+      registry: () => this.registry, providerNames: () => Object.keys(this.props.providers),
+      availableModels: () => this.availableModels, listFiles: () => this.fileIndex.list(),
+      refreshFiles: () => this.fileIndex.refresh()
+    });
     this.inputBox = new InputBox(this.completionCtx, this.history);
     this.inputBox.onSubmit = text => this.handleSubmit(text);
     this.usage = new UsageTracker({
@@ -146,17 +154,6 @@ export class App {
     if (item) this.buffer.append(item);
   }
 
-  private completionCtxRef(): CompletionContext {
-    const self = this;
-    return {
-      get registry() { return self.registry; },
-      providerNames: () => Object.keys(this.props.providers),
-      availableModels: () => this.availableModels,
-      listFiles: () => this.fileIndex.list(),
-      refreshFiles: () => this.fileIndex.refresh()
-    };
-  }
-
   private notice(text: string): void {
     this.buffer.append({ kind: "notice", text });
   }
@@ -172,6 +169,7 @@ export class App {
   }
 
   handleMessage(msg: EngineMessage): void {
+    this.task.handleMessage(msg, text => this.notice(text));
     const served = (msg as { message?: { model?: string } }).message?.model;
     if (served) this.servedModel = served;
     const thinking = streamThinkingDelta(msg);
@@ -237,7 +235,7 @@ export class App {
         this.phase = "permission";
         this.permissions.enqueue(req);
       },
-      onSessionId: id => { if (this.firstMessage) this.recordSession(id, name); }
+      onSessionId: id => { this.task.sessionStarted(id); if (this.firstMessage) this.recordSession(id, name); }
     });
     session.start();
     void fetchModels(this.props.providers[name] ?? {}).then(models => { this.availableModels = models; });
@@ -560,6 +558,8 @@ export class App {
     const trust = this.resolveProjectConfigTrust();
     this.allowProjectConfig = typeof trust === "boolean" ? trust : await trust;
     this.session = this.createSession(this.props.initialProvider, this.props.resume);
+    const initialPrompt = this.task.takeInitialPrompt();
+    if (initialPrompt) this.handleSubmit(initialPrompt);
     if (this.props.openResumeOnStart) this.openResumePickerForTest();
     this.recompute();
     // Some terminals (e.g. VS Code's) report a stale rows/columns size for the

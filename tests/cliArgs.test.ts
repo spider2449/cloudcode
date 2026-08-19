@@ -98,7 +98,7 @@ describe("HELP_TEXT", () => {
   it("mentions every flag and subcommand", () => {
     for (const s of ["--help", "--version", "--continue", "--resume", "--print",
       "--provider", "--network-mode", "--permission-mode", "--output-format", "--max-turns", "--timeout",
-      "--max-cost-usd", "doctor", "config", "mcp", "update"]) {
+      "--max-cost-usd", "doctor", "config", "mcp", "update", "task"]) {
       expect(HELP_TEXT).toContain(s);
     }
   });

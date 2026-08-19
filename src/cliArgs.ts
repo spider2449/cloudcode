@@ -5,7 +5,7 @@ import { parseRunLimits } from "./print/runLimits.js";
 import { isOutputFormat, type OutputFormat } from "./print/serialize.js";
 import type { RunLimits } from "./engine/runLimits.js";
 
-export const SUBCOMMANDS = ["doctor", "config", "mcp", "update"] as const;
+export const SUBCOMMANDS = ["doctor", "config", "mcp", "update", "task"] as const;
 export type Subcommand = (typeof SUBCOMMANDS)[number];
 
 export type CliResult =
@@ -30,6 +30,7 @@ Commands:
   config    Show config file paths and effective settings
   mcp       List configured MCP servers
   update    Update cloudcode to the latest version
+  task      Run an isolated local engineering task
 
 Options:
   -c, --continue                Resume the most recent session for this directory

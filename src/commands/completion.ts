@@ -17,6 +17,24 @@ export interface CompletionContext {
   refreshFiles?(): void;
 }
 
+export interface LiveCompletionDependencies {
+  registry(): Map<string, Command>;
+  providerNames(): string[];
+  availableModels(): string[];
+  listFiles(): string[];
+  refreshFiles(): void;
+}
+
+export function liveCompletionContext(deps: LiveCompletionDependencies): CompletionContext {
+  return {
+    get registry() { return deps.registry(); },
+    providerNames: deps.providerNames,
+    availableModels: deps.availableModels,
+    listFiles: deps.listFiles,
+    refreshFiles: deps.refreshFiles
+  };
+}
+
 function commandNameSuggestions(text: string, cursor: number, ctx: CompletionContext): Suggestion[] {
   const m = /^\/([\w-]*)$/.exec(text);
   if (!m || cursor !== text.length) return [];

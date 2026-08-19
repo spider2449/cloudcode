@@ -62,6 +62,35 @@ Stable process exit codes:
     7    privacy/network-policy denial
     130  interrupted by user
 
+### Isolated local tasks
+
+Task automation creates a local branch and linked worktree under
+`~/.cloudcode/worktrees/`; it never copies, stashes, resets, or edits the source
+worktree and never fetches, pushes, opens a PR, or calls a Git-hosting API.
+
+    cloudcode task start "fix the login timeout"
+    cloudcode task list
+    cloudcode task show <task-id>
+    cloudcode task resume <task-id> --approve-plan
+    cloudcode task verify <task-id> --profile focused --trust-project-config
+    cloudcode task review <task-id>
+    cloudcode task remove <task-id> --yes
+
+The first interactive turn reads applicable `AGENTS.md` files and writes the
+plan to `docs/plans/<date>-<name>.md`, then the durable task state becomes
+`awaitingApproval`. Implementation tools are not resumed from that state until
+`--approve-plan` is given explicitly. Resume validates the registered worktree,
+canonical path, Git common directory, branch, HEAD ancestry, and manifest
+identity before attaching.
+
+Verification profiles are executable project configuration in
+`.cloudcode/task.json` and use the same content-digest trust boundary as MCP and
+LSP commands. Commands run sequentially with time/output/interrupt bounds and
+write local evidence under `~/.cloudcode/tasks/<task-id>/artifacts/`. Review is
+against the recorded base commit and produces a local PR-ready report without
+contacting a remote host. Removal requires `--yes` and refuses dirty worktrees
+or branches whose commits are not merged into the source branch.
+
 ## Network modes and the local-first boundary
 
 cloudcode defaults new installations to `providerOnly`. Set the saved mode with

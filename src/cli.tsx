@@ -19,6 +19,8 @@ import {
 } from "./agent/networkPolicy.js";
 import { NetworkAudit } from "./agent/networkAudit.js";
 import { EXIT_CODES } from "./print/exitCodes.js";
+import { runTaskCommand, type TaskLaunch } from "./commands/cli/task.js";
+import { TaskRunner } from "./agent/taskRunner.js";
 
 const parsed = parseCli(process.argv.slice(2));
 
@@ -34,6 +36,7 @@ if (parsed.kind === "error") {
   console.error(parsed.message);
   process.exit(EXIT_CODES.invalidConfiguration);
 }
+let taskLaunch: TaskLaunch | undefined;
 if (parsed.kind === "subcommand") {
   const networkArg = networkModeFromArgs(parsed.args);
   if (networkArg.error) {
@@ -74,24 +77,43 @@ if (parsed.kind === "subcommand") {
       }
       break;
     }
+    case "task": {
+      const mode = subSettings.networkMode ?? "providerOnly";
+      const result = await runTaskCommand(parsed.args, { cwd: process.cwd(), networkMode: mode });
+      if (result.stdout) console.log(result.stdout);
+      if (result.stderr) console.error(result.stderr);
+      if (result.launch) taskLaunch = result.launch;
+      else process.exit(result.exitCode);
+      break;
+    }
   }
-  process.exit();
+  if (!taskLaunch) process.exit();
+}
+
+const sessionParsed = taskLaunch ? {
+  kind: "interactive" as const, continue: false, resume: false,
+  provider: undefined, networkMode: taskLaunch.networkMode
+} : parsed;
+if (sessionParsed.kind !== "interactive" && sessionParsed.kind !== "print") {
+  throw new Error("Internal CLI routing error.");
 }
 
 const providers = loadProviders();
 const settings = loadSettings();
 let networkMode;
 try {
-  networkMode = effectiveNetworkMode(settings.networkMode, parsed.networkMode);
+  networkMode = taskLaunch
+    ? (settings.networkMode === "offlineStrict" || taskLaunch.networkMode === "offlineStrict" ? "offlineStrict" : "providerOnly")
+    : effectiveNetworkMode(settings.networkMode, sessionParsed.networkMode);
 } catch (err) {
   console.error(err instanceof Error ? err.message : String(err));
   process.exit(EXIT_CODES.invalidConfiguration);
 }
 const networkAudit = new NetworkAudit();
-let providerName = parsed.provider ?? settings.provider ?? "anthropic";
+let providerName = sessionParsed.provider ?? settings.provider ?? "anthropic";
 if (!providers[providerName]) {
-  if (parsed.provider) {
-    console.error(`Unknown provider "${parsed.provider}". Known: ${Object.keys(providers).join(", ")}. Add custom providers in ~/.cloudcode/providers.json (see README).`);
+  if (sessionParsed.provider) {
+    console.error(`Unknown provider "${sessionParsed.provider}". Known: ${Object.keys(providers).join(", ")}. Add custom providers in ~/.cloudcode/providers.json (see README).`);
     process.exit(EXIT_CODES.invalidConfiguration);
   }
   console.error(`Saved default provider "${providerName}" not found; using anthropic.`);
@@ -99,16 +121,18 @@ if (!providers[providerName]) {
 }
 
 const sessionIndex = new SessionIndex();
-const initialCwd = process.cwd();
+if (taskLaunch) process.chdir(taskLaunch.cwd);
+const initialCwd = taskLaunch?.cwd ?? process.cwd();
 let resume: string | undefined;
-if (parsed.continue) {
+if (taskLaunch?.resume) resume = taskLaunch.resume;
+else if (sessionParsed.continue) {
   resume = sessionIndex.latestForCwd(initialCwd)?.id;
   if (!resume) console.error("No previous session for this directory; starting fresh.");
 }
 
-if (parsed.kind === "print") {
+if (sessionParsed.kind === "print") {
   void (async () => {
-    let prompt = parsed.prompt;
+    let prompt = sessionParsed.prompt;
     if (prompt === undefined || prompt.trim() === "") {
       if (process.stdin.isTTY) {
         console.error("No prompt given. Pass one as an argument or pipe it on stdin.");
@@ -126,15 +150,15 @@ if (parsed.kind === "print") {
       provider: providers[providerName],
       model: settings.model,
       effort: settings.effort,
-      permissionMode: parsed.permissionMode,
+      permissionMode: sessionParsed.permissionMode,
       resume,
       cwd: initialCwd,
       sessionIndex,
-      trustProjectConfig: parsed.trustProjectConfig,
+      trustProjectConfig: sessionParsed.trustProjectConfig,
       networkMode,
       networkAudit,
-      outputFormat: parsed.outputFormat,
-      runLimits: parsed.runLimits
+      outputFormat: sessionParsed.outputFormat,
+      runLimits: sessionParsed.runLimits
     }, {
       out: text => process.stdout.write(text),
       err: text => process.stderr.write(text)
@@ -158,12 +182,15 @@ if (parsed.kind === "print") {
   });
 
   void (async () => {
+    const taskRunner = taskLaunch ? new TaskRunner() : undefined;
+    let pendingTask = taskLaunch;
     let cwd = initialCwd;
     let switchedFrom: string | undefined;
     let pendingResume = resume;
-    let pendingOpenResume = parsed.resume;
+    let pendingOpenResume = sessionParsed.resume;
     for (;;) {
       let switchTo: string | undefined;
+      const currentTask = pendingTask;
       terminal.setTitle(`cloudcode - ${basename(cwd)}`);
       const app = new App({
         cwd,
@@ -176,6 +203,12 @@ if (parsed.kind === "print") {
         switchedFrom,
         networkMode,
         networkAudit,
+        task: currentTask && taskRunner ? {
+          initialPrompt: currentTask.initialPrompt,
+          planning: currentTask.planning,
+          onSessionId: id => taskRunner.recordSession(currentTask.taskId, id),
+          onPlanningComplete: id => taskRunner.markPlanReady(currentTask.taskId, id)
+        } : undefined,
         onSwitchProject: path => {
           try {
             process.chdir(path);
@@ -194,6 +227,7 @@ if (parsed.kind === "print") {
         process.exit(err instanceof NetworkPolicyError ? 7 : 1);
       }
       if (!switchTo) break;
+      pendingTask = undefined;
       switchedFrom = cwd;
       cwd = switchTo;
       pendingResume = undefined;
