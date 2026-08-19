@@ -31,6 +31,34 @@ Print mode auto-denies any tool call that would normally prompt; pass
 `--permission-mode acceptEdits` (or `bypassPermissions`) to loosen that for
 a single run. Run `cloudcode --help` for the full flag list.
 
+## Network modes and the local-first boundary
+
+cloudcode defaults new installations to `providerOnly`. Set the saved mode with
+`/config networkMode offlineStrict|providerOnly`, or narrow one invocation with
+`--network-mode`. `unrestricted` is never saved and must be named explicitly on
+each invocation that needs it.
+
+- `offlineStrict` accepts only a loopback provider endpoint, denies HTTP/SSE
+  MCP, updates, and remote skill operations, and removes ordinary Bash unless a
+  verified no-network sandbox is available.
+- `providerOnly` allows the selected provider endpoint but denies other
+  cloudcode-owned egress. Bash remains available through the permission system,
+  but arbitrary child-process networking is **not contained**.
+- `unrestricted` allows declared cloudcode-owned network capabilities for that
+  invocation. It does not enable remote Git mutations or bypass normal trust and
+  permission checks.
+
+Every cloudcode-owned network decision is recorded as bounded, secret-free
+JSONL under `~/.cloudcode/audit/`. Records contain only the capability,
+destination host, mode, result, reason, and time; never credentials, query
+strings, prompts, paths, request bodies, or provider responses.
+
+This policy is not a general process firewall. LSP and stdio MCP commands are
+still executable project configuration protected by content-digest trust, and
+in `providerOnly` Bash can launch programs that use the network. Strict mode
+therefore makes no claim about child-process egress beyond tools it disables or
+a future sandbox adapter positively guarantees.
+
 ## Local models (llama.cpp)
 
 Requires a recent llama.cpp build whose `llama-server` exposes the

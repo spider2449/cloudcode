@@ -13,6 +13,7 @@ import {
 import { isDirLike } from "../agent/skills.js";
 import { EFFORT_LEVELS, isEffortLevel } from "../engine/effort.js";
 import { formatChanges, formatReviewPrompt, formatUndoPreview, formatUndoResult } from "./changeFormatting.js";
+import { isPersistedNetworkMode } from "../agent/networkPolicy.js";
 
 const MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
 
@@ -29,7 +30,7 @@ export function listLinkedSkillNames(skillsDir: string, repoName: string): strin
   }
 }
 
-const CONFIG_KEYS = ["provider", "model", "permissionMode", "theme", "effort", "autoMemory"] as const;
+const CONFIG_KEYS = ["provider", "model", "permissionMode", "networkMode", "theme", "effort", "autoMemory"] as const;
 type ConfigKey = (typeof CONFIG_KEYS)[number];
 
 function fmtK(n: number): string {
@@ -62,6 +63,7 @@ function contextReport(info: ReturnType<CommandContext["contextInfo"]>): string 
 }
 
 function configValue(key: ConfigKey): string {
+  if (key === "networkMode") return loadSettings().networkMode ?? "providerOnly";
   if (key === "theme") return loadThemeName();
   if (key === "effort") return loadSettings().effort ?? "off";
   if (key === "autoMemory") return String(loadSettings().autoMemoryEnabled ?? true);
@@ -102,7 +104,7 @@ const commands: Command[] = [
       const [key, ...rest] = args.split(/\s+/).filter(Boolean);
       const value = rest.join(" ");
       if (!key) {
-        ctx.notice(CONFIG_KEYS.map(k => `${k} = ${configValue(k)}`).join("\n"));
+        ctx.notice(CONFIG_KEYS.map(k => `${k} = ${k === "networkMode" ? ctx.currentNetworkMode() : configValue(k)}`).join("\n"));
         return;
       }
       if (!CONFIG_KEYS.includes(key as ConfigKey)) {
@@ -110,7 +112,7 @@ const commands: Command[] = [
         return;
       }
       if (!value) {
-        ctx.notice(`${key} = ${configValue(key as ConfigKey)}`);
+        ctx.notice(`${key} = ${key === "networkMode" ? ctx.currentNetworkMode() : configValue(key as ConfigKey)}`);
         return;
       }
       switch (key as ConfigKey) {
@@ -138,6 +140,13 @@ const commands: Command[] = [
           }
           saveSetting("permissionMode", value);
           await ctx.setPermissionMode(value as PermissionMode);
+          break;
+        case "networkMode":
+          if (!isPersistedNetworkMode(value)) {
+            ctx.notice("Valid saved network modes: offlineStrict, providerOnly. unrestricted is invocation-only.");
+            return;
+          }
+          await ctx.setNetworkMode(value);
           break;
         case "effort":
           if (!isEffortLevel(value)) {
@@ -172,6 +181,7 @@ const commands: Command[] = [
       const values =
         key === "provider" ? cctx.providerNames() :
         key === "permissionMode" ? MODES :
+        key === "networkMode" ? ["offlineStrict", "providerOnly"] :
         key === "theme" ? Object.keys(THEMES) :
         key === "effort" ? [...EFFORT_LEVELS] :
         key === "autoMemory" ? ["true", "false"] :
@@ -392,12 +402,12 @@ const commands: Command[] = [
       switch (sub) {
         case "install": {
           if (!rest[0]) { ctx.notice(usage); return; }
-          ctx.notice(await installRepo(rest[0], reposDir, skillsDir, defaultGitRunner));
+          ctx.notice(await installRepo(rest[0], reposDir, skillsDir, defaultGitRunner, ctx.networkPolicy()));
           ctx.reloadSkills();
           return;
         }
         case "update": {
-          ctx.notice(await updateRepos(rest[0], reposDir, skillsDir, defaultGitRunner));
+          ctx.notice(await updateRepos(rest[0], reposDir, skillsDir, defaultGitRunner, ctx.networkPolicy()));
           ctx.reloadSkills();
           return;
         }

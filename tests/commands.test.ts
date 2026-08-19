@@ -9,6 +9,7 @@ import { linkRepoSkills, type Skill } from "../src/agent/skills.js";
 import type { CommandContext } from "../src/commands/types.js";
 import { loadSettings, saveSetting } from "../src/agent/settings.js";
 import { loadThemeName } from "../src/ui/theme.js";
+import { NetworkPolicy } from "../src/agent/networkPolicy.js";
 
 vi.mock("../src/agent/settings.js", () => ({
   loadSettings: vi.fn().mockReturnValue({}),
@@ -63,6 +64,9 @@ function mockCtx(): CommandContext {
     previewUndo: vi.fn().mockReturnValue({ operations: [], conflicts: [] }),
     undoLatest: vi.fn().mockReturnValue({ applied: false, operations: [], conflicts: [], rollbackErrors: [] }),
     gitReview: vi.fn().mockResolvedValue({ isGitRepo: true, status: "", diff: "", truncated: false })
+    , currentNetworkMode: vi.fn().mockReturnValue("providerOnly")
+    , setNetworkMode: vi.fn().mockResolvedValue(undefined)
+    , networkPolicy: vi.fn().mockReturnValue(new NetworkPolicy("providerOnly", "https://api.anthropic.com"))
   };
 }
 
@@ -326,7 +330,7 @@ describe("/config", () => {
     const ctx = mockCtx();
     await buildRegistry().get("config")!.run(ctx, "");
     expect(ctx.notice).toHaveBeenCalledWith(
-      "provider = local\nmodel = (unset)\npermissionMode = (unset)\ntheme = dark\neffort = off\nautoMemory = true"
+      "provider = local\nmodel = (unset)\npermissionMode = (unset)\nnetworkMode = providerOnly\ntheme = dark\neffort = off\nautoMemory = true"
     );
   });
 
@@ -341,7 +345,7 @@ describe("/config", () => {
     const ctx = mockCtx();
     await buildRegistry().get("config")!.run(ctx, "editor vim");
     expect(saveSetting).not.toHaveBeenCalled();
-    expect(ctx.notice).toHaveBeenCalledWith("Unknown key: editor. Keys: provider, model, permissionMode, theme, effort, autoMemory");
+    expect(ctx.notice).toHaveBeenCalledWith("Unknown key: editor. Keys: provider, model, permissionMode, networkMode, theme, effort, autoMemory");
   });
 
   it("sets provider: persists then switches live", async () => {
@@ -383,6 +387,16 @@ describe("/config", () => {
     expect(ctx.setPermissionMode).toHaveBeenCalledWith("bypassPermissions");
     expect(saveSetting).not.toHaveBeenCalled();
     expect(ctx.notice).toHaveBeenCalledWith("permissionMode = bypassPermissions (session only, not saved)");
+  });
+
+  it("sets only persistable network modes and applies them live", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("config")!.run(ctx, "networkMode offlineStrict");
+    expect(ctx.setNetworkMode).toHaveBeenCalledWith("offlineStrict");
+    await buildRegistry().get("config")!.run(ctx, "networkMode unrestricted");
+    expect(ctx.notice).toHaveBeenCalledWith(
+      "Valid saved network modes: offlineStrict, providerOnly. unrestricted is invocation-only."
+    );
   });
 
   it("sets theme by delegating to setTheme, never touching settings.json", async () => {

@@ -8,12 +8,16 @@ import { loadMcpServersByScope } from "./agent/mcp.js";
 import { SessionIndex } from "./agent/sessionIndex.js";
 import { VERSION } from "./version.js";
 import { loadCustomThemes } from "./ui/theme.js";
-import { parseCli, HELP_TEXT } from "./cliArgs.js";
+import { parseCli, HELP_TEXT, networkModeFromArgs } from "./cliArgs.js";
 import { configReport } from "./commands/cli/config.js";
 import { formatMcpList } from "./commands/cli/mcpList.js";
 import { runDoctor, formatDoctor } from "./commands/cli/doctor.js";
 import { runUpdate } from "./commands/cli/update.js";
 import { runPrint, readStdin } from "./printMode.js";
+import {
+  NetworkPolicy, NetworkPolicyError, effectiveNetworkMode, providerEndpoint
+} from "./agent/networkPolicy.js";
+import { NetworkAudit } from "./agent/networkAudit.js";
 
 const parsed = parseCli(process.argv.slice(2));
 
@@ -30,28 +34,59 @@ if (parsed.kind === "error") {
   process.exit(1);
 }
 if (parsed.kind === "subcommand") {
+  const networkArg = networkModeFromArgs(parsed.args);
+  if (networkArg.error) {
+    console.error(networkArg.error);
+    process.exit(2);
+  }
+  const subSettings = loadSettings();
+  let subNetworkMode;
+  try {
+    subNetworkMode = effectiveNetworkMode(subSettings.networkMode, networkArg.mode);
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(2);
+  }
   switch (parsed.name) {
     case "config":
-      console.log(configReport());
+      console.log(configReport(undefined, networkArg.mode));
       break;
     case "mcp":
       console.log(formatMcpList(loadMcpServersByScope(process.cwd())));
       break;
     case "doctor": {
-      const checks = runDoctor();
+      const checks = runDoctor({ networkMode: subNetworkMode });
       console.log(formatDoctor(checks));
       if (checks.some(c => !c.ok)) process.exitCode = 1;
       break;
     }
-    case "update":
-      process.exitCode = runUpdate();
+    case "update": {
+      const providers = loadProviders();
+      const name = subSettings.provider ?? "anthropic";
+      const provider = providers[name] ?? providers.anthropic ?? {};
+      const policy = new NetworkPolicy(subNetworkMode, providerEndpoint(provider), new NetworkAudit());
+      try {
+        process.exitCode = runUpdate(undefined, undefined, policy);
+      } catch (err) {
+        console.error(err instanceof Error ? err.message : String(err));
+        process.exitCode = err instanceof NetworkPolicyError ? 7 : 1;
+      }
       break;
+    }
   }
   process.exit();
 }
 
 const providers = loadProviders();
 const settings = loadSettings();
+let networkMode;
+try {
+  networkMode = effectiveNetworkMode(settings.networkMode, parsed.networkMode);
+} catch (err) {
+  console.error(err instanceof Error ? err.message : String(err));
+  process.exit(2);
+}
+const networkAudit = new NetworkAudit();
 let providerName = parsed.provider ?? settings.provider ?? "anthropic";
 if (!providers[providerName]) {
   if (parsed.provider) {
@@ -95,6 +130,8 @@ if (parsed.kind === "print") {
       cwd: initialCwd,
       sessionIndex,
       trustProjectConfig: parsed.trustProjectConfig
+      , networkMode,
+      networkAudit
     }, {
       out: text => process.stdout.write(text),
       err: text => process.stderr.write(text)
@@ -134,6 +171,8 @@ if (parsed.kind === "print") {
         sessionIndex,
         openResumeOnStart: pendingOpenResume,
         switchedFrom,
+        networkMode,
+        networkAudit,
         onSwitchProject: path => {
           try {
             process.chdir(path);
@@ -144,7 +183,13 @@ if (parsed.kind === "print") {
           return undefined;
         }
       }, terminal);
-      await app.run();
+      try {
+        await app.run();
+      } catch (err) {
+        terminal.cleanup();
+        console.error(err instanceof Error ? err.message : String(err));
+        process.exit(err instanceof NetworkPolicyError ? 7 : 1);
+      }
       if (!switchTo) break;
       switchedFrom = cwd;
       cwd = switchTo;

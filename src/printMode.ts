@@ -6,6 +6,10 @@ import type { SessionIndex } from "./agent/sessionIndex.js";
 import { inspectProjectExecutableConfig, ProjectTrustStore } from "./agent/projectTrust.js";
 import { loadRegistry } from "./engine/lsp/config.js";
 import { join } from "node:path";
+import {
+  NetworkPolicy, NetworkPolicyError, providerEndpoint,
+  type NetworkDecisionRecorder, type NetworkMode
+} from "./agent/networkPolicy.js";
 
 export interface PrintIo {
   out(text: string): void;
@@ -23,6 +27,8 @@ export interface PrintOptions {
   cwd: string;
   sessionIndex: SessionIndex;
   trustProjectConfig?: boolean;
+  networkMode?: NetworkMode;
+  networkAudit?: NetworkDecisionRecorder;
 }
 
 // One-shot non-interactive turn: stream assistant text to stdout, summarize
@@ -38,6 +44,9 @@ export async function runPrint(opts: PrintOptions, io: PrintIo): Promise<number>
   if (descriptor && !includeProjectConfig) {
     io.err("[warning] Ignored untrusted project MCP/LSP configuration; pass --trust-project-config to allow it.\n");
   }
+  const policy = new NetworkPolicy(
+    opts.networkMode ?? "providerOnly", providerEndpoint(opts.provider), opts.networkAudit
+  );
   const session = new AgentSession({
     providerName: opts.providerName,
     provider: opts.provider,
@@ -46,6 +55,7 @@ export async function runPrint(opts: PrintOptions, io: PrintIo): Promise<number>
     permissionMode: opts.permissionMode,
     resume: opts.resume,
     cwd: opts.cwd,
+    networkPolicy: policy,
     mcpServers: loadMcpServers(opts.cwd, undefined, includeProjectConfig),
     lspRegistry: loadRegistry(undefined, join(opts.cwd, ".cloudcode", "lsp.json"), includeProjectConfig),
     onMessage: msg => {
@@ -82,7 +92,15 @@ export async function runPrint(opts: PrintOptions, io: PrintIo): Promise<number>
       });
     }
   });
-  session.start();
+  try {
+    session.start();
+  } catch (err) {
+    if (err instanceof NetworkPolicyError) {
+      io.err(`${err.message}\n`);
+      return 7;
+    }
+    throw err;
+  }
   await session.ready();
   session.send(opts.prompt);
   await done;

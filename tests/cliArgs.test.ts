@@ -19,6 +19,12 @@ describe("parseCli", () => {
     expect(parseCli(["--provider", "local"])).toMatchObject({ kind: "interactive", provider: "local" });
   });
 
+  it("parses and validates a per-invocation network mode", () => {
+    expect(parseCli(["--network-mode", "offlineStrict"])).toMatchObject({ kind: "interactive", networkMode: "offlineStrict" });
+    expect(parseCli(["-p", "x", "--network-mode", "unrestricted"])).toMatchObject({ kind: "print", networkMode: "unrestricted" });
+    expect(parseCli(["--network-mode", "offline-ish"]).kind).toBe("error");
+  });
+
   it("detects subcommands and passes remaining args", () => {
     expect(parseCli(["doctor"])).toEqual({ kind: "subcommand", name: "doctor", args: [] });
     expect(parseCli(["mcp", "--x"])).toEqual({ kind: "subcommand", name: "mcp", args: ["--x"] });
@@ -77,7 +83,7 @@ describe("parseCli", () => {
 describe("HELP_TEXT", () => {
   it("mentions every flag and subcommand", () => {
     for (const s of ["--help", "--version", "--continue", "--resume", "--print",
-      "--provider", "--permission-mode", "doctor", "config", "mcp", "update"]) {
+      "--provider", "--network-mode", "--permission-mode", "doctor", "config", "mcp", "update"]) {
       expect(HELP_TEXT).toContain(s);
     }
   });

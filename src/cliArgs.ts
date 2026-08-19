@@ -1,5 +1,6 @@
 import { parseArgs } from "node:util";
 import type { PermissionMode } from "./agent/session.js";
+import { isNetworkMode, type NetworkMode } from "./agent/networkPolicy.js";
 
 export const SUBCOMMANDS = ["doctor", "config", "mcp", "update"] as const;
 export type Subcommand = (typeof SUBCOMMANDS)[number];
@@ -9,8 +10,8 @@ export type CliResult =
   | { kind: "version" }
   | { kind: "error"; message: string }
   | { kind: "subcommand"; name: Subcommand; args: string[] }
-  | { kind: "interactive"; continue: boolean; resume: boolean; provider?: string }
-  | { kind: "print"; prompt?: string; continue: boolean; provider?: string; permissionMode: PermissionMode; trustProjectConfig: boolean };
+  | { kind: "interactive"; continue: boolean; resume: boolean; provider?: string; networkMode?: NetworkMode }
+  | { kind: "print"; prompt?: string; continue: boolean; provider?: string; permissionMode: PermissionMode; trustProjectConfig: boolean; networkMode?: NetworkMode };
 
 const PERMISSION_MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
 
@@ -31,6 +32,7 @@ Options:
   -c, --continue                Resume the most recent session for this directory
   -r, --resume                  Open the session picker on start
       --provider <name>         Use a provider from ~/.cloudcode/providers.json
+      --network-mode <mode>     offlineStrict | providerOnly | unrestricted
   -p, --print [prompt]          Non-interactive mode; prompt as argument or on stdin
       --permission-mode <mode>  default | acceptEdits | bypassPermissions (with -p only)
       --trust-project-config    Allow this project's MCP/LSP commands (with -p only)
@@ -47,7 +49,7 @@ export function parseCli(argv: string[]): CliResult {
   }
   let values: {
     help: boolean; version: boolean; continue: boolean; resume: boolean; print: boolean;
-    provider?: string; "permission-mode"?: string; "trust-project-config": boolean;
+    provider?: string; "network-mode"?: string; "permission-mode"?: string; "trust-project-config": boolean;
   };
   let positionals: string[];
   try {
@@ -61,6 +63,7 @@ export function parseCli(argv: string[]): CliResult {
         resume: { type: "boolean", short: "r", default: false },
         print: { type: "boolean", short: "p", default: false },
         provider: { type: "string" },
+        "network-mode": { type: "string" },
         "permission-mode": { type: "string" },
         "trust-project-config": { type: "boolean", default: false }
       }
@@ -72,6 +75,10 @@ export function parseCli(argv: string[]): CliResult {
   }
   if (values.help) return { kind: "help" };
   if (values.version) return { kind: "version" };
+  const networkMode = values["network-mode"];
+  if (networkMode !== undefined && !isNetworkMode(networkMode)) {
+    return { kind: "error", message: `Invalid --network-mode "${networkMode}". Valid: offlineStrict, providerOnly, unrestricted.` };
+  }
   const mode = values["permission-mode"];
   if (mode !== undefined && !values.print) {
     return { kind: "error", message: "--permission-mode is only valid with --print. Run cloudcode --help for usage." };
@@ -95,11 +102,28 @@ export function parseCli(argv: string[]): CliResult {
       continue: values.continue,
       provider: values.provider,
       permissionMode: (mode as PermissionMode) ?? "default",
-      trustProjectConfig: values["trust-project-config"]
+      trustProjectConfig: values["trust-project-config"],
+      ...(networkMode ? { networkMode: networkMode as NetworkMode } : {})
     };
   }
   if (positionals.length > 0) {
     return { kind: "error", message: `Unexpected argument "${positionals[0]}". Run cloudcode --help for usage.` };
   }
-  return { kind: "interactive", continue: values.continue, resume: values.resume, provider: values.provider };
+  return {
+    kind: "interactive", continue: values.continue, resume: values.resume, provider: values.provider,
+    ...(networkMode ? { networkMode: networkMode as NetworkMode } : {})
+  };
+}
+
+export function networkModeFromArgs(args: string[]): { mode?: NetworkMode; error?: string } {
+  const index = args.indexOf("--network-mode");
+  if (index === -1) return {};
+  const value = args[index + 1];
+  if (!isNetworkMode(value)) {
+    return { error: `Invalid --network-mode "${value ?? ""}". Valid: offlineStrict, providerOnly, unrestricted.` };
+  }
+  if (args.length !== 2 || index !== 0) {
+    return { error: "Unexpected command arguments. Only --network-mode <mode> is supported." };
+  }
+  return { mode: value };
 }

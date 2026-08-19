@@ -8,6 +8,7 @@ export interface StatusBarProps {
   servedModel?: string;
   effort?: string;
   mode: string;
+  networkMode?: string;
   cwd: string;
   costUsd?: number;
   gitBranch?: string;
@@ -38,6 +39,7 @@ export function renderStatusBar(p: StatusBarProps, theme: Theme, width: number):
   segments.push(p.provider + (modelLabel ? `/${modelLabel}` : ""));
   if (p.effort != null) segments.push(`effort: ${p.effort}`);
   segments.push(p.mode);
+  if (p.networkMode) segments.push(`network: ${p.networkMode}`);
   if (p.gitBranch) segments.push(`⎇ ${p.gitBranch}${p.gitDirty ? "*" : ""}`);
   if (p.tokens != null && p.tokens > 0) {
     segments.push(formatTokens(p.tokens) + (p.contextPct != null ? ` (${p.contextPct}%)` : ""));

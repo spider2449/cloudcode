@@ -63,6 +63,14 @@ describe("settings persistence", () => {
     saveSetting("effort", "extreme", file);
     expect(loadSettings(file).effort).toBeUndefined();
   });
+
+  it("persists strict/provider-only network modes but rejects unrestricted", () => {
+    const file = join(dir(), "settings.json");
+    saveSetting("networkMode", "offlineStrict", file);
+    expect(loadSettings(file).networkMode).toBe("offlineStrict");
+    saveSetting("networkMode", "unrestricted", file);
+    expect(loadSettings(file).networkMode).toBeUndefined();
+  });
 });
 
 describe("autoMemoryEnabled", () => {

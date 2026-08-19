@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { configDir } from "./providers.js";
 import type { PermissionMode } from "./session.js";
 import { isEffortLevel, type EffortLevel } from "../engine/effort.js";
+import { isPersistedNetworkMode, type PersistedNetworkMode } from "./networkPolicy.js";
 
 export interface Settings {
   provider?: string;
@@ -11,6 +12,7 @@ export interface Settings {
   effort?: EffortLevel;
   theme?: string;
   autoMemoryEnabled?: boolean;
+  networkMode?: PersistedNetworkMode;
 }
 
 // bypassPermissions is deliberately not persistable: a saved bypass would make
@@ -40,6 +42,7 @@ export function loadSettings(filePath: string = DEFAULT_FILE()): Settings {
   if (isEffortLevel(raw.effort)) out.effort = raw.effort;
   if (typeof raw.theme === "string") out.theme = raw.theme;
   if (typeof raw.autoMemoryEnabled === "boolean") out.autoMemoryEnabled = raw.autoMemoryEnabled;
+  if (isPersistedNetworkMode(raw.networkMode)) out.networkMode = raw.networkMode;
   return out;
 }
 

@@ -48,4 +48,11 @@ describe("doctor checks", () => {
     expect(out).toContain("ok    a");
     expect(out).toContain("FAIL  b");
   });
+
+  it("reports a strict-mode remote provider as a network-policy failure", () => {
+    const d = dir();
+    writeFileSync(join(d, "providers.json"), JSON.stringify({ anthropic: {} }));
+    const checks = runDoctor({ dir: d, cwd: dir(), env: { ANTHROPIC_API_KEY: "x" }, networkMode: "offlineStrict" });
+    expect(checks.find(check => check.name === "network policy")).toMatchObject({ ok: false });
+  });
 });

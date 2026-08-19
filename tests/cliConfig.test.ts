@@ -16,13 +16,15 @@ describe("configReport", () => {
     expect(report).toContain(join(d, "checkpoints"));
     expect(report).toContain("anthropic (default)");
     expect(report).toContain("permissionMode:  default");
+    expect(report).toContain("networkMode:     providerOnly");
+    expect(report).toContain("Bash networking: uncontained");
   });
 
   it("shows saved settings", () => {
     const d = dir();
     writeFileSync(join(d, "settings.json"), JSON.stringify({
       provider: "local", model: "claude-sonnet-5", permissionMode: "acceptEdits",
-      effort: "high", theme: "light", autoMemoryEnabled: false
+      effort: "high", theme: "light", autoMemoryEnabled: false, networkMode: "offlineStrict"
     }));
     const report = configReport(d);
     expect(report).toContain("provider:        local");
@@ -31,5 +33,7 @@ describe("configReport", () => {
     expect(report).toContain("effort:          high");
     expect(report).toContain("theme:           light");
     expect(report).toContain("autoMemory:      disabled");
+    expect(report).toContain("networkMode:     offlineStrict");
+    expect(report).toContain("Bash networking: disabled");
   });
 });

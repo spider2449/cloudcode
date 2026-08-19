@@ -5,6 +5,7 @@ import type { ContextSnapshot } from "../engine/loop.js";
 import type { Skill } from "../agent/skills.js";
 import type { ChangeSummary, UndoPreview, UndoResult } from "../agent/changeJournal.js";
 import type { GitReviewSnapshot } from "../agent/gitReview.js";
+import type { NetworkMode, NetworkPolicy } from "../agent/networkPolicy.js";
 
 export interface CommandContext {
   notice(text: string): void;
@@ -40,6 +41,9 @@ export interface CommandContext {
   previewUndo(): UndoPreview;
   undoLatest(): UndoResult;
   gitReview(stagedOnly?: boolean): Promise<GitReviewSnapshot>;
+  currentNetworkMode(): NetworkMode;
+  setNetworkMode(mode: Exclude<NetworkMode, "unrestricted">): Promise<void>;
+  networkPolicy(): NetworkPolicy;
 }
 
 export interface Command {

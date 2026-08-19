@@ -3,6 +3,10 @@ import { join } from "node:path";
 import { configDir, loadProviders, type ProviderConfig } from "../../agent/providers.js";
 import { loadRegistry, type ServerConfig } from "../../engine/lsp/config.js";
 import { commandExists as realCommandExists } from "../../engine/lsp/detect.js";
+import { loadSettings } from "../../agent/settings.js";
+import {
+  bashNetworkStatus, decideNetwork, providerEndpoint, type NetworkMode
+} from "../../agent/networkPolicy.js";
 
 export interface DoctorCheck {
   name: string;
@@ -79,17 +83,35 @@ export function checkLspServers(
 }
 
 export function runDoctor(
-  opts: { cwd?: string; dir?: string; env?: NodeJS.ProcessEnv } = {}
+  opts: { cwd?: string; dir?: string; env?: NodeJS.ProcessEnv; networkMode?: NetworkMode } = {}
 ): DoctorCheck[] {
   const dir = opts.dir ?? configDir();
   const cwd = opts.cwd ?? process.cwd();
   const env = opts.env ?? process.env;
   const providersPath = join(dir, "providers.json");
+  const providers = loadProviders(providersPath);
+  const settings = loadSettings(join(dir, "settings.json"));
+  const mode = opts.networkMode ?? settings.networkMode ?? "providerOnly";
+  const selectedName = settings.provider ?? "anthropic";
+  const selected = providers[selectedName] ?? providers.anthropic ?? {};
+  const endpoint = providerEndpoint(selected);
+  const providerDecision = decideNetwork(mode, { capability: "provider", destination: endpoint }, endpoint);
+  const bash = bashNetworkStatus(mode, false);
   return [
     checkNodeVersion(),
     checkConfigDirWritable(dir),
     checkJsonFile("providers.json", providersPath),
-    ...checkProviderKeys(loadProviders(providersPath), env),
+    ...checkProviderKeys(providers, env),
+    {
+      name: "network policy",
+      ok: providerDecision.allowed,
+      detail: `${mode}; provider ${providerDecision.destinationHost} ${providerDecision.allowed ? "allowed" : `denied (${providerDecision.reason})`}`
+    },
+    {
+      name: "Bash network containment",
+      ok: true,
+      detail: `${bash.description}; policy does not claim to contain arbitrary LSP/stdio MCP child egress`
+    },
     checkJsonFile("user mcp.json", join(dir, "mcp.json")),
     checkJsonFile("project .mcp.json", join(cwd, ".mcp.json")),
     ...checkLspServers()

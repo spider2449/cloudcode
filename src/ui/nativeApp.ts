@@ -1,7 +1,7 @@
 import type { EngineMessage } from "../engine/messages.js";
 import { AgentSession, type PermissionMode } from "../agent/session.js";
 import { History } from "../agent/history.js";
-import { DEFAULT_CONTEXT_WINDOW, type ProviderConfig } from "../agent/providers.js";
+import type { ProviderConfig } from "../agent/providers.js";
 import { SessionIndex } from "../agent/sessionIndex.js";
 import { PermissionStore } from "../agent/permissionStore.js";
 import { buildRegistry } from "../commands/builtins.js";
@@ -17,8 +17,6 @@ import { loadRegistry } from "../engine/lsp/config.js";
 import { loadSkills, formatSkillList, type Skill } from "../agent/skills.js";
 import { mergeSkillCommands } from "../commands/skillCommands.js";
 import { THEMES, loadThemeName, saveThemeName } from "./theme.js";
-import { loadWelcome, splitWelcomeLogo } from "./welcome.js";
-import { VERSION } from "../version.js";
 import { GitStatusPoller } from "./useGitStatus.js";
 import { PermissionController } from "./permissionController.js";
 import { KeyRouter, type KeyRouterHost } from "./keyRouter.js";
@@ -36,6 +34,9 @@ import type { Key } from "./input.js";
 import { loadSettings, saveSetting } from "../agent/settings.js";
 import type { EffortLevel } from "../engine/effort.js";
 import { join } from "node:path";
+import type { NetworkDecisionRecorder, NetworkMode } from "../agent/networkPolicy.js";
+import { NetworkController } from "./networkController.js";
+import { SessionPresentation } from "./sessionPresentation.js";
 
 export interface AppProps {
   cwd: string;
@@ -47,6 +48,8 @@ export interface AppProps {
   openResumeOnStart?: boolean;
   onSwitchProject?: (path: string) => string | undefined;
   switchedFrom?: string;
+  networkMode?: NetworkMode;
+  networkAudit?: NetworkDecisionRecorder;
 }
 
 type Phase = "idle" | "streaming" | "permission";
@@ -71,6 +74,8 @@ export class App {
   private effort: EffortLevel = loadSettings().effort ?? "off";
   private servedModel: string | undefined;
   private mode: PermissionMode;
+  private network: NetworkController;
+  private presentation: SessionPresentation;
   private permissions: PermissionController;
   // Messages submitted while a turn was in flight; sent FIFO, one per turn,
   // when the agent returns to idle.
@@ -102,8 +107,10 @@ export class App {
 
   constructor(private props: AppProps, private terminal: ITerminal) {
     this.providerName = props.initialProvider;
-    this.model = this.modelFor(props.initialProvider);
+    this.presentation = new SessionPresentation(props.providers);
+    this.model = this.presentation.modelFor(props.initialProvider);
     this.mode = props.initialMode ?? "default";
+    this.network = new NetworkController(props.networkMode ?? "providerOnly", props.providers, props.networkAudit);
     this.permissionStore = new PermissionStore(props.cwd);
     this.fileIndex = new FileIndex(props.cwd);
     this.git = new GitStatusPoller(props.cwd);
@@ -111,7 +118,7 @@ export class App {
     this.inputBox = new InputBox(this.completionCtx, this.history);
     this.inputBox.onSubmit = text => this.handleSubmit(text);
     this.usage = new UsageTracker({
-      contextWindow: () => this.contextWindowFor(this.providerName),
+      contextWindow: () => this.presentation.contextWindowFor(this.providerName),
       compact: onProgress => this.session?.compact(onProgress) ?? Promise.resolve(undefined),
       notice: text => this.notice(text),
       onError: text => this.buffer.append({ kind: "error", text }),
@@ -129,31 +136,14 @@ export class App {
     this.ctx = this.buildCommandContext();
 
     this.appendWelcome();
+    this.buffer.append({ kind: "notice", text: this.network.notice() });
     if (props.switchedFrom) this.buffer.append({ kind: "notice", text: `Switched project to ${props.cwd}` });
-
   }
 
   /** Append the welcome banner to the buffer and pin the view to its top. */
   private appendWelcome(): void {
-    const size = this.terminal.size();
-    const welcome = loadWelcome(
-      { version: VERSION, provider: this.providerName, model: this.model },
-      undefined,
-      { rows: Math.max(1, size.rows - 6), columns: size.columns }
-    );
-    if (welcome) {
-      const { logo, body } = splitWelcomeLogo(welcome);
-      this.buffer.append(logo !== undefined ? { kind: "welcome", logo, body } : { kind: "notice", text: body });
-    }
-  }
-
-  private modelFor(name: string): string | undefined {
-    // providers.json is the source of truth for the interactive TUI model.
-    return this.props.providers[name]?.model;
-  }
-
-  private contextWindowFor(name: string): number {
-    return this.props.providers[name]?.model_context_window ?? DEFAULT_CONTEXT_WINDOW;
+    const item = this.presentation.welcomeItem(this.providerName, this.terminal.size());
+    if (item) this.buffer.append(item);
   }
 
   private completionCtxRef(): CompletionContext {
@@ -229,17 +219,17 @@ export class App {
 
   private createSession(name: string, resume?: string, modeOverride?: PermissionMode): AgentSession {
     this.availableModels = [];
-    void fetchModels(this.props.providers[name] ?? {}).then(models => { this.availableModels = models; });
     this.mcpServers = loadMcpServers(this.props.cwd, undefined, this.allowProjectConfig);
     this.refreshSkills();
     const session = new AgentSession({
       providerName: name,
       provider: this.props.providers[name],
-      model: this.modelFor(name),
+      model: this.presentation.modelFor(name),
       effort: this.effort,
       permissionMode: modeOverride ?? this.mode,
       resume,
       cwd: this.props.cwd,
+      networkPolicy: this.network.policyFor(name),
       mcpServers: this.mcpServers,
       lspRegistry: loadRegistry(undefined, join(this.props.cwd, ".cloudcode", "lsp.json"), this.allowProjectConfig),
       onMessage: msg => this.handleMessage(msg),
@@ -250,6 +240,7 @@ export class App {
       onSessionId: id => { if (this.firstMessage) this.recordSession(id, name); }
     });
     session.start();
+    void fetchModels(this.props.providers[name] ?? {}).then(models => { this.availableModels = models; });
     return session;
   }
 
@@ -264,7 +255,7 @@ export class App {
     this.firstMessage = undefined;
     this.usage.resetForNewSession();
     this.session = this.createSession(name, resume, modeOverride);
-    this.model = this.modelFor(name);
+    this.model = this.presentation.modelFor(name);
     this.servedModel = undefined;
   }
 
@@ -305,6 +296,14 @@ export class App {
         this.mode = pm;
         this.recompute();
       },
+      currentNetworkMode: () => this.network.mode,
+      setNetworkMode: async networkMode => {
+        this.network.setMode(networkMode);
+        saveSetting("networkMode", networkMode);
+        await this.restartSession(this.providerName);
+        this.recompute();
+      },
+      networkPolicy: () => this.network.policyFor(this.providerName),
       switchProvider: async name => {
         if (!this.props.providers[name]) {
           this.notice(`Unknown provider: ${name}. Providers: ${Object.keys(this.props.providers).join(", ")}. Add custom providers in ~/.cloudcode/providers.json (see README).`);
@@ -314,7 +313,7 @@ export class App {
         try {
           await this.restartSession(name);
           this.providerName = name;
-          this.model = this.modelFor(name);
+          this.model = this.presentation.modelFor(name);
           this.notice(`Provider: ${name}`);
         } catch (err) {
           this.notice(`Failed to switch provider: ${String(err)}. Staying on ${previous}.`);
@@ -332,8 +331,8 @@ export class App {
       costSummary: () => `Session cost: $${this.usage.cost.toFixed(4)}`,
       contextInfo: () => ({
         snapshot: this.session?.contextSnapshot(),
-        model: this.modelFor(this.providerName) ?? "unknown",
-        contextWindow: this.contextWindowFor(this.providerName)
+        model: this.presentation.modelFor(this.providerName) ?? "unknown",
+        contextWindow: this.presentation.contextWindowFor(this.providerName)
       }),
       providerNames: () => Object.keys(this.props.providers),
       exit: () => { void this.session?.dispose(); this.stop(); },
@@ -536,6 +535,7 @@ export class App {
         servedModel: this.servedModel,
         effort: this.effort,
         mode: this.mode,
+        networkMode: this.network.mode,
         cwd: this.props.cwd,
         costUsd: this.usage.cost,
         gitBranch: this.git.status.branch,
