@@ -82,7 +82,10 @@ if (parsed.kind === "subcommand") {
     }
     case "task": {
       const mode = subSettings.networkMode ?? "providerOnly";
-      const result = await runTaskCommand(parsed.args, { cwd: process.cwd(), networkMode: mode });
+      const result = await runTaskCommand(parsed.args, {
+        cwd: process.cwd(), networkMode: mode,
+        provider: subSettings.provider ?? "anthropic", model: subSettings.model ?? "default"
+      });
       if (result.stdout) console.log(result.stdout);
       if (result.stderr) console.error(result.stderr);
       if (result.launch) taskLaunch = result.launch;
@@ -237,6 +240,8 @@ if (sessionParsed.kind === "print") {
         task: currentTask && taskRunner ? {
           initialPrompt: currentTask.initialPrompt,
           planning: currentTask.planning,
+          toolAllowlist: currentTask.toolAllowlist,
+          disableMcp: currentTask.disableMcp,
           onSessionId: id => taskRunner.recordSession(currentTask.taskId, id),
           onPlanningComplete: id => taskRunner.markPlanReady(currentTask.taskId, id)
         } : undefined,

@@ -209,15 +209,13 @@ export class App {
     const next = this.queuedMessages.shift();
     if (next !== undefined) this.handleSubmit(next);
   }
-
   private refreshSkills(): void {
     this.skills = loadSkills(this.props.cwd);
     this.registry = mergeSkillCommands(buildRegistry(), this.skills);
   }
-
   private createSession(name: string, resume?: string, modeOverride?: PermissionMode): AgentSession {
     this.availableModels = [];
-    this.mcpServers = loadMcpServers(this.props.cwd, undefined, this.allowProjectConfig);
+    this.mcpServers = this.props.task?.disableMcp ? {} : loadMcpServers(this.props.cwd, undefined, this.allowProjectConfig);
     this.refreshSkills();
     const session = new AgentSession({
       providerName: name,
@@ -230,6 +228,7 @@ export class App {
       networkPolicy: this.network.policyFor(name),
       mcpServers: this.mcpServers,
       lspRegistry: loadRegistry(undefined, join(this.props.cwd, ".cloudcode", "lsp.json"), this.allowProjectConfig),
+      toolAllowlist: this.props.task?.toolAllowlist,
       onMessage: msg => this.handleMessage(msg),
       onPermissionRequest: req => {
         this.phase = "permission";

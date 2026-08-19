@@ -3,6 +3,8 @@ import type { EngineMessage } from "../engine/messages.js";
 export interface TaskUiOptions {
   initialPrompt?: string;
   planning: boolean;
+  toolAllowlist?: readonly string[];
+  disableMcp?: boolean;
   onSessionId?(id: string): void;
   onPlanningComplete?(sessionId?: string): void;
 }

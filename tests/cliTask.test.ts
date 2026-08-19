@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { runTaskCommand, type TaskCommandRunner } from "../src/commands/cli/task.js";
 import { newTaskManifest, transitionTask } from "../src/agent/taskManifest.js";
 import { TaskStateConflictError } from "../src/agent/taskRunner.js";
+import type { TaskCoordinator } from "../src/agent/taskCoordinator.js";
+import type { TaskIntegration } from "../src/agent/taskIntegration.js";
 
 function manifest() {
   return newTaskManifest({
@@ -70,5 +72,37 @@ describe("task CLI", () => {
     expect((await runTaskCommand(["remove", "task-1"], {
       cwd: "/source", networkMode: "providerOnly", runner
     })).exitCode).toBe(6);
+  });
+
+  it("launches read-only workers without mutation or MCP tools", async () => {
+    const child = newTaskManifest({
+      taskId: "worker-1", repositoryId: "repo", sourcePath: "/source", commonDir: "/source/.git",
+      worktreePath: "/worker", baseCommit: "abc", branch: "cloudcode/task/worker",
+      planPath: "docs/plans/worker.md", networkMode: "providerOnly", parentTaskId: "parent", workerRole: "review"
+    });
+    const coordinator = { addWorker: vi.fn(async () => ({
+      manifest: child, initialPrompt: "review", reference: {
+        taskId: child.taskId, role: "review", state: child.state, branch: child.branch,
+        worktreePath: child.worktreePath, ownedPaths: [], provider: "local", model: "m", eventLogPath: "/events"
+      }
+    })) } as unknown as TaskCoordinator;
+    const result = await runTaskCommand(["worker", "start", "parent", "review", "--target", "worker-impl"], {
+      cwd: "/source", networkMode: "providerOnly", runner: fakeRunner(), coordinator, provider: "local", model: "m"
+    });
+    expect(result.launch).toMatchObject({ disableMcp: true, toolAllowlist: expect.arrayContaining(["Read", "Diagnostics"]) });
+    expect(result.launch?.toolAllowlist).not.toEqual(expect.arrayContaining(["Write", "Edit", "Bash"]));
+  });
+
+  it("previews integration unless --yes explicitly applies it", async () => {
+    const integrate = vi.fn(async (_parent: string, _child: string, _yes: boolean) => ({
+      parentTaskId: "parent", childTaskId: "child", parentHead: "a", childHead: "b",
+      commits: ["b"], changedFiles: ["src/a.ts"], ownershipViolations: [], conflicts: false
+    }));
+    const integration = { integrate } as unknown as TaskIntegration;
+    const result = await runTaskCommand(["integrate", "parent", "child"], {
+      cwd: "/source", networkMode: "providerOnly", runner: fakeRunner(), integration
+    });
+    expect(result.stdout).toContain('"applied": false');
+    expect(integrate).toHaveBeenCalledWith("parent", "child", false);
   });
 });
