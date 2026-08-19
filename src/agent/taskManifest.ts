@@ -21,8 +21,26 @@ export interface TaskPackIdentity {
   digest: string;
 }
 
+export type WorkerRole = "research" | "implement" | "verify" | "review";
+export type CoordinatorState = "idle" | "running" | "awaitingIntegration" | "completed" | "cancelled";
+
+export interface TaskChildReference {
+  taskId: string;
+  role: WorkerRole;
+  state: TaskState;
+  branch: string;
+  worktreePath: string;
+  ownedPaths: string[];
+  provider: string;
+  model: string;
+  limits?: RunLimits;
+  eventLogPath: string;
+  recordedHead?: string;
+  targetCommit?: string;
+}
+
 export interface TaskManifest {
-  version: 1;
+  version: 2;
   taskId: string;
   repositoryId: string;
   sourcePath: string;
@@ -38,6 +56,11 @@ export interface TaskManifest {
   networkMode: Exclude<NetworkMode, "unrestricted">;
   limits?: RunLimits;
   packs: TaskPackIdentity[];
+  parentTaskId?: string;
+  workerRole?: WorkerRole;
+  ownedPaths: string[];
+  coordinatorState: CoordinatorState;
+  children: TaskChildReference[];
   artifactPaths: string[];
 }
 
@@ -63,10 +86,33 @@ function isState(value: unknown): value is TaskState {
   return typeof value === "string" && Object.hasOwn(TRANSITIONS, value);
 }
 
-function isManifest(value: unknown): value is TaskManifest {
+function isWorkerRole(value: unknown): value is WorkerRole {
+  return value === "research" || value === "implement" || value === "verify" || value === "review";
+}
+
+function isChild(value: unknown): value is TaskChildReference {
   if (!value || typeof value !== "object") return false;
-  const item = value as Partial<TaskManifest>;
-  return item.version === 1 && typeof item.taskId === "string" && typeof item.repositoryId === "string" &&
+  const child = value as Partial<TaskChildReference>;
+  return typeof child.taskId === "string" && isWorkerRole(child.role) && isState(child.state) &&
+    typeof child.branch === "string" && typeof child.worktreePath === "string" && Array.isArray(child.ownedPaths) &&
+    child.ownedPaths.every(path => typeof path === "string") && typeof child.provider === "string" &&
+    typeof child.model === "string" && typeof child.eventLogPath === "string" &&
+    (child.targetCommit === undefined || typeof child.targetCommit === "string");
+}
+
+function isManifest(value: unknown): value is Omit<TaskManifest, "version" | "ownedPaths" | "coordinatorState" | "children"> & {
+  version: 1 | 2; ownedPaths?: string[]; coordinatorState?: CoordinatorState; children?: TaskChildReference[];
+} {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Partial<Omit<TaskManifest, "version">> & { version?: 1 | 2 };
+  const coordinatorValid = item.version === 1 || (
+    Array.isArray(item.ownedPaths) && item.ownedPaths.every(path => typeof path === "string") &&
+    (item.coordinatorState === "idle" || item.coordinatorState === "running" || item.coordinatorState === "awaitingIntegration" ||
+      item.coordinatorState === "completed" || item.coordinatorState === "cancelled") &&
+    Array.isArray(item.children) && item.children.every(isChild) &&
+    (item.workerRole === undefined || isWorkerRole(item.workerRole))
+  );
+  return coordinatorValid && typeof item.taskId === "string" && typeof item.repositoryId === "string" &&
     typeof item.sourcePath === "string" && typeof item.commonDir === "string" && typeof item.worktreePath === "string" &&
     typeof item.baseCommit === "string" && typeof item.branch === "string" && isState(item.state) &&
     Array.isArray(item.transitions) && item.transitions.length > 0 && typeof item.planPath === "string" && Array.isArray(item.artifactPaths) &&
@@ -89,7 +135,10 @@ export function loadTaskManifest(taskId: string, base: string = configDir()): Ta
   try { value = JSON.parse(readFileSync(taskManifestPath(taskId, base), "utf8")); }
   catch (err) { throw new Error(`Task ${taskId} could not be loaded: ${err instanceof Error ? err.message : String(err)}`); }
   if (!isManifest(value) || value.taskId !== taskId) throw new Error(`Task ${taskId} has an invalid manifest.`);
-  return { ...value, packs: value.packs ?? [] };
+  return {
+    ...value, version: 2, packs: value.packs ?? [], ownedPaths: value.ownedPaths ?? [],
+    coordinatorState: value.coordinatorState ?? "idle", children: value.children ?? []
+  };
 }
 
 export function listTaskManifests(base: string = configDir()): TaskManifest[] {
@@ -106,20 +155,25 @@ export function listTaskManifests(base: string = configDir()): TaskManifest[] {
 }
 
 export function newTaskManifest(
-  input: Omit<TaskManifest, "version" | "taskId" | "state" | "transitions" | "artifactPaths" | "packs"> & {
-    taskId?: string; packs?: TaskPackIdentity[];
+  input: Omit<TaskManifest, "version" | "taskId" | "state" | "transitions" | "artifactPaths" | "packs" |
+    "ownedPaths" | "coordinatorState" | "children"> & {
+    taskId?: string; packs?: TaskPackIdentity[]; ownedPaths?: string[];
+    coordinatorState?: CoordinatorState; children?: TaskChildReference[];
   },
   now: Date = new Date()
 ): TaskManifest {
   const taskId = input.taskId ?? randomUUID();
   return {
-    version: 1, taskId, repositoryId: input.repositoryId, sourcePath: input.sourcePath,
+    version: 2, taskId, repositoryId: input.repositoryId, sourcePath: input.sourcePath,
     commonDir: input.commonDir, worktreePath: input.worktreePath, baseCommit: input.baseCommit,
     branch: input.branch, planPath: input.planPath, networkMode: input.networkMode,
     ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    ...(input.parentTaskId ? { parentTaskId: input.parentTaskId } : {}),
+    ...(input.workerRole ? { workerRole: input.workerRole } : {}),
     ...(input.verificationProfile ? { verificationProfile: input.verificationProfile } : {}),
     ...(input.limits ? { limits: input.limits } : {}),
-    packs: input.packs ?? [], state: "created",
+    packs: input.packs ?? [], ownedPaths: input.ownedPaths ?? [],
+    coordinatorState: input.coordinatorState ?? "idle", children: input.children ?? [], state: "created",
     transitions: [{ state: "created", timestamp: now.toISOString() }], artifactPaths: []
   };
 }

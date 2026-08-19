@@ -11,6 +11,7 @@ import {
 import { createTaskWorktree, removeTaskWorktree, runGit, validateTaskWorktree, type GitRunner } from "./worktree.js";
 import { loadVerificationProfiles, runVerification, type VerificationResult } from "./taskVerification.js";
 import type { NetworkMode } from "./networkPolicy.js";
+import type { WorkerRole } from "./taskManifest.js";
 import type { RunLimits } from "../engine/runLimits.js";
 import { resolvePackContributions } from "./packs.js";
 
@@ -64,6 +65,7 @@ export class TaskRunner {
   async start(input: {
     cwd: string; name: string; base?: string; networkMode?: Exclude<NetworkMode, "unrestricted">;
     limits?: RunLimits; verificationProfile?: string; now?: Date;
+    parentTaskId?: string; workerRole?: WorkerRole; ownedPaths?: string[];
   }): Promise<TaskManifest> {
     const taskId = randomUUID();
     const identity = await createTaskWorktree({
@@ -79,6 +81,9 @@ export class TaskRunner {
       packs: contributions.packs.map(({ pack }) => ({
         name: pack.manifest.name, version: pack.manifest.version, digest: pack.digest
       })),
+      ...(input.parentTaskId ? { parentTaskId: input.parentTaskId } : {}),
+      ...(input.workerRole ? { workerRole: input.workerRole } : {}),
+      ownedPaths: input.ownedPaths ?? [],
       ...(input.limits ? { limits: input.limits } : {}),
       ...(input.verificationProfile ? { verificationProfile: input.verificationProfile } : {})
     }, input.now);

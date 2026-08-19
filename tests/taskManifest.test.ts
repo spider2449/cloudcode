@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -55,5 +55,17 @@ describe("task manifests", () => {
     saveTaskManifest(older, base);
     saveTaskManifest(newer, base);
     expect(listTaskManifests(base).map(item => item.taskId)).toEqual(["newer", "older"]);
+  });
+
+  it("migrates version 1 manifests to coordinator-safe version 2 in memory", () => {
+    const base = root();
+    const legacy = { ...manifest("legacy"), version: 1 } as Record<string, unknown>;
+    delete legacy.ownedPaths; delete legacy.coordinatorState; delete legacy.children;
+    const dir = join(base, "tasks", "legacy");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "manifest.json"), JSON.stringify(legacy));
+    expect(loadTaskManifest("legacy", base)).toMatchObject({
+      version: 2, ownedPaths: [], coordinatorState: "idle", children: []
+    });
   });
 });
