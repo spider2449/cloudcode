@@ -7,9 +7,12 @@ import { globTool } from "./tools/glob.js";
 import { grepTool } from "./tools/grep.js";
 import { definitionTool, referencesTool, hoverTool, symbolsTool, diagnosticsTool } from "./tools/lsp.js";
 
-export function builtinTools(): ToolDef[] {
-  return [
+export function builtinTools(options: { allowArbitraryChildNetwork?: boolean } = {}): ToolDef[] {
+  const tools = [
     readTool, writeTool, editTool, bashTool, globTool, grepTool,
     definitionTool, referencesTool, hoverTool, symbolsTool, diagnosticsTool
   ];
+  return options.allowArbitraryChildNetwork === false
+    ? tools.filter(tool => tool.capabilities?.arbitraryChildNetwork !== true)
+    : tools;
 }

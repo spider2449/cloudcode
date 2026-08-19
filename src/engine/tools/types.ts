@@ -27,6 +27,8 @@ export interface ToolOutput {
 export interface ToolDef {
   name: string;
   description: string;
+  /** Declares capabilities used to filter tools before exposing them. */
+  capabilities?: { arbitraryChildNetwork?: boolean };
   // JSON Schema for the tool's input, sent verbatim to the API.
   input_schema: Record<string, unknown>;
   execute(input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutput>;

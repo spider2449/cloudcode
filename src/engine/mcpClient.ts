@@ -10,6 +10,7 @@ export interface McpConnection {
 }
 
 export type ConnectionFactory = (name: string, cfg: McpServerConfig) => Promise<McpConnection>;
+export type ConnectionGuard = (name: string, cfg: McpServerConfig) => string | undefined;
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 10000;
 
@@ -37,8 +38,13 @@ export class McpManager {
     private connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS
   ) {}
 
-  async connect(servers: Record<string, McpServerConfig>): Promise<void> {
+  async connect(servers: Record<string, McpServerConfig>, guard?: ConnectionGuard): Promise<void> {
     for (const [name, cfg] of Object.entries(servers)) {
+      const denial = guard?.(name, cfg);
+      if (denial) {
+        this.states.push({ name, status: `denied: ${denial}` });
+        continue;
+      }
       let timer: ReturnType<typeof setTimeout> | undefined;
       const pending = this.factory(name, cfg).then(async conn => {
         try {

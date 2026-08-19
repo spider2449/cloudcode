@@ -23,6 +23,14 @@ describe("McpManager", () => {
     expect(mgr.tools()).toEqual([]);
   });
 
+  it("does not invoke the connection factory when a guard denies egress", async () => {
+    let called = false;
+    const mgr = new McpManager((async () => { called = true; return fakeFactory(); }) as never);
+    await mgr.connect({ remote: { url: "https://mcp.example/sse" } }, () => "providerOnly/capabilityDenied");
+    expect(called).toBe(false);
+    expect(mgr.status()).toEqual([{ name: "remote", status: "denied: providerOnly/capabilityDenied" }]);
+  });
+
   it("times out a hung connection and closes it if it resolves later", async () => {
     let release!: () => void;
     let closed = false;

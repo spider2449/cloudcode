@@ -4,6 +4,16 @@ import { configDir } from "./providers.js";
 
 export type McpServerConfig = Record<string, unknown>;
 
+export function mcpHttpDestination(config: McpServerConfig): string | undefined {
+  if (typeof config.url === "string") return config.url;
+  const transport = config.transport;
+  if (transport && typeof transport === "object" && !Array.isArray(transport)) {
+    const value = (transport as Record<string, unknown>).url;
+    if (typeof value === "string") return value;
+  }
+  return undefined;
+}
+
 export interface McpServerStatusEntry {
   name: string;
   status: string;

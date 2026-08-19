@@ -10,11 +10,14 @@ import { LspManager } from "../engine/lsp/manager.js";
 import type { ServerConfig } from "../engine/lsp/config.js";
 import { buildSystemPrompt } from "../engine/systemPrompt.js";
 import type { ProviderConfig } from "./providers.js";
-import type { McpServerConfig, McpServerStatusEntry } from "./mcp.js";
+import { mcpHttpDestination, type McpServerConfig, type McpServerStatusEntry } from "./mcp.js";
 import type { EffortLevel } from "../engine/effort.js";
 import { runExtraction, hasMemoryWrites, countModelMessages, MIN_NEW_MESSAGES } from "../engine/extractMemories.js";
 import { memoryDir } from "../engine/memoryPaths.js";
 import { loadSettings } from "./settings.js";
+import {
+  NetworkPolicy, bashNetworkStatus, providerEndpoint, type NetworkMode
+} from "./networkPolicy.js";
 import {
   ChangeJournal, type ChangeSummary, type UndoPreview, type UndoResult
 } from "./changeJournal.js";
@@ -47,6 +50,9 @@ export interface AgentSessionOptions {
   lspRegistry?: Record<string, ServerConfig>;
   mcpManager?: McpManager;
   changeJournalFactory?: (cwd: string, sessionId: string) => ChangeJournal;
+  networkMode?: NetworkMode;
+  networkPolicy?: NetworkPolicy;
+  verifiedNoNetworkSandbox?: boolean;
   onMessage(msg: EngineMessage): void;
   onPermissionRequest(req: PermissionRequest): void;
   onSessionId(id: string): void;
@@ -79,11 +85,18 @@ export class AgentSession {
     const store = new PermissionStore(this.opts.cwd);
     this.changes = this.opts.changeJournalFactory?.(this.opts.cwd, this.sessionId) ??
       new ChangeJournal(this.opts.cwd, this.sessionId);
+    const endpoint = providerEndpoint(this.opts.provider);
+    const networkPolicy = this.opts.networkPolicy ?? new NetworkPolicy(
+      this.opts.networkMode ?? "providerOnly", endpoint
+    );
+    networkPolicy.require({ capability: "provider", destination: endpoint });
+    const bash = bashNetworkStatus(networkPolicy.mode, this.opts.verifiedNoNetworkSandbox === true);
+    const tools = builtinTools({ allowArbitraryChildNetwork: bash.available });
     this.loop = new EngineLoop({
       client: makeClient(this.opts.provider),
       model: this.opts.model ?? this.opts.provider.model ?? DEFAULT_MODEL,
       systemPrompt: buildSystemPrompt(this.opts.cwd),
-      tools: builtinTools(),
+      tools,
       cwd: this.opts.cwd,
       effort: this.opts.effort,
       contextWindow: this.opts.provider.model_context_window,
@@ -98,7 +111,7 @@ export class AgentSession {
     if (resumedMessages.length > 0) this.loop.messages = resumedMessages;
     this.extractCursor = resumedMessages.length;
     this.sessionFile = new SessionFile(this.sessionId);
-    this.tools = builtinTools().map(t => t.name);
+    this.tools = tools.map(t => t.name);
     this.opts.onSessionId(this.sessionId);
     for (const warning of this.changes.warnings()) this.opts.onMessage(errorResult(warning));
     this.opts.onMessage({
@@ -107,7 +120,12 @@ export class AgentSession {
       session_id: this.sessionId,
       tools: this.tools
     });
-    this.mcpReady = this.mcp.connect(this.opts.mcpServers ?? {}).then(() => {
+    this.mcpReady = this.mcp.connect(this.opts.mcpServers ?? {}, (_name, config) => {
+      const destination = mcpHttpDestination(config);
+      if (!destination) return undefined;
+      const decision = networkPolicy.decide({ capability: "mcpHttp", destination });
+      return decision.allowed ? undefined : `${decision.mode}/${decision.reason}`;
+    }).then(() => {
       const mcpTools = this.mcp.tools();
       if (mcpTools.length > 0 && this.loop) {
         this.loop.tools.push(...mcpTools);

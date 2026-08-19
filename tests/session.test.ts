@@ -46,6 +46,28 @@ beforeEach(() => {
 });
 
 describe("AgentSession", () => {
+  it("denies a remote provider before creating its client in offlineStrict", () => {
+    const session = new AgentSession({
+      providerName: "anthropic", provider: {}, permissionMode: "default", networkMode: "offlineStrict", cwd: "/p",
+      onMessage: () => {}, onPermissionRequest: () => {}, onSessionId: () => {}
+    });
+    expect(() => session.start()).toThrow(/nonLoopbackProvider/);
+    expect(makeClient).not.toHaveBeenCalled();
+  });
+
+  it("removes ordinary Bash from strict loopback sessions", async () => {
+    vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("ok")]));
+    const session = new AgentSession({
+      providerName: "local", provider: { kind: "openai", baseUrl: "http://127.0.0.1:8080" },
+      permissionMode: "default", networkMode: "offlineStrict", cwd: "/p",
+      onMessage: () => {}, onPermissionRequest: () => {}, onSessionId: () => {}
+    });
+    session.start();
+    expect(session.tools).not.toContain("Bash");
+    expect(session.tools).toContain("Read");
+    await session.dispose();
+  });
+
   it("emits session id and forwards messages for sent text", async () => {
     vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("ok")]));
     const messages: unknown[] = [];

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { isNpmGlobalInstall, runUpdate, UPDATE_INSTRUCTIONS, type Exec } from "../src/commands/cli/update.js";
+import { NetworkPolicy } from "../src/agent/networkPolicy.js";
 
 describe("isNpmGlobalInstall", () => {
   it("detects a global npm install", () => {
@@ -37,5 +38,16 @@ describe("runUpdate", () => {
     const exec: Exec = args =>
       args[0] === "ls" ? { stdout: "`-- cloudcode@0.1.0", status: 0 } : { stdout: null, status: 3 };
     expect(runUpdate(exec, () => {})).toBe(1);
+  });
+
+  it("does not start the network process when policy denies update", () => {
+    const calls: string[][] = [];
+    const exec: Exec = args => {
+      calls.push(args);
+      return { stdout: "`-- cloudcode@0.1.0", status: 0 };
+    };
+    const policy = new NetworkPolicy("providerOnly", "https://api.anthropic.com");
+    expect(() => runUpdate(exec, () => {}, policy)).toThrow(/capabilityDenied/);
+    expect(calls).toEqual([["ls", "-g", "cloudcode", "--depth=0"]]);
   });
 });

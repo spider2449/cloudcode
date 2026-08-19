@@ -6,6 +6,7 @@ import {
   normalizeRepoUrl, installRepo, updateRepos, removeRepo, listRepoNames,
   type GitRunner
 } from "../src/agent/skillRepos.js";
+import { NetworkPolicy } from "../src/agent/networkPolicy.js";
 
 describe("normalizeRepoUrl", () => {
   it("accepts a full https GitHub URL", () => {
@@ -67,6 +68,15 @@ function fakeRepo(name: string, withSkill = true): void {
 }
 
 describe("installRepo", () => {
+  it("does not call git when network policy denies installation", async () => {
+    let called = false;
+    const policy = new NetworkPolicy("providerOnly", "https://api.anthropic.com");
+    await expect(installRepo("obra/superpowers", reposDir, skillsDir, fakeGit(
+      { ok: true, output: "" }, () => { called = true; }
+    ), policy)).rejects.toThrow(/capabilityDenied/);
+    expect(called).toBe(false);
+  });
+
   it("clones and reports the skill count", async () => {
     let cloned: string[] = [];
     const git = fakeGit({ ok: true, output: "" }, args => {

@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import type { NetworkPolicy } from "../../agent/networkPolicy.js";
 
 export interface ExecResult {
   stdout: string | null;
@@ -27,12 +28,17 @@ export function isNpmGlobalInstall(npmLsOutput: string): boolean {
   return /\bcloudcode@\d/.test(npmLsOutput);
 }
 
-export function runUpdate(exec: Exec = npmExec, log: (s: string) => void = console.log): number {
+export function runUpdate(
+  exec: Exec = npmExec,
+  log: (s: string) => void = console.log,
+  policy?: NetworkPolicy
+): number {
   const ls = exec(["ls", "-g", "cloudcode", "--depth=0"]);
   if (!isNpmGlobalInstall(ls.stdout ?? "")) {
     log(UPDATE_INSTRUCTIONS);
     return 0;
   }
+  policy?.require({ capability: "update", destination: "https://registry.npmjs.org" });
   log("Updating: npm install -g cloudcode@latest");
   const res = exec(["install", "-g", "cloudcode@latest"], { inherit: true });
   return res.status === 0 ? 0 : 1;

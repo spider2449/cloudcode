@@ -13,6 +13,7 @@ function shellArgs(command: string): { cmd: string; args: string[] } {
 
 export const bashTool: ToolDef = {
   name: "Bash",
+  capabilities: { arbitraryChildNetwork: true },
   description: "Run a shell command (PowerShell on Windows, sh elsewhere) and return its output.",
   input_schema: {
     type: "object",
