@@ -103,8 +103,20 @@ function canonicalPath(path: string): string {
 function isManifest(value: unknown): value is Manifest {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
-  return candidate.version === 1 && typeof candidate.projectPath === "string" &&
-    typeof candidate.sessionId === "string" && Array.isArray(candidate.checkpoints);
+  if (candidate.version !== 1 || typeof candidate.projectPath !== "string" ||
+    typeof candidate.sessionId !== "string" || !Array.isArray(candidate.checkpoints)) return false;
+  return candidate.checkpoints.every(checkpoint => {
+    if (typeof checkpoint !== "object" || checkpoint === null) return false;
+    const item = checkpoint as Record<string, unknown>;
+    if (typeof item.id !== "string" || typeof item.startedAt !== "string" ||
+      !["active", "complete", "undone"].includes(String(item.status)) || !Array.isArray(item.changes)) return false;
+    return item.changes.every(change => {
+      if (typeof change !== "object" || change === null) return false;
+      const file = change as Record<string, unknown>;
+      return typeof file.requestedPath === "string" && typeof file.canonicalPath === "string" &&
+        (file.kind === "added" || file.kind === "modified") && typeof file.afterExists === "boolean";
+    });
+  });
 }
 
 function atomicWrite(path: string, content: Buffer | string): void {
@@ -251,7 +263,8 @@ export class ChangeJournal implements FileMutationObserver {
 
   listChanges(latestOnly = false): ChangeSummary[] {
     const checkpoints = this.manifest.checkpoints.filter(item => item.status !== "active");
-    const selected = latestOnly ? checkpoints.slice(-1) : checkpoints;
+    const latest = [...checkpoints].reverse().find(item => item.status === "complete");
+    const selected = latestOnly ? (latest ? [latest] : []) : checkpoints;
     return selected.slice().reverse().map(item => this.toSummary(item));
   }
 
@@ -406,6 +419,14 @@ export class ChangeJournal implements FileMutationObserver {
     if (completed.length <= this.checkpointLimit) return;
     const remove = new Set(completed.slice(0, completed.length - this.checkpointLimit).map(item => item.id));
     this.manifest.checkpoints = this.manifest.checkpoints.filter(item => !remove.has(item.id));
+    const retainedBlobs = new Set(this.manifest.checkpoints.flatMap(checkpoint =>
+      checkpoint.changes.flatMap(change => change.beforeBlob ? [change.beforeBlob] : [])
+    ));
+    try {
+      for (const name of readdirSync(this.blobDir)) {
+        if (!retainedBlobs.has(name)) rmSync(join(this.blobDir, name), { force: true });
+      }
+    } catch { /* blob directory may not exist */ }
   }
 
   private toSummary(checkpoint: StoredCheckpoint): ChangeSummary {
