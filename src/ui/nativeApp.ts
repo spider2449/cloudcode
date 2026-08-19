@@ -202,14 +202,15 @@ export class App {
       }
       this.thinkingText = "";
       this.activeTool = undefined;
-      this.phase = "idle";
       const cost = (msg as { total_cost_usd?: number }).total_cost_usd;
       if (typeof cost === "number") this.usage.addCost(cost);
       const usage = (msg as { usage?: Record<string, number> }).usage;
       if (usage) this.usage.applyTurnUsage(usage);
       this.turnCount += 1;
       void this.git.refresh().then(() => this.recompute());
-      this.drainQueueIfIdle();
+      // Delay idle until the session's finally block closes the checkpoint;
+      // otherwise a queued send races it as an overlapping turn.
+      setTimeout(() => { if (this.running) { this.phase = "idle"; this.drainQueueIfIdle(); this.recompute(); } }, 0);
     }
     this.recompute();
   }
@@ -360,10 +361,10 @@ export class App {
       openMemoryPicker: () =>
         openMemoryPicker(this.pickerDeps(), () => { void this.session?.refreshSystemPrompt(); }),
       currentCwd: () => this.props.cwd,
-      changeSummaries: latestOnly => this.session?.changeSummaries(latestOnly) ?? [],
-      changeDiff: path => this.session?.changeDiff(path) ?? { content: "No session-owned changes.", truncated: false },
-      previewUndo: () => this.session?.previewUndo() ?? { operations: [], conflicts: [] },
-      undoLatest: () => this.session?.undoLatest() ?? { applied: false, operations: [], conflicts: [], rollbackErrors: [] },
+      changeSummaries: latestOnly => this.session?.changeSummaries(latestOnly) ?? [], changeDiff: path =>
+        this.session?.changeDiff(path) ?? { content: "No session-owned changes.", truncated: false },
+      previewUndo: () => this.session?.previewUndo() ?? { operations: [], conflicts: [] }, undoLatest: () =>
+        this.session?.undoLatest() ?? { applied: false, operations: [], conflicts: [], rollbackErrors: [] },
       gitReview: stagedOnly => collectGitReview(this.props.cwd, stagedOnly)
     };
   }
