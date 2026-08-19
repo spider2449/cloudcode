@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_SERVERS, loadRegistry } from "../../src/engine/lsp/config.js";
+import { linkPack } from "../../src/agent/packLinks.js";
+import { enablePack } from "../../src/agent/packs.js";
 
 function tmpFile(name: string, contents: string): string {
   const dir = mkdtempSync(join(tmpdir(), "lsp-"));
@@ -50,5 +52,25 @@ describe("loadRegistry", () => {
     const user = tmpFile("lsp.json", JSON.stringify({ python: { command: "user-py" } }));
     const project = tmpFile("lsp.json", JSON.stringify({ python: { command: "project-py" } }));
     expect(loadRegistry(user, project, false).python.command).toBe("user-py");
+  });
+
+  it("merges complete enabled pack servers under namespaced identifiers", () => {
+    const base = mkdtempSync(join(tmpdir(), "lsp-pack-"));
+    const cwd = join(base, "project");
+    const projectFile = join(cwd, ".cloudcode", "lsp.json");
+    const userFile = join(base, "lsp.json");
+    const pack = join(base, "pack");
+    mkdirSync(join(cwd, ".cloudcode"), { recursive: true });
+    mkdirSync(pack);
+    writeFileSync(join(pack, "lsp.json"), JSON.stringify({ custom: {
+      command: "custom-lsp", args: ["--stdio"], extensions: [".custom"], rootMarkers: ["project.custom"]
+    } }));
+    writeFileSync(join(pack, "cloudcode-pack.json"), JSON.stringify({
+      schemaVersion: 1, name: "workflow", version: "1.0.0", description: "Workflow",
+      capabilities: ["runProcess"], resources: { lsp: "lsp.json" }
+    }));
+    linkPack(pack, base);
+    enablePack("workflow", cwd, "providerOnly", base);
+    expect(loadRegistry(userFile, projectFile).pack__workflow__custom.command).toBe("custom-lsp");
   });
 });

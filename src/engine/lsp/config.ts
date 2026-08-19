@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { configDir } from "../../agent/providers.js";
+import { resolvePackContributions } from "../../agent/packs.js";
 import { DEFAULT_SERVERS, type ServerConfig } from "./defaults.js";
 
 export { DEFAULT_SERVERS, type ServerConfig };
@@ -51,5 +52,12 @@ export function loadRegistry(
   projectPath: string = join(process.cwd(), ".cloudcode", "lsp.json"),
   includeProject = true
 ): Record<string, ServerConfig> {
-  return mergeRegistry(loadRegistryOverrides(userPath, projectPath), includeProject);
+  const merged = mergeRegistry(loadRegistryOverrides(userPath, projectPath), includeProject);
+  if (includeProject) {
+    for (const [name, config] of Object.entries(resolvePackContributions(dirname(dirname(projectPath)), dirname(userPath)).lsp)) {
+      if (Object.hasOwn(merged, name)) throw new Error(`LSP identifier collision: ${name}.`);
+      merged[name] = config as ServerConfig;
+    }
+  }
+  return merged;
 }

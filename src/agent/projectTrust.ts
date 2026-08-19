@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { configDir } from "./providers.js";
+import { resolvePackContributions } from "./packs.js";
 
 export interface ProjectConfigDescriptor {
   projectPath: string;
@@ -33,7 +34,7 @@ function readConfig(path: string): { raw: string; value: unknown } | undefined {
   }
 }
 
-export function inspectProjectExecutableConfig(cwd: string): ProjectConfigDescriptor | undefined {
+export function inspectProjectExecutableConfig(cwd: string, base?: string): ProjectConfigDescriptor | undefined {
   const files: Array<{ name: string; raw: string }> = [];
   const commands: string[] = [];
 
@@ -89,6 +90,25 @@ export function inspectProjectExecutableConfig(cwd: string): ProjectConfigDescri
       }
     }
     if (hasCommand) files.push({ name: ".cloudcode/task.json", raw: task.raw });
+  }
+
+  const packsConfig = readConfig(join(cwd, ".cloudcode", "packs.json"));
+  if (packsConfig) {
+    const before = commands.length;
+    const contributions = resolvePackContributions(cwd, base);
+    for (const [name, raw] of Object.entries(contributions.mcp)) {
+      const cfg = raw as { command?: unknown; args?: unknown };
+      if (typeof cfg.command === "string") {
+        commands.push(`Pack MCP ${name}: ${[cfg.command, ...(Array.isArray(cfg.args) ? cfg.args.map(String) : [])].join(" ")}`);
+      }
+    }
+    for (const [name, cfg] of Object.entries(contributions.lsp)) {
+      if (typeof cfg.command === "string") commands.push(`Pack LSP ${name}: ${[cfg.command, ...(cfg.args ?? [])].join(" ")}`);
+    }
+    for (const profile of contributions.validations) {
+      for (const entry of profile.commands) commands.push(`Pack validation ${profile.name}: ${[entry.command, ...entry.args].join(" ")}`);
+    }
+    if (commands.length > before) files.push({ name: ".cloudcode/packs.json", raw: packsConfig.raw });
   }
 
   if (commands.length === 0) return undefined;

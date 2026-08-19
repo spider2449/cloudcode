@@ -5,6 +5,7 @@ import { loadSettings } from "../agent/settings.js";
 import { configDir } from "../agent/providers.js";
 import { memoryDir, memoryEntrypoint } from "./memoryPaths.js";
 import { buildMemoryPrompt } from "./memoryPrompt.js";
+import { resolvePackContributions } from "../agent/packs.js";
 
 const BASE = `You are cloudcode, an interactive terminal coding agent.
 Use the provided tools to read, search, edit, and run code. Prefer tools over
@@ -29,6 +30,10 @@ export function buildSystemPrompt(cwd: string, opts: SystemPromptOptions = {}): 
 
   const projectMd = readIfPresent(join(cwd, "CLAUDE.md"));
   if (projectMd !== "") prompt += `\n\n# Project instructions (CLAUDE.md)\n${projectMd}`;
+
+  for (const instruction of resolvePackContributions(cwd, base).instructions) {
+    if (instruction.text) prompt += `\n\n# Workflow pack instructions (${instruction.pack})\n${instruction.text}`;
+  }
 
   // Skills follow `configBase` like every other config read here; without it a
   // caller-supplied base (and every test) would still pick up whatever lives

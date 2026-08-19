@@ -3,6 +3,8 @@ import { mkdirSync, writeFileSync, rmSync, mkdtempSync, existsSync, readFileSync
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { loadSkills, formatSkillList, linkRepoSkills, relinkRepoSkills } from "../src/agent/skills.js";
+import { linkPack } from "../src/agent/packLinks.js";
+import { enablePack } from "../src/agent/packs.js";
 
 let root: string;
 
@@ -85,6 +87,24 @@ describe("loadSkills", () => {
     expect(skills).toHaveLength(1);
     expect(skills[0].content).toBe("project version");
     expect(skills[0].source).toBe("project");
+  });
+
+  it("loads enabled pack skills below local precedence", () => {
+    const cwd = join(root, "proj");
+    const userDir = join(root, "skills");
+    const pack = join(root, "pack");
+    writeSkill(join(pack, "skills"), "pack-only", "---\nname: pack-only\n---\npack body");
+    writeSkill(join(pack, "skills"), "dup", "---\nname: dup\n---\npack body");
+    writeSkill(join(cwd, ".cloudcode", "skills"), "dup", "---\nname: dup\n---\nproject body");
+    writeFileSync(join(pack, "cloudcode-pack.json"), JSON.stringify({
+      schemaVersion: 1, name: "workflow", version: "1.0.0", description: "Workflow",
+      capabilities: ["readProject"], resources: { skills: "skills" }
+    }));
+    linkPack(pack, root);
+    enablePack("workflow", cwd, "providerOnly", root);
+    const skills = loadSkills(cwd, userDir, join(root, "no-repos"));
+    expect(skills.find(skill => skill.name === "dup")?.source).toBe("project");
+    expect(skills.find(skill => skill.name === "pack-only")?.source).toBe("pack:workflow");
   });
 
   it("claude skills load when no project skill shadows them", () => {

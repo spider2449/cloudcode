@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadMcpServers, formatMcpStatus } from "../src/agent/mcp.js";
+import { linkPack } from "../src/agent/packLinks.js";
+import { enablePack } from "../src/agent/packs.js";
 
 function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "cc-mcp-"));
@@ -43,6 +45,24 @@ describe("loadMcpServers", () => {
     const userFile = join(tempDir(), "mcp.json");
     writeFileSync(userFile, JSON.stringify({ mcpServers: "nope" }));
     expect(loadMcpServers(cwd, userFile)).toEqual({});
+  });
+
+  it("merges enabled pack servers by namespace and rejects project collisions", () => {
+    const base = tempDir();
+    const cwd = tempDir();
+    const pack = join(base, "pack");
+    mkdirSync(pack);
+    writeFileSync(join(pack, "mcp.json"), JSON.stringify({ mcpServers: { helper: { command: "node" } } }));
+    writeFileSync(join(pack, "cloudcode-pack.json"), JSON.stringify({
+      schemaVersion: 1, name: "workflow", version: "1.0.0", description: "Workflow",
+      capabilities: ["localMcp"], resources: { mcp: "mcp.json" }
+    }));
+    linkPack(pack, base);
+    enablePack("workflow", cwd, "providerOnly", base);
+    const userFile = join(base, "mcp.json");
+    expect(loadMcpServers(cwd, userFile)).toMatchObject({ pack__workflow__helper: { command: "node" } });
+    writeFileSync(join(cwd, ".mcp.json"), JSON.stringify({ mcpServers: { pack__workflow__helper: { command: "other" } } }));
+    expect(() => loadMcpServers(cwd, userFile)).toThrow(/collision/);
   });
 });
 

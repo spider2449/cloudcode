@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { configDir } from "./providers.js";
+import { resolvePackContributions } from "./packs.js";
 
 export type McpServerConfig = Record<string, unknown>;
 
@@ -53,7 +54,14 @@ export function loadMcpServers(
   includeProject = true
 ): Record<string, McpServerConfig> {
   const scopes = loadMcpServersByScope(cwd, userPath);
-  return includeProject ? { ...scopes.user, ...scopes.project } : scopes.user;
+  const merged = includeProject ? { ...scopes.user, ...scopes.project } : { ...scopes.user };
+  if (includeProject) {
+    for (const [name, config] of Object.entries(resolvePackContributions(cwd, dirname(userPath)).mcp)) {
+      if (Object.hasOwn(merged, name)) throw new Error(`MCP identifier collision: ${name}.`);
+      merged[name] = config;
+    }
+  }
+  return merged;
 }
 
 export function formatMcpStatus(

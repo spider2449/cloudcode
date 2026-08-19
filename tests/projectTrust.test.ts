@@ -3,6 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inspectProjectExecutableConfig, ProjectTrustStore } from "../src/agent/projectTrust.js";
+import { linkPack } from "../src/agent/packLinks.js";
+import { enablePack } from "../src/agent/packs.js";
 
 const dirs: string[] = [];
 const tempDir = () => { const dir = mkdtempSync(join(tmpdir(), "cc-trust-")); dirs.push(dir); return dir; };
@@ -51,6 +53,25 @@ describe("project executable configuration trust", () => {
     expect(first?.commands).toEqual(["Task focused: npm test"]);
     writeFileSync(path, JSON.stringify({ profiles: { focused: { commands: [{ command: "npm", args: ["run", "build"] }] } } }));
     expect(inspectProjectExecutableConfig(cwd)?.digest).not.toBe(first?.digest);
+  });
+
+  it("includes enabled pack commands and project enablement in trust", () => {
+    const cwd = tempDir();
+    const base = tempDir();
+    const pack = join(tempDir(), "pack");
+    mkdirSync(pack);
+    writeFileSync(join(pack, "validations.json"), JSON.stringify({
+      profiles: { smoke: { commands: [{ command: "hython", args: ["smoke.py"] }] } }
+    }));
+    writeFileSync(join(pack, "cloudcode-pack.json"), JSON.stringify({
+      schemaVersion: 1, name: "houdini", version: "1.0.0", description: "Houdini",
+      capabilities: ["runProcess"], resources: { validations: "validations.json" }
+    }));
+    linkPack(pack, base);
+    enablePack("houdini", cwd, "providerOnly", base);
+    const first = inspectProjectExecutableConfig(cwd, base);
+    expect(first?.commands).toEqual(["Pack validation houdini:smoke: hython smoke.py"]);
+    expect(first?.digest).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it("falls back to no trust for malformed state", () => {

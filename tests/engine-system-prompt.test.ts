@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildSystemPrompt } from "../src/engine/systemPrompt.js";
 import { sanitizePath, memoryDir } from "../src/engine/memoryPaths.js";
+import { linkPack } from "../src/agent/packLinks.js";
+import { enablePack } from "../src/agent/packs.js";
 
 function tmp(): string {
   return mkdtempSync(join(tmpdir(), "cc-sys-tmp-"));
@@ -20,6 +22,22 @@ describe("buildSystemPrompt", () => {
     const dir = mkdtempSync(join(tmpdir(), "cc-sys2-"));
     writeFileSync(join(dir, "CLAUDE.md"), "Always use tabs.");
     expect(buildSystemPrompt(dir)).toContain("Always use tabs.");
+  });
+  it("appends instructions from enabled local packs", () => {
+    const base = tmp();
+    const cwd = tmp();
+    const pack = join(base, "pack");
+    mkdirSync(pack);
+    writeFileSync(join(pack, "instructions.md"), "Use the local workflow safely.");
+    writeFileSync(join(pack, "cloudcode-pack.json"), JSON.stringify({
+      schemaVersion: 1, name: "workflow", version: "1.0.0", description: "Workflow",
+      capabilities: ["readProject"], resources: { instructions: "instructions.md" }
+    }));
+    linkPack(pack, base);
+    enablePack("workflow", cwd, "providerOnly", base);
+    expect(buildSystemPrompt(cwd, { configBase: base, autoMemory: false })).toContain(
+      "# Workflow pack instructions (workflow)\nUse the local workflow safely."
+    );
   });
 });
 

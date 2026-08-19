@@ -28,6 +28,16 @@ describe("task manifests", () => {
     expect(raw).not.toMatch(/prompt|fileContents/i);
   });
 
+  it("records exact workflow pack identities", () => {
+    const value = newTaskManifest({
+      repositoryId: "repo", sourcePath: "C:/source", commonDir: "C:/source/.git",
+      worktreePath: "C:/worktrees/task", baseCommit: "abc", branch: "cloudcode/task/task",
+      planPath: "docs/plans/2026-08-19-task.md", networkMode: "providerOnly",
+      packs: [{ name: "houdini", version: "1.0.0", digest: "abc123" }]
+    });
+    expect(value.packs).toEqual([{ name: "houdini", version: "1.0.0", digest: "abc123" }]);
+  });
+
   it("enforces explicit state transitions", () => {
     const value = manifest("task-2");
     transitionTask(value, "planning", undefined, new Date("2026-08-19T00:01:00Z"));

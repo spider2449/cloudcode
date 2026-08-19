@@ -15,6 +15,12 @@ export interface TaskTransition {
   note?: string;
 }
 
+export interface TaskPackIdentity {
+  name: string;
+  version: string;
+  digest: string;
+}
+
 export interface TaskManifest {
   version: 1;
   taskId: string;
@@ -31,6 +37,7 @@ export interface TaskManifest {
   verificationProfile?: string;
   networkMode: Exclude<NetworkMode, "unrestricted">;
   limits?: RunLimits;
+  packs: TaskPackIdentity[];
   artifactPaths: string[];
 }
 
@@ -63,6 +70,9 @@ function isManifest(value: unknown): value is TaskManifest {
     typeof item.sourcePath === "string" && typeof item.commonDir === "string" && typeof item.worktreePath === "string" &&
     typeof item.baseCommit === "string" && typeof item.branch === "string" && isState(item.state) &&
     Array.isArray(item.transitions) && item.transitions.length > 0 && typeof item.planPath === "string" && Array.isArray(item.artifactPaths) &&
+    (item.packs === undefined || (Array.isArray(item.packs) && item.packs.every(pack =>
+      pack && typeof pack.name === "string" && typeof pack.version === "string" && typeof pack.digest === "string"
+    ))) &&
     (item.networkMode === "offlineStrict" || item.networkMode === "providerOnly");
 }
 
@@ -79,7 +89,7 @@ export function loadTaskManifest(taskId: string, base: string = configDir()): Ta
   try { value = JSON.parse(readFileSync(taskManifestPath(taskId, base), "utf8")); }
   catch (err) { throw new Error(`Task ${taskId} could not be loaded: ${err instanceof Error ? err.message : String(err)}`); }
   if (!isManifest(value) || value.taskId !== taskId) throw new Error(`Task ${taskId} has an invalid manifest.`);
-  return value;
+  return { ...value, packs: value.packs ?? [] };
 }
 
 export function listTaskManifests(base: string = configDir()): TaskManifest[] {
@@ -96,7 +106,9 @@ export function listTaskManifests(base: string = configDir()): TaskManifest[] {
 }
 
 export function newTaskManifest(
-  input: Omit<TaskManifest, "version" | "taskId" | "state" | "transitions" | "artifactPaths"> & { taskId?: string },
+  input: Omit<TaskManifest, "version" | "taskId" | "state" | "transitions" | "artifactPaths" | "packs"> & {
+    taskId?: string; packs?: TaskPackIdentity[];
+  },
   now: Date = new Date()
 ): TaskManifest {
   const taskId = input.taskId ?? randomUUID();
@@ -107,7 +119,8 @@ export function newTaskManifest(
     ...(input.sessionId ? { sessionId: input.sessionId } : {}),
     ...(input.verificationProfile ? { verificationProfile: input.verificationProfile } : {}),
     ...(input.limits ? { limits: input.limits } : {}),
-    state: "created", transitions: [{ state: "created", timestamp: now.toISOString() }], artifactPaths: []
+    packs: input.packs ?? [], state: "created",
+    transitions: [{ state: "created", timestamp: now.toISOString() }], artifactPaths: []
   };
 }
 

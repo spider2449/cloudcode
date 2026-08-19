@@ -12,6 +12,7 @@ import { createTaskWorktree, removeTaskWorktree, runGit, validateTaskWorktree, t
 import { loadVerificationProfiles, runVerification, type VerificationResult } from "./taskVerification.js";
 import type { NetworkMode } from "./networkPolicy.js";
 import type { RunLimits } from "../engine/runLimits.js";
+import { resolvePackContributions } from "./packs.js";
 
 export class TaskStateConflictError extends Error {
   readonly code = "TASK_STATE_CONFLICT";
@@ -70,9 +71,14 @@ export class TaskRunner {
       worktreesBase: this.worktreesBase, runner: this.git
     });
     const date = (input.now ?? new Date()).toISOString().slice(0, 10);
+    const contributions = resolvePackContributions(identity.worktreePath, this.configBase);
+    if (contributions.warnings.length) throw new TaskStateConflictError(contributions.warnings.join("\n"));
     const manifest = newTaskManifest({
       taskId, ...identity, planPath: `docs/plans/${date}-${slug(input.name)}.md`,
       networkMode: input.networkMode ?? "providerOnly",
+      packs: contributions.packs.map(({ pack }) => ({
+        name: pack.manifest.name, version: pack.manifest.version, digest: pack.digest
+      })),
       ...(input.limits ? { limits: input.limits } : {}),
       ...(input.verificationProfile ? { verificationProfile: input.verificationProfile } : {})
     }, input.now);
@@ -88,6 +94,16 @@ export class TaskRunner {
     const manifest = this.show(taskId);
     try { await validateTaskWorktree(manifest, this.git); }
     catch (err) { throw new TaskStateConflictError(err instanceof Error ? err.message : String(err)); }
+    const contributions = resolvePackContributions(manifest.worktreePath, this.configBase);
+    const currentPacks = contributions.packs.map(({ pack }) => ({
+      name: pack.manifest.name, version: pack.manifest.version, digest: pack.digest
+    }));
+    if (contributions.warnings.length || JSON.stringify(currentPacks) !== JSON.stringify(manifest.packs)) {
+      throw new TaskStateConflictError([
+        ...contributions.warnings,
+        ...(JSON.stringify(currentPacks) !== JSON.stringify(manifest.packs) ? ["Enabled workflow packs changed since task creation."] : [])
+      ].join("\n"));
+    }
     if (approvePlan) {
       if (manifest.state !== "awaitingApproval") {
         throw new TaskStateConflictError(`Task ${taskId} is ${manifest.state}, not awaitingApproval.`);
@@ -122,15 +138,24 @@ export class TaskRunner {
     profile?: string; trustProjectConfig?: boolean; signal?: AbortSignal;
   } = {}): Promise<VerificationResult> {
     const manifest = await this.resume(taskId);
-    const descriptor = inspectProjectExecutableConfig(manifest.worktreePath);
+    const descriptor = inspectProjectExecutableConfig(manifest.worktreePath, this.configBase);
     if (descriptor && !this.trustStore.isTrusted(descriptor)) {
       if (!input.trustProjectConfig) throw new TaskTrustError("Project verification commands are not trusted.");
       this.trustStore.approve(descriptor);
     }
     const loaded = loadVerificationProfiles(manifest.worktreePath);
     if (loaded.warnings.length) throw new TaskStateConflictError(loaded.warnings.join("\n"));
+    const contributions = resolvePackContributions(manifest.worktreePath, this.configBase);
+    if (contributions.warnings.length) throw new TaskStateConflictError(contributions.warnings.join("\n"));
+    const profiles = [...loaded.profiles];
+    for (const profile of contributions.validations) {
+      if (profiles.some(item => item.name === profile.name)) {
+        throw new TaskStateConflictError(`Verification profile collision: ${profile.name}.`);
+      }
+      profiles.push(profile);
+    }
     const profileName = input.profile ?? manifest.verificationProfile;
-    const profile = loaded.profiles.find(item => item.name === profileName);
+    const profile = profiles.find(item => item.name === profileName);
     if (!profile) throw new TaskStateConflictError(`Verification profile not found: ${profileName ?? "(none selected)"}.`);
     if (manifest.state !== "implementing" && manifest.state !== "reviewReady") {
       throw new TaskStateConflictError(`Task ${taskId} cannot verify from state ${manifest.state}.`);

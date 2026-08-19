@@ -1,12 +1,13 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, type Dirent } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { configDir } from "./providers.js";
+import { resolvePackContributions } from "./packs.js";
 
 export interface Skill {
   name: string;
   description: string;
   content: string;
-  source: "user" | "claude" | "project" | `repo:${string}`;
+  source: "user" | "claude" | "project" | `repo:${string}` | `pack:${string}`;
 }
 
 interface ParsedSkillFile {
@@ -190,17 +191,20 @@ export function loadSkills(
   for (const name of repoNames) {
     if (!existsSync(join(userDir, name))) linkRepoSkills(join(reposDir, name), name, userDir);
   }
-  const scans: Skill[] = [
+  const localScans: Skill[] = [
     ...scanSkillDir(userDir, "user", repoNames),
     ...scanSkillDir(join(cwd, ".claude", "skills"), "claude"),
     ...scanSkillDir(join(cwd, ".cloudcode", "skills"), "project")
   ];
+  const packs = resolvePackContributions(cwd, dirname(userDir));
+  const packScans = packs.skillRoots.flatMap(root => scanSkillDir(root.path, `pack:${root.pack}`));
   const byName = new Map<string, Skill>();
-  for (const skill of scans) {
+  for (const skill of localScans) {
     if (!skill.source.startsWith("repo:")) byName.set(skill.name, skill);
   }
+  for (const skill of packScans) if (!byName.has(skill.name)) byName.set(skill.name, skill);
   // repo skills have lowest precedence: only fill names no local skill claimed
-  for (const skill of scans) {
+  for (const skill of localScans) {
     if (skill.source.startsWith("repo:") && !byName.has(skill.name)) byName.set(skill.name, skill);
   }
   return [...byName.values()];

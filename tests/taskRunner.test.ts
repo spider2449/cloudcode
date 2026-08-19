@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { ProjectTrustStore } from "../src/agent/projectTrust.js";
 import { TaskRunner, TaskStateConflictError, TaskTrustError } from "../src/agent/taskRunner.js";
+import { linkPack } from "../src/agent/packLinks.js";
+import { enablePack } from "../src/agent/packs.js";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -13,7 +15,7 @@ function git(cwd: string, args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8", windowsHide: true }).trim();
 }
 
-function setup(): { root: string; source: string; runner: TaskRunner } {
+function setup(): { root: string; source: string; config: string; runner: TaskRunner } {
   const root = mkdtempSync(join(tmpdir(), "cc-task-runner-"));
   roots.push(root);
   const source = join(root, "source");
@@ -29,7 +31,7 @@ function setup(): { root: string; source: string; runner: TaskRunner } {
   git(source, ["add", "."]);
   git(source, ["commit", "-m", "base"]);
   return {
-    root, source,
+    root, source, config,
     runner: new TaskRunner({
       configBase: config, worktreesBase: join(config, "worktrees"),
       trustStore: new ProjectTrustStore(join(config, "trust.json"))
@@ -81,6 +83,35 @@ describe("TaskRunner", () => {
     expect(saved.state).toBe("reviewReady");
     expect(saved.artifactPaths).toHaveLength(1);
     expect(JSON.parse(readFileSync(saved.artifactPaths[0], "utf8"))).toMatchObject({ profile: "focused", success: true });
+  }, 20_000);
+
+  it("records enabled packs, exposes their validations, and refuses content drift", async () => {
+    const { root, source, config, runner } = setup();
+    const pack = join(root, "pack");
+    mkdirSync(pack);
+    const validations = join(pack, "validations.json");
+    writeFileSync(validations, JSON.stringify({ profiles: { smoke: { commands: [{
+      command: process.execPath, args: ["-e", "process.stdout.write('pack passed')"]
+    }] } } }));
+    writeFileSync(join(pack, "cloudcode-pack.json"), JSON.stringify({
+      schemaVersion: 1, name: "local", version: "1.0.0", description: "Local",
+      capabilities: ["runProcess"], resources: { validations: "validations.json" }
+    }));
+    const link = linkPack(pack, config);
+    enablePack("local", source, "providerOnly", config);
+    git(source, ["add", ".cloudcode/packs.json"]);
+    git(source, ["commit", "-m", "enable pack"]);
+
+    const task = await runner.start({ cwd: source, name: "Pack verify", verificationProfile: "local:smoke" });
+    expect(task.packs).toEqual([{ name: "local", version: "1.0.0", digest: link.digest }]);
+    writePlan(task.worktreePath, task.planPath);
+    runner.markPlanReady(task.taskId);
+    await runner.resume(task.taskId, true);
+    const result = await runner.verify(task.taskId, { trustProjectConfig: true });
+    expect(result.commands[0].stdout).toBe("pack passed");
+
+    writeFileSync(validations, JSON.stringify({ profiles: { smoke: { commands: [{ command: "changed" }] } } }));
+    await expect(runner.resume(task.taskId)).rejects.toThrow(/stale|changed since task creation/);
   }, 20_000);
 
   it("reviews against the recorded base and safely removes only merged clean worktrees", async () => {
