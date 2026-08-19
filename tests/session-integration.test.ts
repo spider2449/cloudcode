@@ -122,6 +122,7 @@ describe("AgentSession integration", () => {
     expect(() => second.start()).not.toThrow();
     expect(resumedId).toBe(firstId);
     expect(second.sessionId).toBe(firstId);
+    expect((second as unknown as { extractCursor: number }).extractCursor).toBe(priorMessages.length);
 
     // The resumed EngineLoop's history should already contain the first
     // session's persisted messages (loaded via SessionFile.load in start()).

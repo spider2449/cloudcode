@@ -125,9 +125,8 @@ async function collectResponse(
   return { blocks, stopReason };
 }
 
-// Run the extraction mini-loop. Tools are restricted: Read anywhere,
-// Write/Edit only inside the memory directory. Returns true if a file
-// inside the memory dir was written or edited.
+// Run the extraction mini-loop. Every file tool is restricted to the memory
+// directory. Returns true if a file inside the memory dir was written or edited.
 export async function runExtraction(opts: ExtractionOptions): Promise<boolean> {
   const { client, model, memoryDir: dir } = opts;
   const transcript = formatTranscript(opts.messages, opts.fromIndex);
@@ -156,9 +155,10 @@ export async function runExtraction(opts: ExtractionOptions): Promise<boolean> {
       // path that will actually be written, not one resolved against a
       // different base (e.g. process.cwd()).
       const resolvedPath = isAbsolute(path) ? path : resolve(dir, path);
-      const guarded = (block.name === "Write" || block.name === "Edit") && !isInsideMemoryDir(resolvedPath, dir);
+      const isFileTool = block.name === "Read" || block.name === "Write" || block.name === "Edit";
+      const guarded = isFileTool && !isInsideMemoryDir(resolvedPath, dir);
       if (!tool || guarded) {
-        results.push({ type: "tool_result", tool_use_id: block.id, content: "Denied: writes are only allowed inside the memory directory.", is_error: true });
+        results.push({ type: "tool_result", tool_use_id: block.id, content: "Denied: file access is only allowed inside the memory directory.", is_error: true });
         continue;
       }
       const out = await tool.execute(block.input, { cwd: dir });

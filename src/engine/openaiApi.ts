@@ -146,11 +146,13 @@ export function makeOpenAIClient(cfg: ProviderConfig): MessagesClient {
         throw new Error(`OpenAI-compatible API error ${res.status}: ${text}`);
       }
 
-      type OpenIdentity = { kind: "text" } | { kind: "thinking" } | { kind: "tool_call"; index: number };
+      type OpenIdentity = { kind: "text" } | { kind: "thinking" };
+      interface PendingToolCall { id: string; name: string; arguments: string; }
       let open: OpenIdentity | undefined;
       let blockIndex = -1;
       let finishReason: string | undefined;
       let usage: { input_tokens: number; output_tokens: number } | undefined;
+      const toolCalls = new Map<number, PendingToolCall>();
 
       function* closeOpen(): Generator<Record<string, unknown>> {
         if (open) {
@@ -196,23 +198,11 @@ export function makeOpenAIClient(cfg: ProviderConfig): MessagesClient {
 
         if (delta.tool_calls) {
           for (const tc of delta.tool_calls) {
-            if (!open || open.kind !== "tool_call" || open.index !== tc.index) {
-              yield* closeOpen();
-              blockIndex++;
-              open = { kind: "tool_call", index: tc.index };
-              yield {
-                type: "content_block_start",
-                index: blockIndex,
-                content_block: { type: "tool_use", id: tc.id ?? "", name: tc.function?.name ?? "" }
-              };
-            }
-            if (tc.function?.arguments) {
-              yield {
-                type: "content_block_delta",
-                index: blockIndex,
-                delta: { type: "input_json_delta", partial_json: tc.function.arguments }
-              };
-            }
+            const pending = toolCalls.get(tc.index) ?? { id: "", name: "", arguments: "" };
+            if (tc.id) pending.id = tc.id;
+            if (tc.function?.name) pending.name = tc.function.name;
+            if (tc.function?.arguments) pending.arguments += tc.function.arguments;
+            toolCalls.set(tc.index, pending);
           }
         }
 
@@ -220,6 +210,15 @@ export function makeOpenAIClient(cfg: ProviderConfig): MessagesClient {
       }
 
       yield* closeOpen();
+      for (const [, tc] of [...toolCalls.entries()].sort(([a], [b]) => a - b)) {
+        if (!tc.id || !tc.name) throw new Error("OpenAI-compatible provider returned an incomplete tool call");
+        blockIndex++;
+        yield { type: "content_block_start", index: blockIndex, content_block: { type: "tool_use", id: tc.id, name: tc.name } };
+        if (tc.arguments) {
+          yield { type: "content_block_delta", index: blockIndex, delta: { type: "input_json_delta", partial_json: tc.arguments } };
+        }
+        yield { type: "content_block_stop", index: blockIndex };
+      }
       yield { type: "message_delta", delta: { stop_reason: mapStopReason(finishReason) }, usage };
     }
   } satisfies MessagesClient;

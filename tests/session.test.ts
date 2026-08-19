@@ -5,6 +5,7 @@ vi.mock("../src/engine/api.js", () => ({ makeClient: vi.fn() }));
 
 import { makeClient } from "../src/engine/api.js";
 import { AgentSession, shouldExtract } from "../src/agent/session.js";
+import { McpManager } from "../src/engine/mcpClient.js";
 
 type Event = Record<string, unknown>;
 
@@ -161,6 +162,41 @@ describe("AgentSession", () => {
     });
     session.start();
     expect(await session.mcpStatus()).toEqual([]);
+    await session.dispose();
+  });
+
+  it("waits for MCP discovery before assembling the first request", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const manager = new McpManager(async () => {
+      await gate;
+      return {
+        listTools: async () => ({ tools: [{ name: "lookup", description: "lookup", inputSchema: { type: "object" } }] }),
+        callTool: async () => ({ content: [{ type: "text", text: "ok" }] }),
+        close: async () => {}
+      };
+    });
+    const requests: Array<{ tools?: Array<{ name: string }> }> = [];
+    const client = {
+      async *create(req: { tools?: Array<{ name: string }> }) {
+        requests.push(req);
+        yield* textTurn("done");
+      }
+    };
+    vi.mocked(makeClient).mockReturnValue(client as never);
+    const messages: unknown[] = [];
+    const session = new AgentSession({
+      providerName: "anthropic", provider: {}, permissionMode: "default", cwd: "/p",
+      mcpServers: { demo: { command: "fake" } }, mcpManager: manager,
+      onMessage: message => messages.push(message), onPermissionRequest: () => {}, onSessionId: () => {}
+    });
+    session.start();
+    session.send("use mcp");
+    await new Promise(resolve => setImmediate(resolve));
+    expect(requests).toHaveLength(0);
+    release();
+    await vi.waitFor(() => expect(messages.some(message => (message as { type?: string }).type === "result")).toBe(true));
+    expect(requests[0].tools?.map(tool => tool.name)).toContain("mcp__demo__lookup");
     await session.dispose();
   });
 });

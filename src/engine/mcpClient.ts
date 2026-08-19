@@ -11,6 +11,8 @@ export interface McpConnection {
 
 export type ConnectionFactory = (name: string, cfg: McpServerConfig) => Promise<McpConnection>;
 
+const DEFAULT_CONNECT_TIMEOUT_MS = 10000;
+
 async function defaultFactory(name: string, cfg: McpServerConfig): Promise<McpConnection> {
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
   const { StdioClientTransport } = await import("@modelcontextprotocol/sdk/client/stdio.js");
@@ -28,15 +30,35 @@ export class McpManager {
   private connections = new Map<string, McpConnection>();
   private states: McpServerStatusEntry[] = [];
   private toolDefs: ToolDef[] = [];
+  private disposed = false;
 
-  constructor(private factory: ConnectionFactory = defaultFactory) {}
+  constructor(
+    private factory: ConnectionFactory = defaultFactory,
+    private connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS
+  ) {}
 
   async connect(servers: Record<string, McpServerConfig>): Promise<void> {
     for (const [name, cfg] of Object.entries(servers)) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const pending = this.factory(name, cfg).then(async conn => {
+        try {
+          const listed = await conn.listTools();
+          return { conn, tools: listed.tools };
+        } catch (err) {
+          await conn.close().catch(() => {});
+          throw err;
+        }
+      });
       try {
-        const conn = await this.factory(name, cfg);
+        const timeout = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("MCP connection timed out")), this.connectTimeoutMs);
+        });
+        const { conn, tools } = await Promise.race([pending, timeout]);
+        if (this.disposed) {
+          await conn.close().catch(() => {});
+          continue;
+        }
         this.connections.set(name, conn);
-        const { tools } = await conn.listTools();
         for (const t of tools) {
           this.toolDefs.push({
             name: `mcp__${name}__${t.name}`,
@@ -52,6 +74,9 @@ export class McpManager {
         this.states.push({ name, status: "connected" });
       } catch {
         this.states.push({ name, status: "failed" });
+        void pending.then(({ conn }) => conn.close().catch(() => {})).catch(() => {});
+      } finally {
+        if (timer) clearTimeout(timer);
       }
     }
   }
@@ -65,6 +90,7 @@ export class McpManager {
   }
 
   async dispose(): Promise<void> {
+    this.disposed = true;
     for (const conn of this.connections.values()) await conn.close().catch(() => {});
     this.connections.clear();
   }

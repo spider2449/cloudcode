@@ -255,3 +255,23 @@ describe("OverlayManager memory sub-mode", () => {
     expect(onPick).toHaveBeenCalledWith(options[2]);
   });
 });
+
+describe("OverlayManager trust sub-mode", () => {
+  it("defaults to denial and sanitizes untrusted command text", () => {
+    const onDecision = vi.fn();
+    const mgr = new OverlayManager();
+    mgr.openTrust("/repo", ["node evil.js\x1b[2J"], onDecision);
+    expect(mgr.render(theme, 80).join("\n")).not.toContain("\x1b[2J");
+    mgr.handleKey({ t: "enter" });
+    expect(onDecision).toHaveBeenCalledWith(false);
+  });
+
+  it("accepts the explicit y hotkey", () => {
+    const onDecision = vi.fn();
+    const mgr = new OverlayManager();
+    mgr.openTrust("/repo", ["node server.js"], onDecision);
+    mgr.handleKey({ t: "printable", ch: "y" }, "y");
+    expect(onDecision).toHaveBeenCalledWith(true);
+    expect(mgr.mode).toBe("none");
+  });
+});

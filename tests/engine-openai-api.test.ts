@@ -80,6 +80,39 @@ describe("makeOpenAIClient", () => {
     ]);
   });
 
+  it("accumulates interleaved parallel tool calls by provider index", async () => {
+    vi.stubGlobal("fetch", mockFetch([
+      { choices: [{ delta: { tool_calls: [
+        { index: 0, id: "call_a", function: { name: "Read", arguments: "{\"file" } },
+        { index: 1, id: "call_b", function: { name: "Grep", arguments: "{\"pattern" } }
+      ] } }] },
+      { choices: [{ delta: { tool_calls: [
+        { index: 0, function: { arguments: "\":\"a\"}" } },
+        { index: 1, function: { arguments: "\":\"x\"}" } }
+      ] } }] },
+      { choices: [{ delta: {}, finish_reason: "tool_calls" }] }
+    ]));
+    const events = await collect(makeOpenAIClient({ baseUrl: "https://api.example.com/v1" }), baseReq);
+    const starts = events.filter(event => event.type === "content_block_start");
+    expect(starts).toEqual([
+      { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "call_a", name: "Read" } },
+      { type: "content_block_start", index: 1, content_block: { type: "tool_use", id: "call_b", name: "Grep" } }
+    ]);
+    const argumentsDeltas = events.filter(event => (event.delta as { type?: string } | undefined)?.type === "input_json_delta");
+    expect(argumentsDeltas).toEqual([
+      { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "{\"file\":\"a\"}" } },
+      { type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: "{\"pattern\":\"x\"}" } }
+    ]);
+  });
+
+  it("rejects an incomplete tool call instead of emitting an empty identity", async () => {
+    vi.stubGlobal("fetch", mockFetch([
+      { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: "{}" } }] } }] },
+      { choices: [{ delta: {}, finish_reason: "tool_calls" }] }
+    ]));
+    await expect(collect(makeOpenAIClient({ baseUrl: "https://api.example.com/v1" }), baseReq)).rejects.toThrow(/incomplete tool call/);
+  });
+
   it("maps finish_reason length to max_tokens", async () => {
     const fetchMock = mockFetch([
       { choices: [{ delta: { content: "cut off" } }] },

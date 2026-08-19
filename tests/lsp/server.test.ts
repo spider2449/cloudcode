@@ -51,18 +51,33 @@ describe("LspServer", () => {
   });
 
   it("times out if initialize never responds", async () => {
+    let kills = 0;
     const fakeProc = {
       stdout: new EventEmitter(),
       stderr: new EventEmitter(),
       stdin: { write() { return true; } },
       on() {},
-      kill() {}
+      kill() { kills++; }
     };
     const server = new LspServer("fake", [], "/root", () => {}, {
       spawnFn: () => fakeProc as any,
       startTimeoutMs: 20
     });
     await expect(server.start()).rejects.toThrow(/timed out/);
+    expect(kills).toBe(1);
+    server.stop();
+    server.stop();
+    expect(kills).toBe(1);
+  });
+
+  it("rejects a pre-aborted request without writing it", async () => {
+    const { server, fake } = newServer();
+    await server.start();
+    const emittedBefore = fake.emitted.length;
+    const ctrl = new AbortController();
+    ctrl.abort();
+    await expect(server.request("textDocument/hover", {}, ctrl.signal)).rejects.toThrow(/aborted/);
+    expect(fake.emitted).toHaveLength(emittedBefore);
   });
 });
 

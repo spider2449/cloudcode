@@ -10,7 +10,7 @@ export type CliResult =
   | { kind: "error"; message: string }
   | { kind: "subcommand"; name: Subcommand; args: string[] }
   | { kind: "interactive"; continue: boolean; resume: boolean; provider?: string }
-  | { kind: "print"; prompt?: string; continue: boolean; provider?: string; permissionMode: PermissionMode };
+  | { kind: "print"; prompt?: string; continue: boolean; provider?: string; permissionMode: PermissionMode; trustProjectConfig: boolean };
 
 const PERMISSION_MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
 
@@ -33,6 +33,7 @@ Options:
       --provider <name>         Use a provider from ~/.cloudcode/providers.json
   -p, --print [prompt]          Non-interactive mode; prompt as argument or on stdin
       --permission-mode <mode>  default | acceptEdits | bypassPermissions (with -p only)
+      --trust-project-config    Allow this project's MCP/LSP commands (with -p only)
   -v, --version                 Print version and exit
   -h, --help                    Show this help`;
 
@@ -46,7 +47,7 @@ export function parseCli(argv: string[]): CliResult {
   }
   let values: {
     help: boolean; version: boolean; continue: boolean; resume: boolean; print: boolean;
-    provider?: string; "permission-mode"?: string;
+    provider?: string; "permission-mode"?: string; "trust-project-config": boolean;
   };
   let positionals: string[];
   try {
@@ -60,7 +61,8 @@ export function parseCli(argv: string[]): CliResult {
         resume: { type: "boolean", short: "r", default: false },
         print: { type: "boolean", short: "p", default: false },
         provider: { type: "string" },
-        "permission-mode": { type: "string" }
+        "permission-mode": { type: "string" },
+        "trust-project-config": { type: "boolean", default: false }
       }
     }));
   } catch (err) {
@@ -73,6 +75,9 @@ export function parseCli(argv: string[]): CliResult {
   const mode = values["permission-mode"];
   if (mode !== undefined && !values.print) {
     return { kind: "error", message: "--permission-mode is only valid with --print. Run cloudcode --help for usage." };
+  }
+  if (values["trust-project-config"] && !values.print) {
+    return { kind: "error", message: "--trust-project-config is only valid with --print. Run cloudcode --help for usage." };
   }
   if (values.print) {
     if (mode !== undefined && !PERMISSION_MODES.includes(mode as PermissionMode)) {
@@ -89,7 +94,8 @@ export function parseCli(argv: string[]): CliResult {
       prompt: positionals[0],
       continue: values.continue,
       provider: values.provider,
-      permissionMode: (mode as PermissionMode) ?? "default"
+      permissionMode: (mode as PermissionMode) ?? "default",
+      trustProjectConfig: values["trust-project-config"]
     };
   }
   if (positionals.length > 0) {

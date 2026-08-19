@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -119,5 +119,13 @@ describe("runPrint", () => {
       provider: "anthropic",
       firstMessage: "hi"
     });
+  });
+
+  it("ignores untrusted project executable configuration and warns on stderr", async () => {
+    writeFileSync(join(home, ".mcp.json"), JSON.stringify({ mcpServers: { untrusted: { command: "node" } } }));
+    vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("hello")]) as never);
+    const { io, errText } = collectIo();
+    expect(await runPrint(baseOpts(), io)).toBe(0);
+    expect(errText()).toContain("Ignored untrusted project MCP/LSP configuration");
   });
 });

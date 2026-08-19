@@ -25,6 +25,14 @@ describe("loadMcpServers", () => {
     expect(servers).toEqual({ docs: { type: "http", url: "https://u" }, github: { command: "project" } });
   });
 
+  it("can exclude project servers before trust is granted", () => {
+    const cwd = tempDir();
+    const userFile = join(tempDir(), "mcp.json");
+    writeFileSync(userFile, JSON.stringify({ mcpServers: { user: { command: "user" } } }));
+    writeFileSync(join(cwd, ".mcp.json"), JSON.stringify({ mcpServers: { project: { command: "project" } } }));
+    expect(loadMcpServers(cwd, userFile, false)).toEqual({ user: { command: "user" } });
+  });
+
   it("returns {} for missing files", () => {
     expect(loadMcpServers(tempDir(), join(tempDir(), "mcp.json"))).toEqual({});
   });

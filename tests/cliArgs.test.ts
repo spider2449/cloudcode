@@ -38,8 +38,13 @@ describe("parseCli", () => {
 
   it("parses print mode with a positional prompt", () => {
     expect(parseCli(["-p", "fix it"])).toEqual({
-      kind: "print", prompt: "fix it", continue: false, provider: undefined, permissionMode: "default"
+      kind: "print", prompt: "fix it", continue: false, provider: undefined, permissionMode: "default", trustProjectConfig: false
     });
+  });
+
+  it("accepts project configuration trust only in print mode", () => {
+    expect(parseCli(["-p", "--trust-project-config", "hi"])).toMatchObject({ kind: "print", trustProjectConfig: true });
+    expect(parseCli(["--trust-project-config"])).toMatchObject({ kind: "error" });
   });
 
   it("parses print mode without a prompt (stdin case)", () => {

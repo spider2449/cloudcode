@@ -105,6 +105,11 @@ Override or add servers in `~/.cloudcode/lsp.json` (or project-local
 Disable a built-in with `{ "go": { "enabled": false } }`. Run `cloudcode doctor`
 to see which servers were found.
 
+Project-local LSP commands are executable configuration. Interactive mode asks
+for approval before using them and remembers approval for the exact file
+contents; changing the configuration asks again. Print mode ignores untrusted
+project LSP configuration unless `--trust-project-config` is passed.
+
 ## OpenAI-compatible providers (NVIDIA NIM, etc.)
 
 Providers that speak OpenAI's Chat Completions API (`/chat/completions`) instead
@@ -131,6 +136,11 @@ entries win on name conflicts):
 
 - Project: `<cwd>/.mcp.json` — shareable, can be checked into the repo.
 - User: `~/.cloudcode/mcp.json` — personal servers across projects.
+
+Because stdio MCP entries launch local processes, project entries require the
+same content-bound approval as project LSP configuration. In print mode, pass
+`--trust-project-config` to opt in for that invocation; otherwise project MCP
+entries are ignored and a warning is written to stderr.
 
 Both use Claude Code's `.mcp.json` shape: servers must live under a top-level
 `mcpServers` key, and stdio servers use a string `command` plus an `args` array.

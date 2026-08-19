@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { App } from "../src/ui/nativeApp.js";
 import { FakeTerminal } from "../src/ui/term/terminal.js";
 import { SessionIndex } from "../src/agent/sessionIndex.js";
@@ -21,6 +24,7 @@ vi.mock("../src/engine/loop.js", async () => {
 });
 
 import { makeClient } from "../src/engine/api.js";
+import { loadMcpServers } from "../src/agent/mcp.js";
 
 const wait = (ms = 30) => new Promise(r => setTimeout(r, ms));
 type Event = Record<string, unknown>;
@@ -47,6 +51,7 @@ function textTurn(text: string, usage?: Record<string, number>): Event[] {
 
 beforeEach(() => {
   vi.mocked(makeClient).mockReset();
+  vi.mocked(loadMcpServers).mockClear();
 });
 
 function makeApp(turns: Event[][]) {
@@ -62,6 +67,30 @@ function makeApp(turns: Event[][]) {
 }
 
 describe("App", () => {
+  it("does not load project executable configuration before startup trust is denied", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "cc-app-trust-"));
+    try {
+      writeFileSync(join(cwd, ".mcp.json"), JSON.stringify({ mcpServers: { demo: { command: "never-run-this-command" } } }));
+      vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("ok")]) as never);
+      const terminal = new FakeTerminal({ rows: 24, columns: 80 });
+      const app = new App({ cwd, providers: { anthropic: {} }, initialProvider: "anthropic", sessionIndex: new SessionIndex() }, terminal);
+      const running = app.run();
+      await wait(5);
+      expect(terminal.writes.join("")).toContain("Project configuration requests permission");
+      expect(loadMcpServers).not.toHaveBeenCalled();
+      app.handleKey({ t: "printable", ch: "n" });
+      await wait(5);
+      expect(loadMcpServers).toHaveBeenCalledWith(cwd, undefined, false);
+      app.submitForTest("/exit");
+      await running;
+    } finally {
+      // GitStatusPoller may still have a just-spawned git process whose cwd is
+      // this directory; Windows keeps that directory locked until it exits.
+      await wait(200);
+      rmSync(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 });
+    }
+  });
+
   it("renders its synthetic input marker independently of the native caret", () => {
     const { app, terminal } = makeApp([textTurn("ok")]);
     app.recompute();

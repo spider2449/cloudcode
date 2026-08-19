@@ -12,6 +12,8 @@ import type { CompletionContext } from "../commands/completion.js";
 import { toDisplayItems, streamDelta, streamThinkingDelta, type DisplayItem } from "./transcript.js";
 import { fetchModels } from "../agent/models.js";
 import { loadMcpServers, formatMcpStatus } from "../agent/mcp.js";
+import { inspectProjectExecutableConfig, ProjectTrustStore } from "../agent/projectTrust.js";
+import { loadRegistry } from "../engine/lsp/config.js";
 import { loadSkills, formatSkillList, type Skill } from "../agent/skills.js";
 import { mergeSkillCommands } from "../commands/skillCommands.js";
 import { THEMES, loadThemeName, saveThemeName } from "./theme.js";
@@ -32,6 +34,7 @@ import type { ITerminal } from "./term/terminal.js";
 import type { Key } from "./input.js";
 import { loadSettings, saveSetting } from "../agent/settings.js";
 import type { EffortLevel } from "../engine/effort.js";
+import { join } from "node:path";
 
 export interface AppProps {
   cwd: string;
@@ -88,6 +91,7 @@ export class App {
   private fileIndex: FileIndex;
   private availableModels: string[] = [];
   private mcpServers: Record<string, Record<string, unknown>> = {};
+  private allowProjectConfig = false;
   private git: GitStatusPoller;
   private running = false;
   private tickTimer: ReturnType<typeof setInterval> | undefined;
@@ -126,13 +130,6 @@ export class App {
     this.appendWelcome();
     if (props.switchedFrom) this.buffer.append({ kind: "notice", text: `Switched project to ${props.cwd}` });
 
-    if (props.openResumeOnStart) {
-      this.overlay.openResume(
-        props.sessionIndex.list(),
-        e => this.pickResume(e),
-        () => this.overlay.close()
-      );
-    }
   }
 
   /** Append the welcome banner to the buffer and pin the view to its top. */
@@ -231,7 +228,7 @@ export class App {
   private createSession(name: string, resume?: string, modeOverride?: PermissionMode): AgentSession {
     this.availableModels = [];
     void fetchModels(this.props.providers[name] ?? {}).then(models => { this.availableModels = models; });
-    this.mcpServers = loadMcpServers(this.props.cwd);
+    this.mcpServers = loadMcpServers(this.props.cwd, undefined, this.allowProjectConfig);
     this.refreshSkills();
     const session = new AgentSession({
       providerName: name,
@@ -242,6 +239,7 @@ export class App {
       resume,
       cwd: this.props.cwd,
       mcpServers: this.mcpServers,
+      lspRegistry: loadRegistry(undefined, join(this.props.cwd, ".cloudcode", "lsp.json"), this.allowProjectConfig),
       onMessage: msg => this.handleMessage(msg),
       onPermissionRequest: req => {
         this.phase = "permission";
@@ -547,12 +545,15 @@ export class App {
 
   async run(): Promise<void> {
     this.running = true;
-    this.session = this.createSession(this.props.initialProvider, this.props.resume);
     this.git.start();
     this.tickTimer = setInterval(() => this.tick(), 1000);
     this.terminal.onResize(() => this.handleResize());
     this.terminal.onKeys(keys => this.handleKeys(keys));
     this.terminal.onLine(line => this.handleSubmit(line));
+    const trust = this.resolveProjectConfigTrust();
+    this.allowProjectConfig = typeof trust === "boolean" ? trust : await trust;
+    this.session = this.createSession(this.props.initialProvider, this.props.resume);
+    if (this.props.openResumeOnStart) this.openResumePickerForTest();
     this.recompute();
     // Some terminals (e.g. VS Code's) report a stale rows/columns size for the
     // first tick or two after the process attaches, before layout settles, and
@@ -561,9 +562,25 @@ export class App {
     setTimeout(() => { if (this.running) this.recompute(); }, 50);
     await new Promise<void>(resolve => { this.stopResolve = resolve; });
   }
-
+  private resolveProjectConfigTrust(): boolean | Promise<boolean> {
+    const descriptor = inspectProjectExecutableConfig(this.props.cwd);
+    if (!descriptor) return true;
+    const store = new ProjectTrustStore();
+    if (store.isTrusted(descriptor)) return true;
+    return new Promise(resolve => {
+      this.overlay.openTrust(descriptor.projectPath, descriptor.commands, allow => {
+        if (allow) {
+          try { store.approve(descriptor); }
+          catch (err) { this.buffer.append({ kind: "error", text: `Failed to save project trust: ${err instanceof Error ? err.message : String(err)}` }); }
+        } else {
+          this.notice("Ignored untrusted project MCP/LSP configuration.");
+        }
+        resolve(allow);
+      });
+      this.recompute();
+    });
+  }
   private stopResolve: (() => void) | undefined;
-
   private stop(): void {
     if (this.tickTimer) clearInterval(this.tickTimer);
     if (this.resizeRepaintTimer) clearTimeout(this.resizeRepaintTimer);

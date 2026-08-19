@@ -9,7 +9,7 @@ import type { MemoryOption } from "../MemoryPicker.js";
 import { commandPrefix } from "../../agent/permissionStore.js";
 import { ruleScope } from "../../engine/permissions.js";
 
-export type OverlayMode = "none" | "resume" | "project" | "permission" | "memory";
+export type OverlayMode = "none" | "resume" | "project" | "permission" | "memory" | "trust";
 
 interface PermOption {
   label: string;
@@ -22,6 +22,10 @@ const BASE_OPTIONS: PermOption[] = [
   { label: "Yes (y)", hotkey: "y", allow: true },
   { label: "No (n)", hotkey: "n", allow: false }
 ];
+
+function safeTerminalText(value: string): string {
+  return value.replace(/[\u0000-\u001f\u007f]+/g, " ").slice(0, 300);
+}
 
 const FILE_OPTIONS: PermOption[] = [
   { label: "Yes (y)", hotkey: "y", allow: true },
@@ -69,12 +73,20 @@ interface MemoryState {
   onCancel: () => void;
 }
 
+interface TrustState {
+  projectPath: string;
+  commands: string[];
+  selected: number;
+  onDecision: (allow: boolean) => void;
+}
+
 export class OverlayManager {
   private _mode: OverlayMode = "none";
   private resumeState: ResumeState | undefined;
   private projectState: ProjectState | undefined;
   private permissionState: PermissionState | undefined;
   private memoryState: MemoryState | undefined;
+  private trustState: TrustState | undefined;
 
   get mode(): OverlayMode {
     return this._mode;
@@ -114,12 +126,18 @@ export class OverlayManager {
     this.memoryState = { options, index: 0, onPick, onCancel };
   }
 
+  openTrust(projectPath: string, commands: string[], onDecision: (allow: boolean) => void): void {
+    this._mode = "trust";
+    this.trustState = { projectPath, commands, selected: 1, onDecision };
+  }
+
   close(): void {
     this._mode = "none";
     this.resumeState = undefined;
     this.projectState = undefined;
     this.permissionState = undefined;
     this.memoryState = undefined;
+    this.trustState = undefined;
   }
 
   handleKey(k: Key, input?: string): void {
@@ -127,6 +145,18 @@ export class OverlayManager {
     else if (this._mode === "project") this.handleProjectKey(k, input);
     else if (this._mode === "permission") this.handlePermissionKey(k, input);
     else if (this._mode === "memory") this.handleMemoryKey(k);
+    else if (this._mode === "trust") this.handleTrustKey(k, input);
+  }
+
+  private handleTrustKey(k: Key, input?: string): void {
+    const s = this.trustState;
+    if (!s) return;
+    const decide = (allow: boolean) => { const cb = s.onDecision; this.close(); cb(allow); };
+    if (input?.toLowerCase() === "y") { decide(true); return; }
+    if (input?.toLowerCase() === "n") { decide(false); return; }
+    if (k.t === "esc") { decide(false); return; }
+    if (k.t === "left" || k.t === "right" || k.t === "up" || k.t === "down") s.selected = s.selected === 0 ? 1 : 0;
+    if (k.t === "enter") decide(s.selected === 0);
   }
 
   private handleMemoryKey(k: Key): void {
@@ -204,7 +234,24 @@ export class OverlayManager {
     if (this._mode === "project") return this.renderProject(theme, width);
     if (this._mode === "permission") return this.renderPermission(theme, width);
     if (this._mode === "memory") return this.renderMemory(theme, width);
+    if (this._mode === "trust") return this.renderTrust(theme, width);
     return [];
+  }
+
+  private renderTrust(theme: Theme, width: number): string[] {
+    const s = this.trustState;
+    if (!s) return [];
+    const warning = sgr(theme.warning);
+    const yes = s.selected === 0 ? "\x1b[7m Trust and run (y) \x1b[27m" : " Trust and run (y) ";
+    const no = s.selected === 1 ? "\x1b[7m Ignore project config (n) \x1b[27m" : " Ignore project config (n) ";
+    return [
+      "╭" + "─".repeat(Math.max(0, width - 2)) + "╮",
+      `${warning}Project configuration requests permission to run commands${SGR_RESET}`,
+      safeTerminalText(s.projectPath),
+      ...s.commands.map(safeTerminalText),
+      `${yes}  ${no}`,
+      "╰" + "─".repeat(Math.max(0, width - 2)) + "╯"
+    ];
   }
 
   private renderMemory(theme: Theme, width: number): string[] {

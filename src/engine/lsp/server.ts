@@ -97,7 +97,13 @@ export class LspServer {
 
     return Promise.race([init, timeout])
       .finally(() => clearTimeout(timer))
-      .catch((err: Error) => { this.markDead(err); throw err; });
+      .catch((err: Error) => {
+        this.markDead(err);
+        const failed = this.proc;
+        this.proc = undefined;
+        failed?.kill();
+        throw err;
+      });
   }
 
   private onData(chunk: Buffer): void {
@@ -123,6 +129,7 @@ export class LspServer {
 
   request(method: string, params: unknown, signal?: AbortSignal): Promise<unknown> {
     if (this.dead || !this.proc) return Promise.reject(new Error("language server is not running"));
+    if (signal?.aborted) return Promise.reject(new Error("aborted"));
     const id = this.nextId++;
     return new Promise<unknown>((resolve, reject) => {
       const pending: Pending = { resolve, reject, signal };
@@ -171,15 +178,18 @@ export class LspServer {
   }
 
   stop(): void {
-    if (this.dead) return;
-    try {
-      this.notify("shutdown", null);
-      this.notify("exit", null);
-    } catch {
-      // best-effort
+    if (!this.dead) {
+      try {
+        this.notify("shutdown", null);
+        this.notify("exit", null);
+      } catch {
+        // best-effort
+      }
+      this.markDead(new Error("stopped"));
     }
-    this.markDead(new Error("stopped"));
-    this.proc?.kill();
+    const proc = this.proc;
+    this.proc = undefined;
+    proc?.kill();
   }
 
   private markDead(err: Error): void {

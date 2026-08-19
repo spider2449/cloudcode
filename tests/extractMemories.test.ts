@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdtempSync, rmSync, mkdirSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve, dirname, sep } from "node:path";
 import {
@@ -114,6 +114,32 @@ describe("runExtraction", () => {
     expect(wrote).toBe(false);
     expect(existsSync(evil)).toBe(false);
     expect(n).toBe(2); // loop terminated naturally after one denied attempt, not via MAX_EXTRACT_TURNS
+  });
+
+  it("rejects reads outside the memory dir without returning file contents to the model", async () => {
+    const dir = join(tmp(), "memory");
+    mkdirSync(dir, { recursive: true });
+    const secret = join(tmp(), "secret.txt");
+    writeFileSync(secret, "DO_NOT_SEND");
+    const requests: unknown[] = [];
+    let turn = 0;
+    const client = {
+      async *create(req: unknown, _signal: AbortSignal) {
+        requests.push(req);
+        if (turn++ === 0) {
+          yield { type: "content_block_start", content_block: { type: "tool_use", id: "r1", name: "Read" } };
+          yield { type: "content_block_delta", delta: { type: "input_json_delta", partial_json: JSON.stringify({ file_path: secret }) } };
+          yield { type: "content_block_stop" };
+          yield { type: "message_delta", delta: { stop_reason: "tool_use" } };
+        } else {
+          yield { type: "content_block_start", content_block: { type: "text", text: "nothing to save" } };
+          yield { type: "message_delta", delta: { stop_reason: "end_turn" } };
+        }
+      }
+    };
+    await runExtraction({ client: client as never, model: "m", memoryDir: dir, messages: [user("remember this")], fromIndex: 0 });
+    expect(JSON.stringify(requests[1])).toContain("Denied: file access is only allowed inside the memory directory.");
+    expect(JSON.stringify(requests[1])).not.toContain("DO_NOT_SEND");
   });
 
   it("rejects writes outside the memory dir via a relative path resolved against dir, not cwd", async () => {

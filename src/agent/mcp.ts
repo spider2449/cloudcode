@@ -39,10 +39,11 @@ export function loadMcpServersByScope(
 
 export function loadMcpServers(
   cwd: string,
-  userPath: string = join(configDir(), "mcp.json")
+  userPath: string = join(configDir(), "mcp.json"),
+  includeProject = true
 ): Record<string, McpServerConfig> {
   const scopes = loadMcpServersByScope(cwd, userPath);
-  return { ...scopes.user, ...scopes.project };
+  return includeProject ? { ...scopes.user, ...scopes.project } : scopes.user;
 }
 
 export function formatMcpStatus(

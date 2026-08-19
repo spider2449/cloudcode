@@ -45,4 +45,10 @@ describe("loadRegistry", () => {
     const reg = loadRegistry(user, project);
     expect(reg.python.command).toBe("project-py");
   });
+
+  it("can exclude project overrides before trust is granted", () => {
+    const user = tmpFile("lsp.json", JSON.stringify({ python: { command: "user-py" } }));
+    const project = tmpFile("lsp.json", JSON.stringify({ python: { command: "project-py" } }));
+    expect(loadRegistry(user, project, false).python.command).toBe("user-py");
+  });
 });

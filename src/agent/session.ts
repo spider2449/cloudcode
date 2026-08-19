@@ -7,6 +7,7 @@ import { PermissionStore } from "./permissionStore.js";
 import { SessionFile } from "../engine/sessions.js";
 import { McpManager } from "../engine/mcpClient.js";
 import { LspManager } from "../engine/lsp/manager.js";
+import type { ServerConfig } from "../engine/lsp/config.js";
 import { buildSystemPrompt } from "../engine/systemPrompt.js";
 import type { ProviderConfig } from "./providers.js";
 import type { McpServerConfig, McpServerStatusEntry } from "./mcp.js";
@@ -40,6 +41,8 @@ export interface AgentSessionOptions {
   resume?: string;
   cwd: string;
   mcpServers?: Record<string, McpServerConfig>;
+  lspRegistry?: Record<string, ServerConfig>;
+  mcpManager?: McpManager;
   onMessage(msg: EngineMessage): void;
   onPermissionRequest(req: PermissionRequest): void;
   onSessionId(id: string): void;
@@ -52,12 +55,17 @@ export class AgentSession {
   private sessionFile: SessionFile | undefined;
   sessionId: string | undefined;
   tools: string[] = [];
-  private mcp = new McpManager();
-  private lsp = new LspManager();
+  private mcp: McpManager;
+  private lsp: LspManager;
   private mcpReady: Promise<void> | undefined;
   private extractCursor = 0;
+  private disposed = false;
+  private cancelPendingStart: (() => void) | undefined;
 
-  constructor(private opts: AgentSessionOptions) {}
+  constructor(private opts: AgentSessionOptions) {
+    this.lsp = new LspManager(opts.lspRegistry);
+    this.mcp = opts.mcpManager ?? new McpManager();
+  }
 
   start(): void {
     this.sessionId = this.opts.resume ?? randomUUID();
@@ -79,6 +87,7 @@ export class AgentSession {
         new Promise(resolve => this.opts.onPermissionRequest({ toolName, input, resolve }))
     });
     if (resumedMessages.length > 0) this.loop.messages = resumedMessages;
+    this.extractCursor = resumedMessages.length;
     this.sessionFile = new SessionFile(this.sessionId);
     this.tools = builtinTools().map(t => t.name);
     this.opts.onSessionId(this.sessionId);
@@ -99,8 +108,23 @@ export class AgentSession {
 
   send(text: string): void {
     this.abortController = new AbortController();
+    const controller = this.abortController;
     const before = this.loop?.messages.length ?? 0;
-    void this.loop?.runTurn(text, this.abortController.signal).then(() => {
+    let cancelledBeforeStart = false;
+    this.cancelPendingStart = () => {
+      if (cancelledBeforeStart) return;
+      cancelledBeforeStart = true;
+      this.opts.onMessage({ type: "result", subtype: "success", duration_ms: 0 });
+    };
+    void (this.mcpReady ?? Promise.resolve()).then(() => {
+      this.cancelPendingStart = undefined;
+      if (this.disposed || cancelledBeforeStart) return;
+      if (controller.signal.aborted) {
+        this.opts.onMessage({ type: "result", subtype: "success", duration_ms: 0 });
+        return;
+      }
+      return this.loop?.runTurn(text, controller.signal);
+    }).then(() => {
       const added = this.loop?.messages.slice(before) ?? [];
       for (const entry of added) this.sessionFile?.append(entry);
       this.maybeExtractMemories();
@@ -112,6 +136,10 @@ export class AgentSession {
         `Failed to save session: ${err instanceof Error ? err.message : String(err)}`
       ));
     });
+  }
+
+  ready(): Promise<void> {
+    return this.mcpReady ?? Promise.resolve();
   }
 
   // Fire-and-forget background memory extraction. Never blocks or surfaces
@@ -140,6 +168,7 @@ export class AgentSession {
 
   async interrupt(): Promise<void> {
     this.abortController?.abort();
+    this.cancelPendingStart?.();
   }
 
   async setModel(model: string): Promise<void> {
@@ -184,6 +213,8 @@ export class AgentSession {
   }
 
   async dispose(): Promise<void> {
+    this.disposed = true;
+    this.cancelPendingStart = undefined;
     this.abortController?.abort();
     await this.mcp.dispose();
     this.lsp.shutdown();

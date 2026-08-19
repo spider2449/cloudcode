@@ -93,7 +93,8 @@ if (parsed.kind === "print") {
       permissionMode: parsed.permissionMode,
       resume,
       cwd: initialCwd,
-      sessionIndex
+      sessionIndex,
+      trustProjectConfig: parsed.trustProjectConfig
     }, {
       out: text => process.stdout.write(text),
       err: text => process.stderr.write(text)

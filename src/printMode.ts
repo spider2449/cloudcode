@@ -3,6 +3,9 @@ import type { ProviderConfig } from "./agent/providers.js";
 import { loadMcpServers } from "./agent/mcp.js";
 import type { EffortLevel } from "./engine/effort.js";
 import type { SessionIndex } from "./agent/sessionIndex.js";
+import { inspectProjectExecutableConfig, ProjectTrustStore } from "./agent/projectTrust.js";
+import { loadRegistry } from "./engine/lsp/config.js";
+import { join } from "node:path";
 
 export interface PrintIo {
   out(text: string): void;
@@ -19,6 +22,7 @@ export interface PrintOptions {
   resume?: string;
   cwd: string;
   sessionIndex: SessionIndex;
+  trustProjectConfig?: boolean;
 }
 
 // One-shot non-interactive turn: stream assistant text to stdout, summarize
@@ -29,6 +33,11 @@ export async function runPrint(opts: PrintOptions, io: PrintIo): Promise<number>
   let lastChar = "\n";
   let finish!: () => void;
   const done = new Promise<void>(resolve => { finish = resolve; });
+  const descriptor = inspectProjectExecutableConfig(opts.cwd);
+  const includeProjectConfig = descriptor === undefined || opts.trustProjectConfig === true || new ProjectTrustStore().isTrusted(descriptor);
+  if (descriptor && !includeProjectConfig) {
+    io.err("[warning] Ignored untrusted project MCP/LSP configuration; pass --trust-project-config to allow it.\n");
+  }
   const session = new AgentSession({
     providerName: opts.providerName,
     provider: opts.provider,
@@ -37,7 +46,8 @@ export async function runPrint(opts: PrintOptions, io: PrintIo): Promise<number>
     permissionMode: opts.permissionMode,
     resume: opts.resume,
     cwd: opts.cwd,
-    mcpServers: loadMcpServers(opts.cwd),
+    mcpServers: loadMcpServers(opts.cwd, undefined, includeProjectConfig),
+    lspRegistry: loadRegistry(undefined, join(opts.cwd, ".cloudcode", "lsp.json"), includeProjectConfig),
     onMessage: msg => {
       if (msg.type === "stream_event") {
         if (msg.event.delta.type === "text_delta") {
@@ -73,6 +83,7 @@ export async function runPrint(opts: PrintOptions, io: PrintIo): Promise<number>
     }
   });
   session.start();
+  await session.ready();
   session.send(opts.prompt);
   await done;
   // send() persists the transcript in a .then() that runs only after runTurn

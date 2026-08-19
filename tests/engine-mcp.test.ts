@@ -22,4 +22,23 @@ describe("McpManager", () => {
     expect(mgr.status()).toEqual([{ name: "bad", status: "failed" }]);
     expect(mgr.tools()).toEqual([]);
   });
+
+  it("times out a hung connection and closes it if it resolves later", async () => {
+    let release!: () => void;
+    let closed = false;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const mgr = new McpManager(async () => {
+      await gate;
+      return {
+        listTools: async () => ({ tools: [] }),
+        callTool: async () => ({ content: [] }),
+        close: async () => { closed = true; }
+      };
+    }, 10);
+    await mgr.connect({ slow: { command: "slow" } });
+    expect(mgr.status()).toEqual([{ name: "slow", status: "failed" }]);
+    release();
+    await new Promise(resolve => setImmediate(resolve));
+    expect(closed).toBe(true);
+  });
 });
