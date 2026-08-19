@@ -74,6 +74,15 @@ describe("project executable configuration trust", () => {
     expect(first?.digest).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  it("includes isolated maintenance validation selection in trust", () => {
+    const cwd = tempDir();
+    mkdirSync(join(cwd, ".cloudcode"));
+    writeFileSync(join(cwd, ".cloudcode", "maintenance.json"), JSON.stringify({ profiles: {
+      verify: { prompt: "verify", execution: "isolatedVerification", validationProfile: "focused", networkMode: "offlineStrict", limits: {} }
+    } }));
+    expect(inspectProjectExecutableConfig(cwd)?.commands).toEqual(["Maintenance verify: validation profile focused"]);
+  });
+
   it("falls back to no trust for malformed state", () => {
     const cwd = tempDir();
     const trustFile = join(tempDir(), "trust.json");

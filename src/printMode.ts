@@ -38,6 +38,8 @@ export interface PrintOptions {
   outputFormat?: OutputFormat;
   runLimits?: RunLimits;
   interruptSource?: InterruptSource;
+  toolAllowlist?: readonly string[];
+  disableMcp?: boolean;
 }
 
 // One-shot non-interactive turn. All formats reuse AgentSession and the same
@@ -78,8 +80,9 @@ export async function runPrint(opts: PrintOptions, io: PrintIo): Promise<number>
     resume: opts.resume,
     cwd: opts.cwd,
     runLimits: opts.runLimits,
+    toolAllowlist: opts.toolAllowlist,
     networkPolicy: policy,
-    mcpServers: loadMcpServers(opts.cwd, undefined, includeProjectConfig),
+    mcpServers: opts.disableMcp ? {} : loadMcpServers(opts.cwd, undefined, includeProjectConfig),
     lspRegistry: loadRegistry(undefined, join(opts.cwd, ".cloudcode", "lsp.json"), includeProjectConfig),
     onMessage: message => adapter.handleMessage(message),
     onPermissionRequest: request => adapter.resolvePermission(request),

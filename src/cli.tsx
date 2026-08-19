@@ -22,6 +22,8 @@ import { EXIT_CODES } from "./print/exitCodes.js";
 import { runTaskCommand, type TaskLaunch } from "./commands/cli/task.js";
 import { TaskRunner } from "./agent/taskRunner.js";
 import { runPackCommand } from "./commands/cli/pack.js";
+import { runMaintainCommand } from "./commands/cli/maintain.js";
+import { createMaintenanceExecutor } from "./commands/cli/maintenanceExecutor.js";
 
 const parsed = parseCli(process.argv.slice(2));
 
@@ -90,6 +92,25 @@ if (parsed.kind === "subcommand") {
     case "pack": {
       const result = runPackCommand(parsed.args, {
         cwd: process.cwd(), networkMode: subNetworkMode
+      });
+      if (result.stdout) console.log(result.stdout);
+      if (result.stderr) console.error(result.stderr);
+      process.exit(result.exitCode);
+      break;
+    }
+    case "maintain": {
+      const providers = loadProviders();
+      const providerName = subSettings.provider ?? "anthropic";
+      const provider = providers[providerName];
+      if (!provider) {
+        console.error(`Unknown provider "${providerName}".`);
+        process.exit(EXIT_CODES.invalidConfiguration);
+      }
+      const result = await runMaintainCommand(parsed.args, {
+        cwd: process.cwd(), execute: createMaintenanceExecutor({
+          providerName, provider, model: subSettings.model, effort: subSettings.effort,
+          savedNetworkMode: subSettings.networkMode
+        })
       });
       if (result.stdout) console.log(result.stdout);
       if (result.stderr) console.error(result.stderr);

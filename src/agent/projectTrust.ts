@@ -111,6 +111,23 @@ export function inspectProjectExecutableConfig(cwd: string, base?: string): Proj
     if (commands.length > before) files.push({ name: ".cloudcode/packs.json", raw: packsConfig.raw });
   }
 
+  const maintenance = readConfig(join(cwd, ".cloudcode", "maintenance.json"));
+  if (maintenance && maintenance.value && typeof maintenance.value === "object" && !Array.isArray(maintenance.value)) {
+    const profiles = (maintenance.value as { profiles?: unknown }).profiles;
+    let executable = false;
+    if (profiles && typeof profiles === "object" && !Array.isArray(profiles)) {
+      for (const [name, raw] of Object.entries(profiles)) {
+        if (!raw || typeof raw !== "object") continue;
+        const item = raw as { execution?: unknown; validationProfile?: unknown };
+        if (item.execution === "isolatedVerification" && typeof item.validationProfile === "string") {
+          commands.push(`Maintenance ${name}: validation profile ${item.validationProfile}`);
+          executable = true;
+        }
+      }
+    }
+    if (executable) files.push({ name: ".cloudcode/maintenance.json", raw: maintenance.raw });
+  }
+
   if (commands.length === 0) return undefined;
   const hash = createHash("sha256");
   for (const file of files) hash.update(file.name).update("\0").update(file.raw).update("\0");

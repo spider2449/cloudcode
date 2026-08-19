@@ -57,6 +57,7 @@ export interface AgentSessionOptions {
   networkPolicy?: NetworkPolicy;
   verifiedNoNetworkSandbox?: boolean;
   runLimits?: RunLimits;
+  toolAllowlist?: readonly string[];
   onMessage(msg: EngineMessage): void;
   onPermissionRequest(req: PermissionRequest): void;
   onSessionId(id: string): void;
@@ -101,7 +102,10 @@ export class AgentSession {
     );
     networkPolicy.require({ capability: "provider", destination: endpoint });
     const bash = bashNetworkStatus(networkPolicy.mode, this.opts.verifiedNoNetworkSandbox === true);
-    const tools = builtinTools({ allowArbitraryChildNetwork: bash.available });
+    const availableTools = builtinTools({ allowArbitraryChildNetwork: bash.available });
+    const tools = this.opts.toolAllowlist
+      ? availableTools.filter(tool => this.opts.toolAllowlist?.includes(tool.name))
+      : availableTools;
     this.loop = new EngineLoop({
       client: makeClient(this.opts.provider),
       model,

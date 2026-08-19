@@ -68,6 +68,19 @@ describe("AgentSession", () => {
     await session.dispose();
   });
 
+  it("exposes only an explicit read-only tool allowlist", async () => {
+    vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("ok")]));
+    const session = new AgentSession({
+      providerName: "local", provider: { kind: "openai", baseUrl: "http://127.0.0.1:8080" },
+      permissionMode: "default", cwd: "/p", toolAllowlist: ["Read", "Glob", "Grep", "Diagnostics"],
+      onMessage: () => {}, onPermissionRequest: () => {}, onSessionId: () => {}
+    });
+    session.start();
+    expect(session.tools).toEqual(["Read", "Glob", "Grep", "Diagnostics"]);
+    expect(session.tools).not.toEqual(expect.arrayContaining(["Write", "Edit", "Bash"]));
+    await session.dispose();
+  });
+
   it("emits session id and forwards messages for sent text", async () => {
     vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("ok")]));
     const messages: unknown[] = [];
