@@ -18,6 +18,7 @@ import {
   NetworkPolicy, NetworkPolicyError, effectiveNetworkMode, providerEndpoint
 } from "./agent/networkPolicy.js";
 import { NetworkAudit } from "./agent/networkAudit.js";
+import { EXIT_CODES } from "./print/exitCodes.js";
 
 const parsed = parseCli(process.argv.slice(2));
 
@@ -31,13 +32,13 @@ if (parsed.kind === "version") {
 }
 if (parsed.kind === "error") {
   console.error(parsed.message);
-  process.exit(1);
+  process.exit(EXIT_CODES.invalidConfiguration);
 }
 if (parsed.kind === "subcommand") {
   const networkArg = networkModeFromArgs(parsed.args);
   if (networkArg.error) {
     console.error(networkArg.error);
-    process.exit(2);
+    process.exit(EXIT_CODES.invalidConfiguration);
   }
   const subSettings = loadSettings();
   let subNetworkMode;
@@ -45,7 +46,7 @@ if (parsed.kind === "subcommand") {
     subNetworkMode = effectiveNetworkMode(subSettings.networkMode, networkArg.mode);
   } catch (err) {
     console.error(err instanceof Error ? err.message : String(err));
-    process.exit(2);
+    process.exit(EXIT_CODES.invalidConfiguration);
   }
   switch (parsed.name) {
     case "config":
@@ -84,14 +85,14 @@ try {
   networkMode = effectiveNetworkMode(settings.networkMode, parsed.networkMode);
 } catch (err) {
   console.error(err instanceof Error ? err.message : String(err));
-  process.exit(2);
+  process.exit(EXIT_CODES.invalidConfiguration);
 }
 const networkAudit = new NetworkAudit();
 let providerName = parsed.provider ?? settings.provider ?? "anthropic";
 if (!providers[providerName]) {
   if (parsed.provider) {
     console.error(`Unknown provider "${parsed.provider}". Known: ${Object.keys(providers).join(", ")}. Add custom providers in ~/.cloudcode/providers.json (see README).`);
-    process.exit(1);
+    process.exit(EXIT_CODES.invalidConfiguration);
   }
   console.error(`Saved default provider "${providerName}" not found; using anthropic.`);
   providerName = "anthropic";
@@ -111,12 +112,12 @@ if (parsed.kind === "print") {
     if (prompt === undefined || prompt.trim() === "") {
       if (process.stdin.isTTY) {
         console.error("No prompt given. Pass one as an argument or pipe it on stdin.");
-        process.exit(1);
+        process.exit(EXIT_CODES.invalidConfiguration);
       }
       prompt = (await readStdin()).trim();
       if (prompt === "") {
         console.error("Empty prompt on stdin.");
-        process.exit(1);
+        process.exit(EXIT_CODES.invalidConfiguration);
       }
     }
     const code = await runPrint({
@@ -129,9 +130,11 @@ if (parsed.kind === "print") {
       resume,
       cwd: initialCwd,
       sessionIndex,
-      trustProjectConfig: parsed.trustProjectConfig
-      , networkMode,
-      networkAudit
+      trustProjectConfig: parsed.trustProjectConfig,
+      networkMode,
+      networkAudit,
+      outputFormat: parsed.outputFormat,
+      runLimits: parsed.runLimits
     }, {
       out: text => process.stdout.write(text),
       err: text => process.stderr.write(text)

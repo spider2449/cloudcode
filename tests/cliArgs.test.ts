@@ -44,8 +44,22 @@ describe("parseCli", () => {
 
   it("parses print mode with a positional prompt", () => {
     expect(parseCli(["-p", "fix it"])).toEqual({
-      kind: "print", prompt: "fix it", continue: false, provider: undefined, permissionMode: "default", trustProjectConfig: false
+      kind: "print", prompt: "fix it", continue: false, provider: undefined, permissionMode: "default",
+      trustProjectConfig: false, outputFormat: "text", runLimits: {}
     });
+  });
+
+  it("parses structured output and run limits", () => {
+    expect(parseCli([
+      "-p", "go", "--output-format", "stream-json", "--max-turns", "8", "--timeout", "10m",
+      "--max-cost-usd", "1.50"
+    ])).toMatchObject({
+      kind: "print", outputFormat: "stream-json",
+      runLimits: { maxTurns: 8, timeoutMs: 600_000, maxCostUsd: 1.5 }
+    });
+    expect(parseCli(["-p", "go", "--output-format", "xml"]).kind).toBe("error");
+    expect(parseCli(["-p", "go", "--timeout", "soon"]).kind).toBe("error");
+    expect(parseCli(["--max-turns", "2"]).kind).toBe("error");
   });
 
   it("accepts project configuration trust only in print mode", () => {
@@ -83,7 +97,8 @@ describe("parseCli", () => {
 describe("HELP_TEXT", () => {
   it("mentions every flag and subcommand", () => {
     for (const s of ["--help", "--version", "--continue", "--resume", "--print",
-      "--provider", "--network-mode", "--permission-mode", "doctor", "config", "mcp", "update"]) {
+      "--provider", "--network-mode", "--permission-mode", "--output-format", "--max-turns", "--timeout",
+      "--max-cost-usd", "doctor", "config", "mcp", "update"]) {
       expect(HELP_TEXT).toContain(s);
     }
   });

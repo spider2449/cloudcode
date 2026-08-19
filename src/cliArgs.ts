@@ -1,6 +1,9 @@
 import { parseArgs } from "node:util";
 import type { PermissionMode } from "./agent/session.js";
 import { isNetworkMode, type NetworkMode } from "./agent/networkPolicy.js";
+import { parseRunLimits } from "./print/runLimits.js";
+import { isOutputFormat, type OutputFormat } from "./print/serialize.js";
+import type { RunLimits } from "./engine/runLimits.js";
 
 export const SUBCOMMANDS = ["doctor", "config", "mcp", "update"] as const;
 export type Subcommand = (typeof SUBCOMMANDS)[number];
@@ -11,7 +14,7 @@ export type CliResult =
   | { kind: "error"; message: string }
   | { kind: "subcommand"; name: Subcommand; args: string[] }
   | { kind: "interactive"; continue: boolean; resume: boolean; provider?: string; networkMode?: NetworkMode }
-  | { kind: "print"; prompt?: string; continue: boolean; provider?: string; permissionMode: PermissionMode; trustProjectConfig: boolean; networkMode?: NetworkMode };
+  | { kind: "print"; prompt?: string; continue: boolean; provider?: string; permissionMode: PermissionMode; trustProjectConfig: boolean; networkMode?: NetworkMode; outputFormat: OutputFormat; runLimits: RunLimits };
 
 const PERMISSION_MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
 
@@ -36,6 +39,10 @@ Options:
   -p, --print [prompt]          Non-interactive mode; prompt as argument or on stdin
       --permission-mode <mode>  default | acceptEdits | bypassPermissions (with -p only)
       --trust-project-config    Allow this project's MCP/LSP commands (with -p only)
+      --output-format <format>  text | json | stream-json (with -p only)
+      --max-turns <count>       Maximum provider requests (with -p only)
+      --timeout <duration>      Complete run timeout, e.g. 10m (with -p only)
+      --max-cost-usd <amount>   Known-model cost cap (with -p only)
   -v, --version                 Print version and exit
   -h, --help                    Show this help`;
 
@@ -50,6 +57,7 @@ export function parseCli(argv: string[]): CliResult {
   let values: {
     help: boolean; version: boolean; continue: boolean; resume: boolean; print: boolean;
     provider?: string; "network-mode"?: string; "permission-mode"?: string; "trust-project-config": boolean;
+    "output-format"?: string; "max-turns"?: string; timeout?: string; "max-cost-usd"?: string;
   };
   let positionals: string[];
   try {
@@ -65,7 +73,11 @@ export function parseCli(argv: string[]): CliResult {
         provider: { type: "string" },
         "network-mode": { type: "string" },
         "permission-mode": { type: "string" },
-        "trust-project-config": { type: "boolean", default: false }
+        "trust-project-config": { type: "boolean", default: false },
+        "output-format": { type: "string" },
+        "max-turns": { type: "string" },
+        timeout: { type: "string" },
+        "max-cost-usd": { type: "string" }
       }
     }));
   } catch (err) {
@@ -80,11 +92,10 @@ export function parseCli(argv: string[]): CliResult {
     return { kind: "error", message: `Invalid --network-mode "${networkMode}". Valid: offlineStrict, providerOnly, unrestricted.` };
   }
   const mode = values["permission-mode"];
-  if (mode !== undefined && !values.print) {
-    return { kind: "error", message: "--permission-mode is only valid with --print. Run cloudcode --help for usage." };
-  }
-  if (values["trust-project-config"] && !values.print) {
-    return { kind: "error", message: "--trust-project-config is only valid with --print. Run cloudcode --help for usage." };
+  const printOnlyUsed = mode !== undefined || values["trust-project-config"] || values["output-format"] !== undefined ||
+    values["max-turns"] !== undefined || values.timeout !== undefined || values["max-cost-usd"] !== undefined;
+  if (printOnlyUsed && !values.print) {
+    return { kind: "error", message: "Print automation flags are only valid with --print. Run cloudcode --help for usage." };
   }
   if (values.print) {
     if (mode !== undefined && !PERMISSION_MODES.includes(mode as PermissionMode)) {
@@ -96,6 +107,18 @@ export function parseCli(argv: string[]): CliResult {
     if (positionals.length > 1) {
       return { kind: "error", message: "Too many arguments: expected at most one prompt. Run cloudcode --help for usage." };
     }
+    const outputFormat = values["output-format"] ?? "text";
+    if (!isOutputFormat(outputFormat)) {
+      return { kind: "error", message: `Invalid --output-format "${outputFormat}". Valid: text, json, stream-json.` };
+    }
+    let runLimits: RunLimits;
+    try {
+      runLimits = parseRunLimits({
+        maxTurns: values["max-turns"], timeout: values.timeout, maxCostUsd: values["max-cost-usd"]
+      });
+    } catch (err) {
+      return { kind: "error", message: err instanceof Error ? err.message : String(err) };
+    }
     return {
       kind: "print",
       prompt: positionals[0],
@@ -103,7 +126,9 @@ export function parseCli(argv: string[]): CliResult {
       provider: values.provider,
       permissionMode: (mode as PermissionMode) ?? "default",
       trustProjectConfig: values["trust-project-config"],
-      ...(networkMode ? { networkMode: networkMode as NetworkMode } : {})
+      ...(networkMode ? { networkMode: networkMode as NetworkMode } : {}),
+      outputFormat,
+      runLimits
     };
   }
   if (positionals.length > 0) {

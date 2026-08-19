@@ -31,6 +31,37 @@ Print mode auto-denies any tool call that would normally prompt; pass
 `--permission-mode acceptEdits` (or `bypassPermissions`) to loosen that for
 a single run. Run `cloudcode --help` for the full flag list.
 
+### Structured automation
+
+Print mode supports local scripts and self-hosted CI without a separate agent
+engine:
+
+    cloudcode -p "review the current diff" --output-format json
+    cloudcode -p "run focused checks" --output-format stream-json --max-turns 8 --timeout 10m
+    cloudcode -p "fix the type error" --max-cost-usd 1.50
+
+`json` writes exactly one final document. `stream-json` writes one event
+envelope per stdout line and never mixes human progress into stdout. Envelope
+schema version 1 permits additive fields; removing or renaming a field requires
+a new schema version. Provider errors are redacted against configured API keys
+and authorization-header values before structured output.
+
+Limits count provider requests (including tool-result continuations), cover MCP
+readiness plus the complete run, and stop before excess provider/tool work.
+`--max-cost-usd` is rejected when the selected model has no known pricing.
+
+Stable process exit codes:
+
+    0    completed successfully
+    1    provider/engine execution error
+    2    invalid CLI or configuration
+    3    permission or project-trust denial
+    4    run limit reached
+    5    verification failed
+    6    task/worktree state conflict
+    7    privacy/network-policy denial
+    130  interrupted by user
+
 ## Network modes and the local-first boundary
 
 cloudcode defaults new installations to `providerOnly`. Set the saved mode with

@@ -1,19 +1,25 @@
-import { AgentSession, type PermissionMode } from "./agent/session.js";
+import { join } from "node:path";
+import { AgentSession, DEFAULT_MODEL, type PermissionMode } from "./agent/session.js";
 import type { ProviderConfig } from "./agent/providers.js";
 import { loadMcpServers } from "./agent/mcp.js";
 import type { EffortLevel } from "./engine/effort.js";
 import type { SessionIndex } from "./agent/sessionIndex.js";
 import { inspectProjectExecutableConfig, ProjectTrustStore } from "./agent/projectTrust.js";
 import { loadRegistry } from "./engine/lsp/config.js";
-import { join } from "node:path";
 import {
   NetworkPolicy, NetworkPolicyError, providerEndpoint,
   type NetworkDecisionRecorder, type NetworkMode
 } from "./agent/networkPolicy.js";
+import { RunLimitConfigurationError, RunLimitError, type RunLimits } from "./engine/runLimits.js";
+import { PrintAdapter, type PrintAdapterIo } from "./print/adapter.js";
+import { EXIT_CODES } from "./print/exitCodes.js";
+import type { OutputFormat } from "./print/serialize.js";
 
-export interface PrintIo {
-  out(text: string): void;
-  err(text: string): void;
+export type PrintIo = PrintAdapterIo;
+
+export interface InterruptSource {
+  once(event: "SIGINT", listener: () => void): unknown;
+  off(event: "SIGINT", listener: () => void): unknown;
 }
 
 export interface PrintOptions {
@@ -29,23 +35,39 @@ export interface PrintOptions {
   trustProjectConfig?: boolean;
   networkMode?: NetworkMode;
   networkAudit?: NetworkDecisionRecorder;
+  outputFormat?: OutputFormat;
+  runLimits?: RunLimits;
+  interruptSource?: InterruptSource;
 }
 
-// One-shot non-interactive turn: stream assistant text to stdout, summarize
-// tool activity on stderr, auto-deny anything that would prompt. The session
-// file still persists exactly as in interactive mode.
+// One-shot non-interactive turn. All formats reuse AgentSession and the same
+// engine/permission/checkpoint boundaries as the interactive TUI.
 export async function runPrint(opts: PrintOptions, io: PrintIo): Promise<number> {
-  let exitCode = 0;
-  let lastChar = "\n";
+  const started = Date.now();
+  const model = opts.model ?? opts.provider.model ?? DEFAULT_MODEL;
   let finish!: () => void;
   const done = new Promise<void>(resolve => { finish = resolve; });
+  const adapter = new PrintAdapter({
+    outputFormat: opts.outputFormat ?? "text",
+    io,
+    provider: opts.providerName,
+    model,
+    networkMode: opts.networkMode ?? "providerOnly",
+    secrets: [opts.provider.apiKey, process.env.ANTHROPIC_API_KEY],
+    audit: opts.networkAudit,
+    onFinished: finish
+  });
+  adapter.start();
+
   const descriptor = inspectProjectExecutableConfig(opts.cwd);
-  const includeProjectConfig = descriptor === undefined || opts.trustProjectConfig === true || new ProjectTrustStore().isTrusted(descriptor);
+  const includeProjectConfig = descriptor === undefined || opts.trustProjectConfig === true ||
+    new ProjectTrustStore().isTrusted(descriptor);
   if (descriptor && !includeProjectConfig) {
-    io.err("[warning] Ignored untrusted project MCP/LSP configuration; pass --trust-project-config to allow it.\n");
+    adapter.warn("Ignored untrusted project MCP/LSP configuration; pass --trust-project-config to allow it.");
   }
+
   const policy = new NetworkPolicy(
-    opts.networkMode ?? "providerOnly", providerEndpoint(opts.provider), opts.networkAudit
+    opts.networkMode ?? "providerOnly", providerEndpoint(opts.provider), adapter
   );
   const session = new AgentSession({
     providerName: opts.providerName,
@@ -55,62 +77,67 @@ export async function runPrint(opts: PrintOptions, io: PrintIo): Promise<number>
     permissionMode: opts.permissionMode,
     resume: opts.resume,
     cwd: opts.cwd,
+    runLimits: opts.runLimits,
     networkPolicy: policy,
     mcpServers: loadMcpServers(opts.cwd, undefined, includeProjectConfig),
     lspRegistry: loadRegistry(undefined, join(opts.cwd, ".cloudcode", "lsp.json"), includeProjectConfig),
-    onMessage: msg => {
-      if (msg.type === "stream_event") {
-        if (msg.event.delta.type === "text_delta") {
-          const text = msg.event.delta.text;
-          if (text.length > 0) lastChar = text[text.length - 1];
-          io.out(text);
-        }
-      } else if (msg.type === "assistant") {
-        // Text was already streamed via deltas; only surface tool calls.
-        for (const block of msg.message.content) {
-          if (block.type === "tool_use") io.err(`[tool] ${block.name}\n`);
-        }
-      } else if (msg.type === "result") {
-        if (msg.subtype === "error_during_execution") {
-          io.err(`${msg.result}\n`);
-          exitCode = 1;
-        }
-        finish();
-      }
-    },
-    onPermissionRequest: req => {
-      io.err(`[denied] ${req.toolName} (non-interactive; pass --permission-mode acceptEdits or bypassPermissions to allow)\n`);
-      req.resolve(false);
-    },
+    onMessage: message => adapter.handleMessage(message),
+    onPermissionRequest: request => adapter.resolvePermission(request),
     onSessionId: id => {
+      adapter.setSessionId(id);
       opts.sessionIndex.record({
-        id,
-        cwd: opts.cwd,
-        firstMessage: opts.prompt,
-        timestamp: new Date().toISOString(),
+        id, cwd: opts.cwd, firstMessage: opts.prompt, timestamp: new Date().toISOString(),
         provider: opts.providerName
       });
     }
   });
+
+  let interrupted = false;
+  let wakeInterrupt!: () => void;
+  const interrupt = new Promise<void>(resolve => { wakeInterrupt = resolve; });
+  const onSigint = () => {
+    if (interrupted) return;
+    interrupted = true;
+    adapter.markInterrupted();
+    void session.interrupt();
+    wakeInterrupt();
+  };
+  const interruptSource = opts.interruptSource ?? process;
+  interruptSource.once("SIGINT", onSigint);
+
   try {
     session.start();
-  } catch (err) {
-    if (err instanceof NetworkPolicyError) {
-      io.err(`${err.message}\n`);
-      return 7;
+    const ready = await Promise.race([
+      session.ready().then(() => true),
+      interrupt.then(() => false)
+    ]);
+    if (ready && !interrupted) {
+      session.send(opts.prompt);
+      await done;
+      // The session continuation persists transcript/checkpoint state after
+      // the result callback. Yield once before reading final metadata.
+      await new Promise(resolve => setImmediate(resolve));
     }
-    throw err;
+  } catch (err) {
+    if (err instanceof NetworkPolicyError) adapter.fail(err.message, EXIT_CODES.networkDenied);
+    else if (err instanceof RunLimitConfigurationError) adapter.fail(err.message, EXIT_CODES.invalidConfiguration);
+    else if (err instanceof RunLimitError) {
+      if (adapter.exitCode !== EXIT_CODES.limitReached) adapter.fail(err.message, EXIT_CODES.limitReached);
+    } else adapter.fail(err instanceof Error ? err.message : String(err), EXIT_CODES.executionError);
+  } finally {
+    interruptSource.off("SIGINT", onSigint);
+    await session.dispose();
   }
-  await session.ready();
-  session.send(opts.prompt);
-  await done;
-  // send() persists the transcript in a .then() that runs only after runTurn
-  // resolves, which is after the result message that resolved `done`; yield
-  // one macrotask so the session file is written before teardown.
-  await new Promise(resolve => setImmediate(resolve));
-  await session.dispose();
-  if (lastChar !== "\n") io.out("\n");
-  return exitCode;
+
+  const checkpoint = session.changeSummaries(true)[0];
+  adapter.finalize({
+    sessionId: session.sessionId,
+    durationMs: Date.now() - started,
+    provider: opts.providerName,
+    model,
+    ...(checkpoint ? { checkpoint: { id: checkpoint.id, changedFiles: checkpoint.changes.length } } : {})
+  });
+  return adapter.exitCode;
 }
 
 export async function readStdin(stream: NodeJS.ReadStream = process.stdin): Promise<string> {
