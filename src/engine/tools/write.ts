@@ -1,6 +1,7 @@
 import { writeFileSync, mkdirSync } from "node:fs";
-import { dirname, isAbsolute, resolve } from "node:path";
-import type { ToolDef } from "./types.js";
+import { dirname } from "node:path";
+import type { FileMutationToken, ToolDef } from "./types.js";
+import { resolveToolFilePath } from "./filePath.js";
 
 export const writeTool: ToolDef = {
   name: "Write",
@@ -15,13 +16,17 @@ export const writeTool: ToolDef = {
   },
   async execute(input, ctx) {
     const p = String(input.file_path ?? "");
-    const abs = isAbsolute(p) ? p : resolve(ctx.cwd, p);
+    const abs = resolveToolFilePath(p, ctx.cwd);
+    let mutation: FileMutationToken | undefined;
     try {
+      mutation = await ctx.fileMutations?.before(abs);
       mkdirSync(dirname(abs), { recursive: true });
       writeFileSync(abs, String(input.content ?? ""));
       return { content: `Wrote ${abs}` };
     } catch (err) {
       return { content: `Cannot write ${abs}: ${err instanceof Error ? err.message : String(err)}`, isError: true };
+    } finally {
+      if (mutation) await ctx.fileMutations?.after(mutation);
     }
   }
 };

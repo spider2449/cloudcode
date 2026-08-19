@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -30,6 +30,23 @@ describe("writeTool", () => {
     const out = await writeTool.execute({ file_path: p, content: "hello" }, ctx());
     expect(out.isError).toBeFalsy();
     expect(readFileSync(p, "utf8")).toBe("hello");
+  });
+
+  it("captures the file immediately around a mutation", async () => {
+    const p = join(dir, "observed.txt");
+    const before = vi.fn(async () => {
+      expect(() => readFileSync(p)).toThrow();
+      return { id: "one" };
+    });
+    const after = vi.fn(async () => {
+      expect(readFileSync(p, "utf8")).toBe("hello");
+    });
+    await writeTool.execute(
+      { file_path: "observed.txt", content: "hello" },
+      { cwd: dir, fileMutations: { before, after } }
+    );
+    expect(before).toHaveBeenCalledWith(p);
+    expect(after).toHaveBeenCalledWith({ id: "one" });
   });
 });
 
@@ -64,5 +81,25 @@ describe("editTool", () => {
     writeFileSync(p, "foo foo");
     await editTool.execute({ file_path: p, old_string: "foo", new_string: "x", replace_all: true }, ctx());
     expect(readFileSync(p, "utf8")).toBe("x x");
+  });
+
+  it("cooperates with the mutation observer around an edit", async () => {
+    const p = join(dir, "observed-edit.txt");
+    writeFileSync(p, "before");
+    const seen: string[] = [];
+    await editTool.execute(
+      { file_path: p, old_string: "before", new_string: "after" },
+      {
+        cwd: dir,
+        fileMutations: {
+          async before(path) {
+            seen.push(`${path}:${readFileSync(path, "utf8")}`);
+            return { id: "edit" };
+          },
+          async after() { seen.push(readFileSync(p, "utf8")); }
+        }
+      }
+    );
+    expect(seen).toEqual([`${p}:before`, "after"]);
   });
 });

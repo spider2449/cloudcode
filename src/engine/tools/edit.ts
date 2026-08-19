@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
-import type { ToolDef } from "./types.js";
+import type { FileMutationToken, ToolDef } from "./types.js";
+import { resolveToolFilePath } from "./filePath.js";
 
 export const editTool: ToolDef = {
   name: "Edit",
@@ -17,7 +17,7 @@ export const editTool: ToolDef = {
   },
   async execute(input, ctx) {
     const p = String(input.file_path ?? "");
-    const abs = isAbsolute(p) ? p : resolve(ctx.cwd, p);
+    const abs = resolveToolFilePath(p, ctx.cwd);
     const oldStr = String(input.old_string ?? "");
     const newStr = String(input.new_string ?? "");
     let text: string;
@@ -37,7 +37,15 @@ export const editTool: ToolDef = {
     // check above already rejects a non-unique old_string, so joining every
     // occurrence is equivalent to a single replace here.
     const next = text.split(oldStr).join(newStr);
-    writeFileSync(abs, next);
-    return { content: `Edited ${abs}` };
+    let mutation: FileMutationToken | undefined;
+    try {
+      mutation = await ctx.fileMutations?.before(abs);
+      writeFileSync(abs, next);
+      return { content: `Edited ${abs}` };
+    } catch (err) {
+      return { content: `Cannot edit ${abs}: ${err instanceof Error ? err.message : String(err)}`, isError: true };
+    } finally {
+      if (mutation) await ctx.fileMutations?.after(mutation);
+    }
   }
 };
