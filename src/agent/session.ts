@@ -15,6 +15,9 @@ import type { EffortLevel } from "../engine/effort.js";
 import { runExtraction, hasMemoryWrites, countModelMessages, MIN_NEW_MESSAGES } from "../engine/extractMemories.js";
 import { memoryDir } from "../engine/memoryPaths.js";
 import { loadSettings } from "./settings.js";
+import {
+  ChangeJournal, type ChangeSummary, type UndoPreview, type UndoResult
+} from "./changeJournal.js";
 
 export type PermissionMode = "default" | "acceptEdits" | "bypassPermissions";
 
@@ -43,6 +46,7 @@ export interface AgentSessionOptions {
   mcpServers?: Record<string, McpServerConfig>;
   lspRegistry?: Record<string, ServerConfig>;
   mcpManager?: McpManager;
+  changeJournalFactory?: (cwd: string, sessionId: string) => ChangeJournal;
   onMessage(msg: EngineMessage): void;
   onPermissionRequest(req: PermissionRequest): void;
   onSessionId(id: string): void;
@@ -61,6 +65,8 @@ export class AgentSession {
   private extractCursor = 0;
   private disposed = false;
   private cancelPendingStart: (() => void) | undefined;
+  private changes: ChangeJournal | undefined;
+  private turnActive = false;
 
   constructor(private opts: AgentSessionOptions) {
     this.lsp = new LspManager(opts.lspRegistry);
@@ -71,6 +77,8 @@ export class AgentSession {
     this.sessionId = this.opts.resume ?? randomUUID();
     const resumedMessages = this.opts.resume ? SessionFile.load(this.opts.resume) : [];
     const store = new PermissionStore(this.opts.cwd);
+    this.changes = this.opts.changeJournalFactory?.(this.opts.cwd, this.sessionId) ??
+      new ChangeJournal(this.opts.cwd, this.sessionId);
     this.loop = new EngineLoop({
       client: makeClient(this.opts.provider),
       model: this.opts.model ?? this.opts.provider.model ?? DEFAULT_MODEL,
@@ -82,6 +90,7 @@ export class AgentSession {
       permissionMode: this.opts.permissionMode,
       store,
       lsp: this.lsp,
+      fileMutations: this.changes,
       onMessage: this.opts.onMessage,
       requestPermission: (toolName, input) =>
         new Promise(resolve => this.opts.onPermissionRequest({ toolName, input, resolve }))
@@ -91,6 +100,7 @@ export class AgentSession {
     this.sessionFile = new SessionFile(this.sessionId);
     this.tools = builtinTools().map(t => t.name);
     this.opts.onSessionId(this.sessionId);
+    for (const warning of this.changes.warnings()) this.opts.onMessage(errorResult(warning));
     this.opts.onMessage({
       type: "system",
       subtype: "init",
@@ -107,6 +117,11 @@ export class AgentSession {
   }
 
   send(text: string): void {
+    if (this.turnActive) {
+      this.opts.onMessage(errorResult("A turn is already running."));
+      return;
+    }
+    this.turnActive = true;
     this.abortController = new AbortController();
     const controller = this.abortController;
     const before = this.loop?.messages.length ?? 0;
@@ -116,26 +131,38 @@ export class AgentSession {
       cancelledBeforeStart = true;
       this.opts.onMessage({ type: "result", subtype: "success", duration_ms: 0 });
     };
-    void (this.mcpReady ?? Promise.resolve()).then(() => {
-      this.cancelPendingStart = undefined;
-      if (this.disposed || cancelledBeforeStart) return;
-      if (controller.signal.aborted) {
-        this.opts.onMessage({ type: "result", subtype: "success", duration_ms: 0 });
-        return;
+    void (async () => {
+      try {
+        await (this.mcpReady ?? Promise.resolve());
+        this.cancelPendingStart = undefined;
+        if (this.disposed || cancelledBeforeStart) {
+          this.turnActive = false;
+          return;
+        }
+        if (controller.signal.aborted) {
+          this.opts.onMessage({ type: "result", subtype: "success", duration_ms: 0 });
+          this.turnActive = false;
+          return;
+        }
+        this.changes?.beginCheckpoint();
+        try {
+          await this.loop?.runTurn(text, controller.signal);
+          const added = this.loop?.messages.slice(before) ?? [];
+          for (const entry of added) this.sessionFile?.append(entry);
+          this.maybeExtractMemories();
+        } finally {
+          this.changes?.finishCheckpoint();
+          this.turnActive = false;
+        }
+      } catch (err) {
+        this.turnActive = false;
+        // runTurn never rejects; this guards checkpoint/session persistence
+        // failures from becoming an unhandled rejection that kills the process.
+        this.opts.onMessage(errorResult(
+          `Failed to save session changes: ${err instanceof Error ? err.message : String(err)}`
+        ));
       }
-      return this.loop?.runTurn(text, controller.signal);
-    }).then(() => {
-      const added = this.loop?.messages.slice(before) ?? [];
-      for (const entry of added) this.sessionFile?.append(entry);
-      this.maybeExtractMemories();
-    }).catch(err => {
-      // runTurn never rejects; this guards the post-turn persistence (e.g.
-      // a full disk breaking sessionFile.append) from becoming an unhandled
-      // rejection that kills the process.
-      this.opts.onMessage(errorResult(
-        `Failed to save session: ${err instanceof Error ? err.message : String(err)}`
-      ));
-    });
+    })();
   }
 
   ready(): Promise<void> {
@@ -189,6 +216,29 @@ export class AgentSession {
 
   async mcpStatus(): Promise<McpServerStatusEntry[]> {
     return this.mcp.status();
+  }
+
+  changeSummaries(latestOnly = false): ChangeSummary[] {
+    return this.changes?.listChanges(latestOnly) ?? [];
+  }
+
+  changeDiff(path?: string): { content: string; truncated: boolean } {
+    return this.changes?.diff(path) ?? { content: "No session-owned changes.", truncated: false };
+  }
+
+  previewUndo(): UndoPreview {
+    return this.changes?.previewUndo() ?? { operations: [], conflicts: [] };
+  }
+
+  undoLatest(): UndoResult {
+    if (this.turnActive) {
+      return { applied: false, operations: [], conflicts: ["A turn is currently running."], rollbackErrors: [] };
+    }
+    return this.changes?.undoLatest() ?? { applied: false, operations: [], conflicts: [], rollbackErrors: [] };
+  }
+
+  isTurnActive(): boolean {
+    return this.turnActive;
   }
 
   async compact(onProgress?: (pct: number) => void): Promise<number | undefined> {

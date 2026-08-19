@@ -1,11 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { join } from "node:path";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 vi.mock("../src/engine/api.js", () => ({ makeClient: vi.fn() }));
 
 import { makeClient } from "../src/engine/api.js";
 import { AgentSession, shouldExtract } from "../src/agent/session.js";
 import { McpManager } from "../src/engine/mcpClient.js";
+import { ChangeJournal } from "../src/agent/changeJournal.js";
 
 type Event = Record<string, unknown>;
 
@@ -198,6 +201,34 @@ describe("AgentSession", () => {
     await vi.waitFor(() => expect(messages.some(message => (message as { type?: string }).type === "result")).toBe(true));
     expect(requests[0].tools?.map(tool => tool.name)).toContain("mcp__demo__lookup");
     await session.dispose();
+  });
+
+  it("groups native edits from one turn into a durable checkpoint", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cc-session-changes-"));
+    const project = join(root, "project");
+    const path = join(project, "made.txt");
+    vi.mocked(makeClient).mockReturnValue(fakeClient([
+      toolUseTurn("t1", "Write", { file_path: path, content: "made" }),
+      textTurn("done")
+    ]));
+    const messages: unknown[] = [];
+    const session = new AgentSession({
+      providerName: "anthropic", provider: {}, permissionMode: "acceptEdits", cwd: project,
+      changeJournalFactory: (cwd, id) => new ChangeJournal(cwd, id, { rootDir: join(root, "journal") }),
+      onMessage: message => messages.push(message), onPermissionRequest: () => {}, onSessionId: () => {}
+    });
+    try {
+      session.start();
+      session.send("make it");
+      await vi.waitFor(() => expect(messages.some(message => (message as { type?: string }).type === "result")).toBe(true));
+      await vi.waitFor(() => expect(session.isTurnActive()).toBe(false));
+      expect(readFileSync(path, "utf8")).toBe("made");
+      expect(session.changeSummaries()).toHaveLength(1);
+      expect(session.previewUndo().operations).toEqual([{ path, action: "remove" }]);
+    } finally {
+      await session.dispose();
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

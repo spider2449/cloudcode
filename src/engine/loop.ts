@@ -1,6 +1,6 @@
 import type { EngineMessage, ContentBlock, Usage } from "./messages.js";
 import { textDelta, thinkingDelta, assistantMessage, errorResult, toolResultMessage } from "./messages.js";
-import type { ToolDef } from "./tools/types.js";
+import type { FileMutationObserver, ToolDef } from "./tools/types.js";
 import type { MessagesClient } from "./api.js";
 import type { PermissionMode } from "../agent/session.js";
 import type { PermissionStore } from "../agent/permissionStore.js";
@@ -24,6 +24,7 @@ export interface EngineOptions {
   permissionMode: PermissionMode;
   store: PermissionStore;
   lsp?: LspManager;
+  fileMutations?: FileMutationObserver;
   effort?: EffortLevel;
   contextWindow?: number;
   onMessage(msg: EngineMessage): void;
@@ -330,7 +331,12 @@ export class EngineLoop {
     }
     if (decision === "deny") return deniedResult("User denied this tool use");
     try {
-      const out = await tool.execute(block.input, { cwd: this.opts.cwd, signal, lsp: this.opts.lsp });
+      const out = await tool.execute(block.input, {
+        cwd: this.opts.cwd,
+        signal,
+        lsp: this.opts.lsp,
+        fileMutations: this.opts.fileMutations
+      });
       const content = await appendDiagnostics(block.name, block.input, out.content, this.opts.lsp, this.opts.cwd);
       return { type: "tool_result", tool_use_id: block.id, content, is_error: out.isError === true };
     } catch (err) {
