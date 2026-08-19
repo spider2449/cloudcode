@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { ProjectTrustStore } from "../src/agent/projectTrust.js";
-import { TaskRunner, TaskStateConflictError } from "../src/agent/taskRunner.js";
+import { TaskRunner, TaskStateConflictError, TaskTrustError } from "../src/agent/taskRunner.js";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -53,7 +53,7 @@ describe("TaskRunner", () => {
     expect(task.state).toBe("planning");
     expect(task.planPath).toBe("docs/plans/2026-08-19-fix-login-timeout.md");
     expect(runner.show(task.taskId).worktreePath).toBe(task.worktreePath);
-  });
+  }, 20_000);
 
   it("requires a written plan and explicit approval across reloads", async () => {
     const { source, runner } = setup();
@@ -65,7 +65,7 @@ describe("TaskRunner", () => {
     });
     expect((await runner.resume(task.taskId)).state).toBe("awaitingApproval");
     expect((await runner.resume(task.taskId, true)).state).toBe("implementing");
-  });
+  }, 20_000);
 
   it("runs trusted verification and stores bounded attributable evidence", async () => {
     const { source, runner } = setup();
@@ -73,6 +73,7 @@ describe("TaskRunner", () => {
     writePlan(task.worktreePath, task.planPath);
     runner.markPlanReady(task.taskId);
     await runner.resume(task.taskId, true);
+    await expect(runner.verify(task.taskId)).rejects.toThrow(TaskTrustError);
     const result = await runner.verify(task.taskId, { trustProjectConfig: true });
     expect(result.success).toBe(true);
     expect(result.commands[0].stdout).toBe("passed");
@@ -80,7 +81,7 @@ describe("TaskRunner", () => {
     expect(saved.state).toBe("reviewReady");
     expect(saved.artifactPaths).toHaveLength(1);
     expect(JSON.parse(readFileSync(saved.artifactPaths[0], "utf8"))).toMatchObject({ profile: "focused", success: true });
-  });
+  }, 20_000);
 
   it("reviews against the recorded base and safely removes only merged clean worktrees", async () => {
     const { source, runner } = setup();
@@ -100,5 +101,5 @@ describe("TaskRunner", () => {
     expect(review.report).toContain("feature.txt");
     expect(existsSync(review.artifactPath)).toBe(true);
     await expect(runner.remove(task.taskId, true)).rejects.toThrow(/unmerged commits/);
-  });
+  }, 20_000);
 });

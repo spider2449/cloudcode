@@ -18,6 +18,11 @@ export class TaskStateConflictError extends Error {
   constructor(message: string) { super(message); this.name = "TaskStateConflictError"; }
 }
 
+export class TaskTrustError extends Error {
+  readonly code = "TASK_TRUST_DENIED";
+  constructor(message: string) { super(message); this.name = "TaskTrustError"; }
+}
+
 function slug(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "task";
 }
@@ -119,7 +124,7 @@ export class TaskRunner {
     const manifest = await this.resume(taskId);
     const descriptor = inspectProjectExecutableConfig(manifest.worktreePath);
     if (descriptor && !this.trustStore.isTrusted(descriptor)) {
-      if (!input.trustProjectConfig) throw new TaskStateConflictError("Project verification commands are not trusted.");
+      if (!input.trustProjectConfig) throw new TaskTrustError("Project verification commands are not trusted.");
       this.trustStore.approve(descriptor);
     }
     const loaded = loadVerificationProfiles(manifest.worktreePath);
@@ -145,10 +150,19 @@ export class TaskRunner {
     const manifest = await this.resume(taskId);
     const snapshot = await collectGitReviewAgainstBase(manifest.worktreePath, manifest.baseCommit, this.git);
     if (!snapshot.isGitRepo || snapshot.error) throw new TaskStateConflictError(snapshot.error ?? "Task review failed.");
+    const names = await this.git(["diff", "--name-only", `${manifest.baseCommit}...HEAD`, "--"], manifest.worktreePath);
+    const changedFiles = names.code === 0 ? names.stdout.trim().split(/\r?\n/).filter(Boolean) : [];
     const report = [
       `# Task ${manifest.taskId} review`, "", `Base: ${manifest.baseCommit}`, `Branch: ${manifest.branch}`,
-      `Worktree: ${manifest.worktreePath}`, "", "## Status", "", snapshot.status || "clean", "",
-      "## Diff", "", snapshot.diff || "No changes.", "", snapshot.truncated ? "Diff was truncated." : "Diff was complete."
+      `Worktree: ${manifest.worktreePath}`, `Plan: ${manifest.planPath}`, "", "## Changed files", "",
+      changedFiles.length ? changedFiles.map(path => `- ${path}`).join("\n") : "No committed file changes.", "",
+      "## Validation evidence", "",
+      manifest.artifactPaths.length ? manifest.artifactPaths.map(path => `- ${path}`).join("\n") : "No verification artifact recorded.", "",
+      "## Review findings", "", snapshot.truncated ? "- Diff evidence was truncated." : "- Diff evidence was complete.",
+      snapshot.status ? "- The worktree has local changes; inspect Status below." : "- The worktree was clean.", "",
+      "## Known limitations", "", "- This is a local PR-ready summary; no Git host was contacted.",
+      "- Semantic findings require an explicit agent review turn; this artifact records deterministic Git evidence.", "",
+      "## Status", "", snapshot.status || "clean", "", "## Diff", "", snapshot.diff || "No changes."
     ].join("\n");
     const artifactPath = join(taskDir(taskId, this.configBase), "artifacts", `review-${Date.now()}.md`);
     atomicWrite(artifactPath, report + "\n");
@@ -160,7 +174,8 @@ export class TaskRunner {
 
   async remove(taskId: string, yes: boolean): Promise<void> {
     const manifest = this.show(taskId);
-    await removeTaskWorktree({ manifest, yes, worktreesBase: this.worktreesBase, runner: this.git });
+    try { await removeTaskWorktree({ manifest, yes, worktreesBase: this.worktreesBase, runner: this.git }); }
+    catch (err) { throw new TaskStateConflictError(err instanceof Error ? err.message : String(err)); }
     const owned = taskDir(taskId, this.configBase);
     if (!inside(owned, join(this.configBase, "tasks"))) throw new Error("Task manifest path escaped the task root.");
     rmSync(owned, { recursive: true, force: false });

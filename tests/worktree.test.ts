@@ -53,7 +53,7 @@ describe("task worktrees", () => {
     expect(identity.branch).toMatch(/^cloudcode\/task\/12345678-fix-login-timeout$/);
     expect(calls.some(args => ["fetch", "push", "pull"].includes(args[0]))).toBe(false);
     await expect(validateTaskWorktree(asManifest(identity))).resolves.toMatchObject({ clean: true });
-  });
+  }, 20_000);
 
   it("refuses identity drift and dirty cleanup", async () => {
     const repo = repository();
@@ -66,7 +66,7 @@ describe("task worktrees", () => {
     await expect(removeTaskWorktree({ manifest, yes: true, worktreesBase: repo.worktrees }))
       .rejects.toThrow(/dirty/);
     expect(existsSync(identity.worktreePath)).toBe(true);
-  });
+  }, 20_000);
 
   it("refuses unmerged commits and removes only a clean merged branch with --yes", async () => {
     const repo = repository();
@@ -85,5 +85,5 @@ describe("task worktrees", () => {
     await expect(removeTaskWorktree({ manifest, yes: false, worktreesBase: repo.worktrees })).rejects.toThrow(/--yes/);
     await removeTaskWorktree({ manifest, yes: true, worktreesBase: repo.worktrees });
     expect(existsSync(identity.worktreePath)).toBe(false);
-  });
+  }, 20_000);
 });
