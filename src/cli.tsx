@@ -21,6 +21,7 @@ import { NetworkAudit } from "./agent/networkAudit.js";
 import { EXIT_CODES } from "./print/exitCodes.js";
 import { runTaskCommand, type TaskLaunch } from "./commands/cli/task.js";
 import { TaskRunner } from "./agent/taskRunner.js";
+import { runPackCommand } from "./commands/cli/pack.js";
 
 const parsed = parseCli(process.argv.slice(2));
 
@@ -84,6 +85,15 @@ if (parsed.kind === "subcommand") {
       if (result.stderr) console.error(result.stderr);
       if (result.launch) taskLaunch = result.launch;
       else process.exit(result.exitCode);
+      break;
+    }
+    case "pack": {
+      const result = runPackCommand(parsed.args, {
+        cwd: process.cwd(), networkMode: subNetworkMode
+      });
+      if (result.stdout) console.log(result.stdout);
+      if (result.stderr) console.error(result.stderr);
+      process.exit(result.exitCode);
       break;
     }
   }
