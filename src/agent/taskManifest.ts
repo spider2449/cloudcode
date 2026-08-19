@@ -37,6 +37,7 @@ export interface TaskChildReference {
   eventLogPath: string;
   recordedHead?: string;
   targetCommit?: string;
+  sessionId?: string;
 }
 
 export interface TaskManifest {
@@ -97,7 +98,8 @@ function isChild(value: unknown): value is TaskChildReference {
     typeof child.branch === "string" && typeof child.worktreePath === "string" && Array.isArray(child.ownedPaths) &&
     child.ownedPaths.every(path => typeof path === "string") && typeof child.provider === "string" &&
     typeof child.model === "string" && typeof child.eventLogPath === "string" &&
-    (child.targetCommit === undefined || typeof child.targetCommit === "string");
+    (child.targetCommit === undefined || typeof child.targetCommit === "string") &&
+    (child.sessionId === undefined || typeof child.sessionId === "string");
 }
 
 function isManifest(value: unknown): value is Omit<TaskManifest, "version" | "ownedPaths" | "coordinatorState" | "children"> & {

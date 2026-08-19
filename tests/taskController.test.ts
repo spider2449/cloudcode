@@ -28,4 +28,14 @@ describe("TaskUiController", () => {
     )).not.toThrow();
     expect(onError).toHaveBeenCalledWith("plan missing");
   });
+
+  it("reports a read-only worker result once without entering planning", () => {
+    const onTurnComplete = vi.fn();
+    const controller = new TaskUiController({ planning: false, onTurnComplete });
+    controller.sessionStarted("worker-session");
+    controller.handleMessage({ type: "result", subtype: "success", duration_ms: 1 }, vi.fn());
+    controller.handleMessage({ type: "result", subtype: "success", duration_ms: 1 }, vi.fn());
+    expect(onTurnComplete).toHaveBeenCalledOnce();
+    expect(onTurnComplete).toHaveBeenCalledWith("worker-session");
+  });
 });

@@ -16,6 +16,7 @@ export interface TaskLaunch {
   planning: boolean;
   toolAllowlist?: readonly string[];
   disableMcp?: boolean;
+  completeReadOnlyWorker?: boolean;
 }
 
 export interface TaskCliResult {
@@ -181,7 +182,8 @@ export async function runTaskCommand(args: string[], options: {
         exitCode: 0,
         stdout: [display(plan.manifest), ...(plan.warning ? [`Warning: ${plan.warning}`] : [])].join("\n"),
         launch: {
-          ...launchFor(plan.manifest, plan.initialPrompt, true),
+          ...launchFor(plan.manifest, plan.initialPrompt, !readOnly),
+          ...(readOnly ? { completeReadOnlyWorker: true } : {}),
           ...(readOnly ? {
             toolAllowlist: ["Read", "Glob", "Grep", "Definition", "References", "Hover", "Symbols", "Diagnostics"],
             disableMcp: true

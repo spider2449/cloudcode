@@ -7,12 +7,14 @@ export interface TaskUiOptions {
   disableMcp?: boolean;
   onSessionId?(id: string): void;
   onPlanningComplete?(sessionId?: string): void;
+  onTurnComplete?(sessionId?: string): void;
 }
 
 export class TaskUiController {
   private sessionId: string | undefined;
   private initialTaken = false;
   private planningPending: boolean;
+  private completionReported = false;
 
   constructor(private options?: TaskUiOptions) {
     this.planningPending = options?.planning === true;
@@ -30,9 +32,17 @@ export class TaskUiController {
   }
 
   handleMessage(message: EngineMessage, onError: (message: string) => void): void {
-    if (!this.planningPending || message.type !== "result") return;
-    this.planningPending = false;
-    try { this.options?.onPlanningComplete?.(this.sessionId); }
+    if (message.type !== "result") return;
+    try {
+      if (this.planningPending) {
+        this.planningPending = false;
+        this.options?.onPlanningComplete?.(this.sessionId);
+      }
+      if (!this.completionReported && this.options?.onTurnComplete) {
+        this.completionReported = true;
+        this.options.onTurnComplete(this.sessionId);
+      }
+    }
     catch (err) { onError(err instanceof Error ? err.message : String(err)); }
   }
 }

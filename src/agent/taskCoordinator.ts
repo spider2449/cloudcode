@@ -1,7 +1,8 @@
-import { isAbsolute, normalize, sep } from "node:path";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { dirname, isAbsolute, normalize, sep } from "node:path";
 import { configDir } from "./providers.js";
 import {
-  loadTaskManifest, saveTaskManifest, taskDir, type TaskChildReference,
+  loadTaskManifest, saveTaskManifest, taskDir, transitionTask, type TaskChildReference,
   type TaskManifest, type WorkerRole
 } from "./taskManifest.js";
 import { TaskRunner, TaskStateConflictError } from "./taskRunner.js";
@@ -28,7 +29,8 @@ function overlaps(a: string, b: string): boolean {
 }
 
 function active(child: TaskChildReference): boolean {
-  return child.state !== "completed" && child.state !== "failed" && child.state !== "interrupted";
+  return child.state === "created" || child.state === "planning" || child.state === "awaitingApproval" ||
+    child.state === "implementing" || child.state === "verifying";
 }
 
 function prompt(role: WorkerRole, parent: TaskManifest, paths: string[]): string {
@@ -105,6 +107,11 @@ export class TaskCoordinator {
       name: `${input.role}-${parent.taskId.slice(0, 8)}`, networkMode: parent.networkMode,
       limits: input.limits, parentTaskId: parent.taskId, workerRole: input.role, ownedPaths: paths
     });
+    if (input.role !== "implement") {
+      transitionTask(child, "awaitingApproval", "read-only worker scope approved by coordinator");
+      transitionTask(child, "implementing", "read-only worker started from immutable recorded state");
+      saveTaskManifest(child, this.base);
+    }
     const reference: TaskChildReference = {
       taskId: child.taskId, role: input.role, state: child.state, branch: child.branch,
       worktreePath: child.worktreePath, ownedPaths: paths, provider: input.provider, model: input.model,
@@ -142,5 +149,32 @@ export class TaskCoordinator {
     parent.coordinatorState = "cancelled";
     saveTaskManifest(parent, this.base);
     return parent;
+  }
+
+  completeReadOnlyWorker(taskId: string, sessionId?: string): TaskManifest {
+    const child = loadTaskManifest(taskId, this.base);
+    if (!child.parentTaskId || child.workerRole === "implement" || !child.workerRole) {
+      throw new TaskStateConflictError(`Task ${taskId} is not a read-only worker.`);
+    }
+    if (sessionId) child.sessionId = sessionId;
+    if (child.state === "implementing") transitionTask(child, "reviewReady", "read-only worker result recorded");
+    if (child.state === "reviewReady") transitionTask(child, "completed", "read-only worker completed");
+    saveTaskManifest(child, this.base);
+    const parent = this.parent(child.parentTaskId);
+    const reference = parent.children.find(item => item.taskId === taskId);
+    if (!reference) throw new TaskStateConflictError(`Worker ${taskId} is missing from parent ${parent.taskId}.`);
+    reference.state = child.state;
+    if (sessionId) reference.sessionId = sessionId;
+    mkdirSync(dirname(reference.eventLogPath), { recursive: true });
+    appendFileSync(reference.eventLogPath, JSON.stringify({
+      schemaVersion: 1, timestamp: new Date().toISOString(), workerId: taskId,
+      role: child.workerRole, kind: "worker.completed", ...(sessionId ? { sessionId } : {})
+    }) + "\n", { encoding: "utf8", mode: 0o600 });
+    if (!child.artifactPaths.includes(reference.eventLogPath)) {
+      child.artifactPaths.push(reference.eventLogPath);
+      saveTaskManifest(child, this.base);
+    }
+    saveTaskManifest(parent, this.base);
+    return this.refresh(parent.taskId);
   }
 }

@@ -21,6 +21,7 @@ import { NetworkAudit } from "./agent/networkAudit.js";
 import { EXIT_CODES } from "./print/exitCodes.js";
 import { runTaskCommand, type TaskLaunch } from "./commands/cli/task.js";
 import { TaskRunner } from "./agent/taskRunner.js";
+import { TaskCoordinator } from "./agent/taskCoordinator.js";
 import { runPackCommand } from "./commands/cli/pack.js";
 import { runMaintainCommand } from "./commands/cli/maintain.js";
 import { createMaintenanceExecutor } from "./commands/cli/maintenanceExecutor.js";
@@ -217,6 +218,7 @@ if (sessionParsed.kind === "print") {
 
   void (async () => {
     const taskRunner = taskLaunch ? new TaskRunner() : undefined;
+    const taskCoordinator = taskLaunch ? new TaskCoordinator() : undefined;
     let pendingTask = taskLaunch;
     let cwd = initialCwd;
     let switchedFrom: string | undefined;
@@ -243,7 +245,10 @@ if (sessionParsed.kind === "print") {
           toolAllowlist: currentTask.toolAllowlist,
           disableMcp: currentTask.disableMcp,
           onSessionId: id => taskRunner.recordSession(currentTask.taskId, id),
-          onPlanningComplete: id => taskRunner.markPlanReady(currentTask.taskId, id)
+          onPlanningComplete: id => taskRunner.markPlanReady(currentTask.taskId, id),
+          ...(currentTask.completeReadOnlyWorker && taskCoordinator ? {
+            onTurnComplete: (id?: string) => taskCoordinator.completeReadOnlyWorker(currentTask.taskId, id)
+          } : {})
         } : undefined,
         onSwitchProject: path => {
           try {

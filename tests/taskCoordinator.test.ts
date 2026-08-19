@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { TaskCoordinator } from "../src/agent/taskCoordinator.js";
@@ -63,5 +63,10 @@ describe("task coordinator", () => {
     });
     expect(verify.reference.targetCommit).toBe(implementation.manifest.baseCommit);
     expect(verify.manifest.baseCommit).toBe(verify.reference.targetCommit);
+    const parent = coordinator.completeReadOnlyWorker(verify.manifest.taskId, "session-verify");
+    expect(parent.children.find(child => child.taskId === verify.manifest.taskId)).toMatchObject({
+      state: "completed", sessionId: "session-verify"
+    });
+    expect(readFileSync(verify.reference.eventLogPath, "utf8")).toContain('"workerId"');
   }, 20_000);
 });
