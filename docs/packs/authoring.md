@@ -51,6 +51,10 @@ Profiles are exposed as `<pack-name>:<profile-name>`. MCP, LSP, and validation
 commands remain executable project configuration: users must approve the exact
 content digest before cloudcode runs them. Packs cannot invoke task services.
 
+`maintenance` may point to the same `{ "profiles": { ... } }` shape used by
+`~/.cloudcode/maintenance.json`. Pack maintenance profiles can select exposed
+validation profiles, but they cannot call task or worktree services directly.
+
 ## Local lifecycle
 
 Run `validate`, then `link`, `inspect`, and `enable --project`. Commit the

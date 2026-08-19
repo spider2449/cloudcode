@@ -113,6 +113,30 @@ be enabled under `offlineStrict` or `providerOnly`. See
 [`docs/packs/authoring.md`](docs/packs/authoring.md) and the inert
 [`examples/packs/reference-inert`](examples/packs/reference-inert) pack.
 
+### Local continuous maintenance
+
+Maintenance profiles run bounded, repeatable checks without installing a daemon
+or modifying the OS scheduler. Use Task Scheduler, cron, a systemd timer, or a
+self-hosted runner to invoke the same command when scheduling is needed.
+
+    cloudcode maintain list
+    cloudcode maintain run health
+    cloudcode maintain run docs-drift --output-format json
+    cloudcode maintain history
+    cloudcode maintain show <run-id>
+
+Analysis profiles expose only Read, Glob, Grep, and read-only LSP tools; Write,
+Edit, Bash, and MCP tools are absent. `isolatedVerification` profiles run a
+trusted validation profile in an owned linked worktree. A clean worktree is
+removed; one containing generated changes is retained for inspection.
+
+User profiles live in `~/.cloudcode/maintenance.json`, project profiles in
+`.cloudcode/maintenance.json`, and packs may contribute `maintenance.json`.
+Reports and structured event logs are stored outside the repository under
+`~/.cloudcode/projects/<project-id>/maintenance/`, with a per-project overlap
+lock and bounded retention. Built-in dependency inventory is deliberately
+offline and is not described as a current vulnerability audit.
+
 ## Network modes and the local-first boundary
 
 cloudcode defaults new installations to `providerOnly`. Set the saved mode with
