@@ -32,7 +32,6 @@ export async function runIsolatedMaintenanceVerification(input: {
     worktreesBase: input.worktreesBase ?? join(base, "maintenance-worktrees"), runner: git
   });
   const events: VerificationEvent[] = [];
-  try {
     const loaded = loadVerificationProfiles(identity.worktreePath);
     const packs = resolvePackContributions(identity.worktreePath, base);
     const warnings = [...loaded.warnings, ...packs.warnings];
@@ -64,9 +63,4 @@ export async function runIsolatedMaintenanceVerification(input: {
       exitCode: result.success ? 0 : 5, report,
       events: events.map(event => JSON.stringify(event)).join("\n") + (events.length ? "\n" : "")
     };
-  } catch (err) {
-    // A failed setup may contain useful local state; leave the owned worktree
-    // intact instead of risking evidence loss.
-    throw err;
-  }
 }
