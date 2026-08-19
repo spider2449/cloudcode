@@ -91,6 +91,35 @@ against the recorded base commit and produces a local PR-ready report without
 contacting a remote host. Removal requires `--yes` and refuses dirty worktrees
 or branches whose commits are not merged into the source branch.
 
+### Worktree-isolated task workers
+
+After approving a parent task plan, bounded workers can research, implement,
+verify, and review in separate worktrees. Every worker uses the same explicitly
+selected provider/model. Concurrency defaults to one, is hard-capped at three,
+and values above one require `--parallel`, which prints the provider cost/privacy
+warning.
+
+    cloudcode task worker start <parent-id> research
+    cloudcode task worker start <parent-id> implement --paths src/api,tests/api
+    cloudcode task resume <implementation-worker-id> --approve-plan
+    cloudcode task worker start <parent-id> verify --target <implementation-worker-id>
+    cloudcode task workers <parent-id>
+    cloudcode task integrate <parent-id> <implementation-worker-id>
+    cloudcode task integrate <parent-id> <implementation-worker-id> --yes
+    cloudcode task cancel-workers <parent-id>
+
+Research, verify, and review workers expose only native read/search and read-only
+LSP tools; MCP, Write, Edit, and Bash are absent. Verify/review workers are frozen
+at the target worker's clean recorded commit. Implementation workers require
+non-overlapping owned paths and a normal explicit worker-plan approval.
+
+Integration first reports exact commits, changed paths, ownership violations,
+and merge conflicts without changing the parent. Only `--yes` cherry-picks into
+the clean parent worktree. Conflicts, cancellation, or worker failure retain all
+branches and worktrees. Worker identity is included in bounded JSONL event logs.
+See [`docs/local-first-automation.md`](docs/local-first-automation.md) for the
+state, privacy, recovery, and scheduler contracts.
+
 ### Local workflow packs
 
 Workflow packs combine local skills, instructions, stdio MCP servers, LSP

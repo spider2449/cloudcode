@@ -93,5 +93,7 @@ describe("packaging entry points", () => {
     expect(existsSync(join(root, "docs/packs/cloudcode-pack.schema.json"))).toBe(true);
     expect(existsSync(join(root, "docs/packs/authoring.md"))).toBe(true);
     expect(existsSync(join(root, "examples/packs/reference-inert/cloudcode-pack.json"))).toBe(true);
+    expect(packageJson.files).toContain("docs/local-first-automation.md");
+    expect(existsSync(join(root, "docs/local-first-automation.md"))).toBe(true);
   });
 });

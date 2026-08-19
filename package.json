@@ -18,6 +18,7 @@
     "dist",
     "welcome.txt",
     "README.md",
+    "docs/local-first-automation.md",
     "docs/packs",
     "examples/packs"
   ],
