@@ -4,6 +4,7 @@ import type { EffortLevel } from "../engine/effort.js";
 import type { ContextSnapshot } from "../engine/loop.js";
 import type { Skill } from "../agent/skills.js";
 import type { ChangeSummary, UndoPreview, UndoResult } from "../agent/changeJournal.js";
+import type { GitReviewSnapshot } from "../agent/gitReview.js";
 
 export interface CommandContext {
   notice(text: string): void;
@@ -38,6 +39,7 @@ export interface CommandContext {
   changeDiff(path?: string): { content: string; truncated: boolean };
   previewUndo(): UndoPreview;
   undoLatest(): UndoResult;
+  gitReview(stagedOnly?: boolean): Promise<GitReviewSnapshot>;
 }
 
 export interface Command {

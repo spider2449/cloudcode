@@ -12,7 +12,7 @@ import {
 } from "../agent/skillRepos.js";
 import { isDirLike } from "../agent/skills.js";
 import { EFFORT_LEVELS, isEffortLevel } from "../engine/effort.js";
-import { formatChanges, formatUndoPreview, formatUndoResult } from "./changeFormatting.js";
+import { formatChanges, formatReviewPrompt, formatUndoPreview, formatUndoResult } from "./changeFormatting.js";
 
 const MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
 
@@ -330,6 +330,20 @@ const commands: Command[] = [
       ctx.notice(formatUndoResult(ctx.undoLatest()));
     },
     completeArgs(prefix) { return ["--yes"].filter(value => value.startsWith(prefix)); }
+  },
+  {
+    name: "review",
+    description: "Review Git changes without modifying files: /review [--staged]",
+    async run(ctx, args) {
+      if (args !== "" && args !== "--staged") {
+        ctx.notice("Usage: /review [--staged]");
+        return;
+      }
+      const review = await ctx.gitReview(args === "--staged");
+      const fallback = ctx.changeDiff().content;
+      ctx.sendPrompt(formatReviewPrompt(review, ctx.changeSummaries(), fallback));
+    },
+    completeArgs(prefix) { return ["--staged"].filter(value => value.startsWith(prefix)); }
   },
   {
     name: "effort",

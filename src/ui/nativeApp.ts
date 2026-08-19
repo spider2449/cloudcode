@@ -24,6 +24,7 @@ import { PermissionController } from "./permissionController.js";
 import { KeyRouter, type KeyRouterHost } from "./keyRouter.js";
 import { UsageTracker } from "./usageTracker.js";
 import { openMemoryPicker, openProjectPicker, openResumePicker, type PickerDeps } from "./appPickers.js";
+import { collectGitReview } from "../agent/gitReview.js";
 import { Buffer } from "./buffer.js";
 import { InputBox } from "./widgets/inputBox.js";
 import { OverlayManager } from "./widgets/overlay.js";
@@ -362,7 +363,8 @@ export class App {
       changeSummaries: latestOnly => this.session?.changeSummaries(latestOnly) ?? [],
       changeDiff: path => this.session?.changeDiff(path) ?? { content: "No session-owned changes.", truncated: false },
       previewUndo: () => this.session?.previewUndo() ?? { operations: [], conflicts: [] },
-      undoLatest: () => this.session?.undoLatest() ?? { applied: false, operations: [], conflicts: [], rollbackErrors: [] }
+      undoLatest: () => this.session?.undoLatest() ?? { applied: false, operations: [], conflicts: [], rollbackErrors: [] },
+      gitReview: stagedOnly => collectGitReview(this.props.cwd, stagedOnly)
     };
   }
 

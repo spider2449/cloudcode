@@ -61,7 +61,8 @@ function mockCtx(): CommandContext {
     changeSummaries: vi.fn().mockReturnValue([]),
     changeDiff: vi.fn().mockReturnValue({ content: "No session-owned changes.", truncated: false }),
     previewUndo: vi.fn().mockReturnValue({ operations: [], conflicts: [] }),
-    undoLatest: vi.fn().mockReturnValue({ applied: false, operations: [], conflicts: [], rollbackErrors: [] })
+    undoLatest: vi.fn().mockReturnValue({ applied: false, operations: [], conflicts: [], rollbackErrors: [] }),
+    gitReview: vi.fn().mockResolvedValue({ isGitRepo: true, status: "", diff: "", truncated: false })
   };
 }
 
@@ -91,7 +92,7 @@ describe("parseSlash", () => {
 describe("builtins", () => {
   it("registers all v1 commands", () => {
     const names = [...buildRegistry().keys()].sort();
-    expect(names).toEqual(["changes", "clear", "compact", "config", "context", "cost", "diff", "effort", "exit", "help", "init", "mcp", "memory", "model", "new", "permissions", "provider", "resume", "set", "skill", "skills", "theme", "undo"]);
+    expect(names).toEqual(["changes", "clear", "compact", "config", "context", "cost", "diff", "effort", "exit", "help", "init", "mcp", "memory", "model", "new", "permissions", "provider", "resume", "review", "set", "skill", "skills", "theme", "undo"]);
   });
 
   it("/new starts a new session", async () => {
@@ -205,6 +206,17 @@ describe("change commands", () => {
     expect(ctx.notice).toHaveBeenCalledWith(expect.stringContaining("/undo --yes"));
     await command.run(ctx, "--yes");
     expect(ctx.undoLatest).toHaveBeenCalledOnce();
+  });
+
+  it("/review gathers a read-only Git snapshot and starts a review turn", async () => {
+    const ctx = mockCtx();
+    vi.mocked(ctx.gitReview).mockResolvedValue({
+      isGitRepo: true, status: "1 .M N... a.ts", diff: "diff --git a/a.ts b/a.ts", truncated: false
+    });
+    await buildRegistry().get("review")!.run(ctx, "--staged");
+    expect(ctx.gitReview).toHaveBeenCalledWith(true);
+    expect(ctx.sendPrompt).toHaveBeenCalledWith(expect.stringContaining("Do not modify files"));
+    expect(ctx.sendPrompt).toHaveBeenCalledWith(expect.stringContaining("<git_diff>"));
   });
 });
 
