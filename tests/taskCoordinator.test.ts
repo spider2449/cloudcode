@@ -63,10 +63,28 @@ describe("task coordinator", () => {
     });
     expect(verify.reference.targetCommit).toBe(implementation.manifest.baseCommit);
     expect(verify.manifest.baseCommit).toBe(verify.reference.targetCommit);
-    const parent = coordinator.completeReadOnlyWorker(verify.manifest.taskId, "session-verify");
+    const results = await coordinator.runWorkers(parentTaskId, [{
+      taskId: verify.manifest.taskId, run: async (_signal, emit) => { emit("verified"); return "evidence"; }
+    }], { concurrency: 2, explicitParallel: true });
+    expect(results[0]).toMatchObject({ status: "completed", value: "evidence" });
+    const parent = coordinator.refresh(parentTaskId);
     expect(parent.children.find(child => child.taskId === verify.manifest.taskId)).toMatchObject({
-      state: "completed", sessionId: "session-verify"
+      state: "completed"
     });
     expect(readFileSync(verify.reference.eventLogPath, "utf8")).toContain('"workerId"');
+  }, 20_000);
+
+  it("propagates coordinator cancellation to scheduled workers and persists interruption", async () => {
+    const { runner, source, coordinator } = setup(); const parentTaskId = await approved(runner, source);
+    const research = await coordinator.addWorker({ parentTaskId, role: "research", provider: "local", model: "m" });
+    const running = coordinator.runWorkers(parentTaskId, [{
+      taskId: research.manifest.taskId,
+      run: signal => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }))
+    }]);
+    await new Promise(resolve => setImmediate(resolve));
+    coordinator.cancel(parentTaskId);
+    expect((await running)[0].status).toBe("cancelled");
+    expect(runner.show(research.manifest.taskId).state).toBe("interrupted");
+    expect(coordinator.parent(parentTaskId).coordinatorState).toBe("cancelled");
   }, 20_000);
 });

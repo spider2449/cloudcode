@@ -8,6 +8,7 @@ import {
 import { TaskRunner, TaskStateConflictError } from "./taskRunner.js";
 import type { RunLimits } from "../engine/runLimits.js";
 import { runGit, validateTaskWorktree, type GitRunner } from "./worktree.js";
+import { WorkerScheduler, type WorkerJob, type WorkerResult } from "./workerScheduler.js";
 
 export interface WorkerPlan {
   manifest: TaskManifest;
@@ -46,6 +47,7 @@ export class TaskCoordinator {
   private base: string;
   private runner: TaskRunner;
   private git: GitRunner;
+  private activeSchedulers = new Map<string, WorkerScheduler>();
 
   constructor(options: { configBase?: string; runner?: TaskRunner; git?: GitRunner } = {}) {
     this.base = options.configBase ?? configDir();
@@ -146,9 +148,50 @@ export class TaskCoordinator {
 
   cancel(taskId: string): TaskManifest {
     const parent = this.parent(taskId);
+    this.activeSchedulers.get(taskId)?.cancel(`coordinator ${taskId} cancelled`);
     parent.coordinatorState = "cancelled";
     saveTaskManifest(parent, this.base);
     return parent;
+  }
+
+  async runWorkers<T>(parentTaskId: string, jobs: Array<{
+    taskId: string; run: WorkerJob<T>["run"];
+  }>, options: { concurrency?: number; explicitParallel?: boolean } = {}): Promise<WorkerResult<T>[]> {
+    const parent = this.refresh(parentTaskId);
+    const scheduled: WorkerJob<T>[] = jobs.map(job => {
+      const reference = parent.children.find(child => child.taskId === job.taskId);
+      if (!reference) throw new TaskStateConflictError(`Worker ${job.taskId} is not owned by ${parentTaskId}.`);
+      const manifest = loadTaskManifest(job.taskId, this.base);
+      if (manifest.state !== "implementing" && manifest.state !== "verifying") {
+        throw new TaskStateConflictError(`Worker ${job.taskId} is ${manifest.state}; approve its plan before scheduling.`);
+      }
+      return { workerId: job.taskId, role: reference.role, eventLogPath: reference.eventLogPath, run: job.run };
+    });
+    const scheduler = new WorkerScheduler({
+      concurrency: options.concurrency, explicitParallel: options.explicitParallel
+    });
+    this.activeSchedulers.set(parentTaskId, scheduler);
+    parent.coordinatorState = "running";
+    saveTaskManifest(parent, this.base);
+    try {
+      const results = await scheduler.run(scheduled);
+      for (const result of results) {
+        const child = loadTaskManifest(result.workerId, this.base);
+        if (result.status === "completed") {
+          if (child.state === "implementing") transitionTask(child, "reviewReady", "scheduled worker completed");
+          if (child.workerRole !== "implement" && child.state === "reviewReady") transitionTask(child, "completed", "read-only worker completed");
+        } else if (result.status === "cancelled") {
+          if (child.state === "implementing" || child.state === "verifying") transitionTask(child, "interrupted", "coordinator cancelled worker");
+        } else if (child.state === "implementing" || child.state === "verifying") {
+          transitionTask(child, "failed", result.error ?? "worker failed");
+        }
+        saveTaskManifest(child, this.base);
+      }
+      return results;
+    } finally {
+      this.activeSchedulers.delete(parentTaskId);
+      this.refresh(parentTaskId);
+    }
   }
 
   completeReadOnlyWorker(taskId: string, sessionId?: string): TaskManifest {
