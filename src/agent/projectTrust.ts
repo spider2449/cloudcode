@@ -69,6 +69,28 @@ export function inspectProjectExecutableConfig(cwd: string): ProjectConfigDescri
     if (hasCommand) files.push({ name: ".cloudcode/lsp.json", raw: lsp.raw });
   }
 
+  const task = readConfig(join(cwd, ".cloudcode", "task.json"));
+  if (task && task.value && typeof task.value === "object" && !Array.isArray(task.value)) {
+    const profiles = (task.value as { profiles?: unknown }).profiles;
+    let hasCommand = false;
+    if (profiles && typeof profiles === "object" && !Array.isArray(profiles)) {
+      for (const [profile, rawProfile] of Object.entries(profiles)) {
+        if (!rawProfile || typeof rawProfile !== "object") continue;
+        const entries = (rawProfile as { commands?: unknown }).commands;
+        if (!Array.isArray(entries)) continue;
+        for (const entry of entries) {
+          if (!entry || typeof entry !== "object") continue;
+          const command = (entry as { command?: unknown }).command;
+          const args = (entry as { args?: unknown }).args;
+          if (typeof command !== "string" || command === "") continue;
+          commands.push(`Task ${profile}: ${[command, ...(Array.isArray(args) ? args.map(String) : [])].join(" ")}`);
+          hasCommand = true;
+        }
+      }
+    }
+    if (hasCommand) files.push({ name: ".cloudcode/task.json", raw: task.raw });
+  }
+
   if (commands.length === 0) return undefined;
   const hash = createHash("sha256");
   for (const file of files) hash.update(file.name).update("\0").update(file.raw).update("\0");

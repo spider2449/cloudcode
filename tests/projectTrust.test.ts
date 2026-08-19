@@ -42,6 +42,17 @@ describe("project executable configuration trust", () => {
     expect(new ProjectTrustStore(trustFile).isTrusted(changed)).toBe(false);
   });
 
+  it("includes task verification commands in the content digest", () => {
+    const cwd = tempDir();
+    mkdirSync(join(cwd, ".cloudcode"));
+    const path = join(cwd, ".cloudcode", "task.json");
+    writeFileSync(path, JSON.stringify({ profiles: { focused: { commands: [{ command: "npm", args: ["test"] }] } } }));
+    const first = inspectProjectExecutableConfig(cwd);
+    expect(first?.commands).toEqual(["Task focused: npm test"]);
+    writeFileSync(path, JSON.stringify({ profiles: { focused: { commands: [{ command: "npm", args: ["run", "build"] }] } } }));
+    expect(inspectProjectExecutableConfig(cwd)?.digest).not.toBe(first?.digest);
+  });
+
   it("falls back to no trust for malformed state", () => {
     const cwd = tempDir();
     const trustFile = join(tempDir(), "trust.json");

@@ -138,3 +138,38 @@ export async function collectGitReview(
     error: errors.length > 0 ? errors.join("\n") : undefined
   };
 }
+
+export async function collectGitReviewAgainstBase(
+  cwd: string,
+  baseCommit: string,
+  runner: GitRunner = defaultGitRunner
+): Promise<GitReviewSnapshot> {
+  const probe = await runner(["rev-parse", "--verify", `${baseCommit}^{commit}`], cwd);
+  if (probe.code !== 0) {
+    return { isGitRepo: false, status: "", diff: "", truncated: probe.truncated, error: probe.stderr.trim() || "Base commit is unavailable." };
+  }
+  const status = await runner(["status", "--porcelain=v2", "-z", "--untracked-files=all"], cwd);
+  const committed = await runner(["diff", "--no-ext-diff", "--no-textconv", `${baseCommit}...HEAD`, "--"], cwd);
+  const working = await runner(["diff", "--no-ext-diff", "--no-textconv", "HEAD", "--"], cwd);
+  let diff = committed.stdout ? `# Committed changes since base\n${committed.stdout}` : "";
+  if (working.stdout) diff += `${diff ? "\n" : ""}# Uncommitted tracked changes\n${working.stdout}`;
+  let truncated = probe.truncated || status.truncated || committed.truncated || working.truncated;
+  if (Buffer.byteLength(diff) < OUTPUT_LIMIT) {
+    const untracked = renderUntracked(cwd, untrackedPaths(status.stdout), OUTPUT_LIMIT - Buffer.byteLength(diff));
+    if (untracked.content) diff += `${diff ? "\n" : ""}# Untracked files\n${untracked.content}`;
+    truncated ||= untracked.truncated;
+  }
+  if (Buffer.byteLength(diff) > OUTPUT_LIMIT) {
+    diff = Buffer.from(diff).subarray(0, OUTPUT_LIMIT).toString("utf8");
+    truncated = true;
+  }
+  const errors = [status, committed, working].filter(item => item.code !== 0)
+    .map(item => item.stderr.trim()).filter(Boolean);
+  return {
+    isGitRepo: true,
+    status: status.stdout.split("\0").filter(Boolean).join("\n"),
+    diff,
+    truncated,
+    error: errors.length ? errors.join("\n") : undefined
+  };
+}
