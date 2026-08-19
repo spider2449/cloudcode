@@ -19,7 +19,8 @@
         "mcp": { "$ref": "#/$defs/relativePath" },
         "lsp": { "$ref": "#/$defs/relativePath" },
         "validations": { "$ref": "#/$defs/relativePath" },
-        "instructions": { "$ref": "#/$defs/relativePath" }
+        "instructions": { "$ref": "#/$defs/relativePath" },
+        "maintenance": { "$ref": "#/$defs/relativePath" }
       },
       "additionalProperties": false
     }

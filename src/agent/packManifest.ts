@@ -11,6 +11,7 @@ export interface PackResources {
   lsp?: string;
   validations?: string;
   instructions?: string;
+  maintenance?: string;
 }
 
 export interface PackManifest {
@@ -35,7 +36,7 @@ export type PackValidation = { ok: true; pack: ValidatedPack } | { ok: false; er
 
 const CAPABILITIES: readonly PackCapability[] = ["readProject", "writeProject", "runProcess", "localMcp", "network"];
 const PLATFORMS: readonly PackPlatform[] = ["win32", "linux", "darwin"];
-const RESOURCE_KEYS = ["skills", "mcp", "lsp", "validations", "instructions"] as const;
+const RESOURCE_KEYS = ["skills", "mcp", "lsp", "validations", "instructions", "maintenance"] as const;
 const KNOWN_KEYS = new Set([
   "schemaVersion", "name", "version", "description", "platforms", "requiredExecutables", "capabilities", "resources"
 ]);
@@ -129,7 +130,7 @@ export function validatePackDirectory(path: string): PackValidation {
     if (target !== root && !target.startsWith(root + sep)) { errors.push(`Resource escaped pack root: ${resource}`); continue; }
     files.push(...collectFiles(target, root, errors));
   }
-  for (const key of ["mcp", "lsp", "validations"] as const) {
+  for (const key of ["mcp", "lsp", "validations", "maintenance"] as const) {
     const resource = parsed.manifest.resources[key];
     if (!resource) continue;
     try { JSON.parse(readFileSync(join(root, resource), "utf8")); }
