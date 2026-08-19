@@ -17,7 +17,9 @@
   "files": [
     "dist",
     "welcome.txt",
-    "README.md"
+    "README.md",
+    "docs/packs",
+    "examples/packs"
   ],
   "scripts": {
     "dev": "tsx src/cli.tsx",

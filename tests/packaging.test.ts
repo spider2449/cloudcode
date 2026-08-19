@@ -87,4 +87,11 @@ describe("packaging entry points", () => {
     }
     expect(packageJson.scripts.build).toContain("tsc");
   });
+
+  it("ships the workflow-pack schema, guide, and inert reference fixture", () => {
+    expect(packageJson.files).toEqual(expect.arrayContaining(["docs/packs", "examples/packs"]));
+    expect(existsSync(join(root, "docs/packs/cloudcode-pack.schema.json"))).toBe(true);
+    expect(existsSync(join(root, "docs/packs/authoring.md"))).toBe(true);
+    expect(existsSync(join(root, "examples/packs/reference-inert/cloudcode-pack.json"))).toBe(true);
+  });
 });

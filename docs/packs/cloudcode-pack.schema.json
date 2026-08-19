@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cloudcode.local/schemas/cloudcode-pack-v1.json",
+  "title": "cloudcode local workflow pack",
+  "type": "object",
+  "required": ["schemaVersion", "name", "version", "description", "capabilities", "resources"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,63}$" },
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$" },
+    "description": { "type": "string", "minLength": 1 },
+    "platforms": { "type": "array", "uniqueItems": true, "items": { "enum": ["win32", "linux", "darwin"] } },
+    "requiredExecutables": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "capabilities": { "type": "array", "uniqueItems": true, "items": { "enum": ["readProject", "writeProject", "runProcess", "localMcp", "network"] } },
+    "resources": {
+      "type": "object",
+      "properties": {
+        "skills": { "$ref": "#/$defs/relativePath" },
+        "mcp": { "$ref": "#/$defs/relativePath" },
+        "lsp": { "$ref": "#/$defs/relativePath" },
+        "validations": { "$ref": "#/$defs/relativePath" },
+        "instructions": { "$ref": "#/$defs/relativePath" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": { "relativePath": { "type": "string", "minLength": 1 } },
+  "additionalProperties": true
+}

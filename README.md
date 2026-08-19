@@ -91,6 +91,28 @@ against the recorded base commit and produces a local PR-ready report without
 contacting a remote host. Removal requires `--yes` and refuses dirty worktrees
 or branches whose commits are not merged into the source branch.
 
+### Local workflow packs
+
+Workflow packs combine local skills, instructions, stdio MCP servers, LSP
+servers, and verification profiles without a registry or download step. A link
+stores a canonical local path and content digest; project enablement records the
+exact name, version, and digest in `.cloudcode/packs.json`.
+
+    cloudcode pack validate D:\packs\houdini
+    cloudcode pack link D:\packs\houdini
+    cloudcode pack inspect houdini
+    cloudcode pack enable houdini --project
+    cloudcode pack doctor
+    cloudcode pack disable houdini --project
+    cloudcode pack unlink houdini --yes
+
+Changed pack content becomes stale and is not loaded until it is explicitly
+relinked, inspected, and re-enabled. Executable MCP/LSP/validation contributions
+also participate in project content-digest trust. Network-capable packs cannot
+be enabled under `offlineStrict` or `providerOnly`. See
+[`docs/packs/authoring.md`](docs/packs/authoring.md) and the inert
+[`examples/packs/reference-inert`](examples/packs/reference-inert) pack.
+
 ## Network modes and the local-first boundary
 
 cloudcode defaults new installations to `providerOnly`. Set the saved mode with

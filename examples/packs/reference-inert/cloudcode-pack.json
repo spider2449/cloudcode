@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "name": "reference-inert",
+  "version": "1.0.0",
+  "description": "Inert reference pack with instructions and a read-only skill",
+  "platforms": ["win32", "linux", "darwin"],
+  "requiredExecutables": [],
+  "capabilities": ["readProject"],
+  "resources": { "skills": "skills", "instructions": "instructions.md" }
+}
