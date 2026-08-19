@@ -13,6 +13,7 @@ describe("configReport", () => {
     expect(report).toContain(join(d, "settings.json"));
     expect(report).toContain(join(d, "providers.json"));
     expect(report).toContain(join(d, "mcp.json"));
+    expect(report).toContain(join(d, "checkpoints"));
     expect(report).toContain("anthropic (default)");
     expect(report).toContain("permissionMode:  default");
   });

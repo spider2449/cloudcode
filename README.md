@@ -162,8 +162,32 @@ Check loaded servers and their tools with `/mcp` at runtime.
 ## Commands
 
 /help /clear /compact /config /init /model /permissions /provider /resume /set
-/cost /mcp /skills /skill /theme /memory /exit
+/cost /changes /diff /undo /review /mcp /skills /skill /theme /memory /exit
 Shift+Tab cycles permission modes. Esc interrupts. Ctrl+C twice exits.
+
+## Change checkpoints and review
+
+Each turn that changes files through cloudcode's native `Write` or `Edit` tool
+creates an automatic checkpoint. `/changes` lists the native edits owned by the
+current session, `/diff [path]` shows their current diff, and `/undo` previews
+the latest checkpoint before `/undo --yes` restores it. Undo refuses to touch a
+file if its contents or filesystem identity changed after the checkpoint, so it
+does not overwrite newer edits from the user or another program.
+
+Checkpoints preserve the exact state immediately before cloudcode's edit,
+including pre-existing uncommitted work; they never use `git reset`, `git
+restore`, or `git stash`. Data is stored outside the repository under
+`~/.cloudcode/checkpoints/<session-id>/` and remains available after resuming
+that session. The default retention is 20 checkpoints and 100 MiB per session,
+with a 10 MiB before-image limit per file. `/changes` marks edits that exceeded
+a limit as not undoable.
+
+Only native `Write` and `Edit` calls are guaranteed recoverable. Arbitrary file
+changes made by Bash, MCP tools, or external programs cannot be safely inferred
+or reversed. Use `/review` to have the agent inspect the complete staged,
+unstaged, and untracked Git state; `/review --staged` restricts it to the index.
+Git review is read-only, disables external diff/textconv drivers, and falls
+back to the native checkpoint diff outside a Git worktree.
 
 ## Memory
 

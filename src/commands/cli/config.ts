@@ -11,6 +11,7 @@ export function configReport(dir: string = configDir()): string {
     `  settings:  ${join(dir, "settings.json")}`,
     `  providers: ${join(dir, "providers.json")}`,
     `  mcp:       ${join(dir, "mcp.json")}`,
+    `  checkpoints: ${join(dir, "checkpoints")}`,
     "",
     "Effective settings:",
     `  provider:        ${s.provider ?? "anthropic (default)"}`,
