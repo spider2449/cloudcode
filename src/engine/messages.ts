@@ -16,8 +16,9 @@ export type EngineMessage =
   | { type: "system"; subtype: "init"; session_id: string; tools: string[] }
   | { type: "stream_event"; event: { type: "content_block_delta"; delta: { type: "text_delta"; text: string } | { type: "thinking_delta"; thinking: string } } }
   | { type: "assistant"; message: { content: ContentBlock[] } }
-  | { type: "result"; subtype: "success"; total_cost_usd?: number; duration_ms: number; usage?: Usage }
+  | { type: "result"; subtype: "success"; total_cost_usd?: number; duration_ms: number; usage?: Usage; finish_reason?: "completed" | "limit" | "interrupted" }
   | { type: "result"; subtype: "error_during_execution"; result: string }
+  | { type: "limit"; limit: "maxTurns" | "timeoutMs" | "maxCostUsd"; value: number }
   | { type: "tool_result"; tool_use_id: string; content: unknown; is_error: boolean };
 
 export function textDelta(text: string): EngineMessage {
@@ -38,4 +39,8 @@ export function errorResult(result: string): EngineMessage {
 
 export function toolResultMessage(tool_use_id: string, content: unknown, is_error: boolean): EngineMessage {
   return { type: "tool_result", tool_use_id, content, is_error };
+}
+
+export function limitMessage(limit: "maxTurns" | "timeoutMs" | "maxCostUsd", value: number): EngineMessage {
+  return { type: "limit", limit, value };
 }

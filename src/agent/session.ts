@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { errorResult, type EngineMessage } from "../engine/messages.js";
+import { errorResult, limitMessage, type EngineMessage } from "../engine/messages.js";
 import { EngineLoop, type ContextSnapshot } from "../engine/loop.js";
 import { makeClient } from "../engine/api.js";
 import { builtinTools } from "../engine/registry.js";
@@ -21,10 +21,13 @@ import {
 import {
   ChangeJournal, type ChangeSummary, type UndoPreview, type UndoResult
 } from "./changeJournal.js";
+import {
+  RunLimitError, validateRunLimits, type RunLimits
+} from "../engine/runLimits.js";
 
 export type PermissionMode = "default" | "acceptEdits" | "bypassPermissions";
 
-const DEFAULT_MODEL = "claude-sonnet-5";
+export const DEFAULT_MODEL = "claude-sonnet-5";
 
 // Exported for tests: pure decision of whether background extraction should run.
 export function shouldExtract(messages: unknown[], fromIndex: number, dir: string): boolean {
@@ -53,6 +56,7 @@ export interface AgentSessionOptions {
   networkMode?: NetworkMode;
   networkPolicy?: NetworkPolicy;
   verifiedNoNetworkSandbox?: boolean;
+  runLimits?: RunLimits;
   onMessage(msg: EngineMessage): void;
   onPermissionRequest(req: PermissionRequest): void;
   onSessionId(id: string): void;
@@ -73,6 +77,8 @@ export class AgentSession {
   private cancelPendingStart: (() => void) | undefined;
   private changes: ChangeJournal | undefined;
   private turnActive = false;
+  private runDeadline: number | undefined;
+  private timeoutTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private opts: AgentSessionOptions) {
     this.lsp = new LspManager(opts.lspRegistry);
@@ -81,6 +87,10 @@ export class AgentSession {
 
   start(): void {
     this.sessionId = this.opts.resume ?? randomUUID();
+    const model = this.opts.model ?? this.opts.provider.model ?? DEFAULT_MODEL;
+    validateRunLimits(this.opts.runLimits, model);
+    this.runDeadline = this.opts.runLimits?.timeoutMs === undefined
+      ? undefined : Date.now() + this.opts.runLimits.timeoutMs;
     const resumedMessages = this.opts.resume ? SessionFile.load(this.opts.resume) : [];
     const store = new PermissionStore(this.opts.cwd);
     this.changes = this.opts.changeJournalFactory?.(this.opts.cwd, this.sessionId) ??
@@ -94,12 +104,13 @@ export class AgentSession {
     const tools = builtinTools({ allowArbitraryChildNetwork: bash.available });
     this.loop = new EngineLoop({
       client: makeClient(this.opts.provider),
-      model: this.opts.model ?? this.opts.provider.model ?? DEFAULT_MODEL,
+      model,
       systemPrompt: buildSystemPrompt(this.opts.cwd),
       tools,
       cwd: this.opts.cwd,
       effort: this.opts.effort,
       contextWindow: this.opts.provider.model_context_window,
+      runLimits: this.opts.runLimits,
       permissionMode: this.opts.permissionMode,
       store,
       lsp: this.lsp,
@@ -143,6 +154,12 @@ export class AgentSession {
     this.abortController = new AbortController();
     const controller = this.abortController;
     const before = this.loop?.messages.length ?? 0;
+    if (this.runDeadline !== undefined) {
+      const remaining = Math.max(0, this.runDeadline - Date.now());
+      this.timeoutTimer = setTimeout(() => {
+        controller.abort(new RunLimitError("timeoutMs", this.opts.runLimits?.timeoutMs ?? remaining));
+      }, remaining);
+    }
     let cancelledBeforeStart = false;
     this.cancelPendingStart = () => {
       if (cancelledBeforeStart) return;
@@ -169,10 +186,14 @@ export class AgentSession {
           for (const entry of added) this.sessionFile?.append(entry);
           this.maybeExtractMemories();
         } finally {
+          if (this.timeoutTimer) clearTimeout(this.timeoutTimer);
+          this.timeoutTimer = undefined;
           this.changes?.finishCheckpoint();
           this.turnActive = false;
         }
       } catch (err) {
+        if (this.timeoutTimer) clearTimeout(this.timeoutTimer);
+        this.timeoutTimer = undefined;
         this.turnActive = false;
         // runTurn never rejects; this guards checkpoint/session persistence
         // failures from becoming an unhandled rejection that kills the process.
@@ -183,8 +204,28 @@ export class AgentSession {
     })();
   }
 
-  ready(): Promise<void> {
-    return this.mcpReady ?? Promise.resolve();
+  async ready(): Promise<void> {
+    const pending = this.mcpReady ?? Promise.resolve();
+    if (this.runDeadline === undefined || this.opts.runLimits?.timeoutMs === undefined) return pending;
+    const remaining = this.runDeadline - Date.now();
+    if (remaining <= 0) {
+      this.opts.onMessage(limitMessage("timeoutMs", this.opts.runLimits.timeoutMs));
+      throw new RunLimitError("timeoutMs", this.opts.runLimits.timeoutMs);
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        pending,
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new RunLimitError("timeoutMs", this.opts.runLimits?.timeoutMs ?? remaining)), remaining);
+        })
+      ]);
+    } catch (err) {
+      if (err instanceof RunLimitError) this.opts.onMessage(limitMessage(err.limit, err.value));
+      throw err;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   // Fire-and-forget background memory extraction. Never blocks or surfaces
@@ -211,8 +252,8 @@ export class AgentSession {
     }).catch(() => { /* extraction is best-effort; never surface errors */ });
   }
 
-  async interrupt(): Promise<void> {
-    this.abortController?.abort();
+  async interrupt(reason?: unknown): Promise<void> {
+    this.abortController?.abort(reason);
     this.cancelPendingStart?.();
   }
 
@@ -283,6 +324,8 @@ export class AgentSession {
   async dispose(): Promise<void> {
     this.disposed = true;
     this.cancelPendingStart = undefined;
+    if (this.timeoutTimer) clearTimeout(this.timeoutTimer);
+    this.timeoutTimer = undefined;
     this.abortController?.abort();
     await this.mcp.dispose();
     this.lsp.shutdown();

@@ -11,6 +11,10 @@ const PRICES: Record<string, [number, number]> = {
   "claude-haiku-4-5": [1, 5]
 };
 
+export function pricingKnown(model: string): boolean {
+  return Object.keys(PRICES).some(key => model.startsWith(key));
+}
+
 export function costUsd(model: string, usage: Usage): number | undefined {
   const p = Object.entries(PRICES).find(([k]) => model.startsWith(k))?.[1];
   if (!p) return undefined;

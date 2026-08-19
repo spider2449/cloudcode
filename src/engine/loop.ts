@@ -1,5 +1,5 @@
 import type { EngineMessage, ContentBlock, Usage } from "./messages.js";
-import { textDelta, thinkingDelta, assistantMessage, errorResult, toolResultMessage } from "./messages.js";
+import { textDelta, thinkingDelta, assistantMessage, errorResult, limitMessage, toolResultMessage } from "./messages.js";
 import type { FileMutationObserver, ToolDef } from "./tools/types.js";
 import type { MessagesClient } from "./api.js";
 import type { PermissionMode } from "../agent/session.js";
@@ -11,6 +11,7 @@ import { EFFORT_HEADROOM, clampEffortHeadroom, allowsDisabledThinking, type Effo
 import { DEFAULT_CONTEXT_WINDOW } from "../agent/providers.js";
 import type { LspManager } from "./lsp/manager.js";
 import { appendDiagnostics } from "./lsp/autoInject.js";
+import { RunLimitError, validateRunLimits, type RunLimitKind, type RunLimits } from "./runLimits.js";
 
 const MAX_TOKENS = 8192;
 const MAX_LOOP_TURNS = 100;
@@ -27,6 +28,7 @@ export interface EngineOptions {
   fileMutations?: FileMutationObserver;
   effort?: EffortLevel;
   contextWindow?: number;
+  runLimits?: RunLimits;
   onMessage(msg: EngineMessage): void;
   requestPermission(toolName: string, input: Record<string, unknown>): Promise<boolean>;
 }
@@ -81,6 +83,7 @@ export class EngineLoop {
     this.tools = opts.tools;
     this.effort = opts.effort ?? "off";
     this.systemPrompt = opts.systemPrompt;
+    validateRunLimits(opts.runLimits, opts.model);
   }
 
   setModel(model: string): void {
@@ -113,11 +116,35 @@ export class EngineLoop {
       totalCost = (totalCost ?? 0) + c;
     };
     let hitTurnLimit = true;
+    let providerRequests = 0;
+    let reached: RunLimitKind | undefined;
+    const markLimit = (limit: RunLimitKind, value: number) => {
+      if (reached) return;
+      reached = limit;
+      this.opts.onMessage(limitMessage(limit, value));
+    };
+    const addUsage = (next: Usage | undefined) => {
+      if (!next) return;
+      usage = {
+        input_tokens: (usage?.input_tokens ?? 0) + (next.input_tokens ?? 0),
+        output_tokens: (usage?.output_tokens ?? 0) + (next.output_tokens ?? 0),
+        cache_read_input_tokens: (usage?.cache_read_input_tokens ?? 0) + (next.cache_read_input_tokens ?? 0),
+        cache_creation_input_tokens: (usage?.cache_creation_input_tokens ?? 0) + (next.cache_creation_input_tokens ?? 0)
+      };
+    };
     try {
       for (let i = 0; i < MAX_LOOP_TURNS; i++) {
+        if (this.opts.runLimits?.maxTurns !== undefined && providerRequests >= this.opts.runLimits.maxTurns) {
+          markLimit("maxTurns", this.opts.runLimits.maxTurns);
+          hitTurnLimit = false;
+          break;
+        }
+        providerRequests++;
         const turn = await this.streamOnce(signal);
-        usage = turn.usage ?? usage;
+        addUsage(turn.usage);
         addCost(turn.usage);
+        const costReached = this.opts.runLimits?.maxCostUsd !== undefined &&
+          totalCost !== undefined && totalCost >= this.opts.runLimits.maxCostUsd;
         // An empty content array is not valid API input, so keep it out of the
         // history entirely rather than poisoning the next turn's request.
         if (turn.blocks.length > 0) this.messages.push({ role: "assistant", content: turn.blocks });
@@ -133,6 +160,23 @@ export class EngineLoop {
               { type: "text", text: "\n[Response truncated: hit the max_tokens output limit]" }
             ]));
           }
+          if (costReached && this.opts.runLimits?.maxCostUsd !== undefined) {
+            markLimit("maxCostUsd", this.opts.runLimits.maxCostUsd);
+          }
+          break;
+        }
+        if (signal.aborted) {
+          hitTurnLimit = false;
+          break;
+        }
+        if (costReached && this.opts.runLimits?.maxCostUsd !== undefined) {
+          markLimit("maxCostUsd", this.opts.runLimits.maxCostUsd);
+          hitTurnLimit = false;
+          break;
+        }
+        if (this.opts.runLimits?.maxTurns !== undefined && providerRequests >= this.opts.runLimits.maxTurns) {
+          markLimit("maxTurns", this.opts.runLimits.maxTurns);
+          hitTurnLimit = false;
           break;
         }
         // Tool calls present: emit each block's label/diff immediately
@@ -176,22 +220,29 @@ export class EngineLoop {
         this.opts.onMessage(assistantMessage([
           { type: "text", text: `\n[Stopped after ${MAX_LOOP_TURNS} tool-use turns without a final answer]` }
         ]));
+        markLimit("maxTurns", MAX_LOOP_TURNS);
       }
+      const abortLimit = signal.reason instanceof RunLimitError ? signal.reason : undefined;
+      if (abortLimit) markLimit(abortLimit.limit, abortLimit.value);
       this.opts.onMessage({
         type: "result",
         subtype: "success",
         duration_ms: Date.now() - started,
         usage,
-        total_cost_usd: costKnown ? totalCost : undefined
+        total_cost_usd: costKnown ? totalCost : undefined,
+        finish_reason: reached ? "limit" : signal.aborted ? "interrupted" : "completed"
       });
     } catch (err) {
       if (signal.aborted) {
+        const abortLimit = signal.reason instanceof RunLimitError ? signal.reason : undefined;
+        if (abortLimit) markLimit(abortLimit.limit, abortLimit.value);
         this.opts.onMessage({
           type: "result",
           subtype: "success",
           duration_ms: Date.now() - started,
           usage,
-          total_cost_usd: costKnown ? totalCost : undefined
+          total_cost_usd: costKnown ? totalCost : undefined,
+          finish_reason: reached ? "limit" : "interrupted"
         });
       } else {
         this.opts.onMessage(errorResult(err instanceof Error ? err.message : String(err)));

@@ -225,6 +225,21 @@ describe("AgentSession", () => {
     await session.dispose();
   });
 
+  it("counts MCP readiness against the complete run timeout", async () => {
+    vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("never")]));
+    const manager = new McpManager(async () => new Promise(() => {}));
+    const messages: unknown[] = [];
+    const session = new AgentSession({
+      providerName: "anthropic", provider: {}, permissionMode: "default", cwd: "/p",
+      mcpServers: { slow: { command: "slow" } }, mcpManager: manager, runLimits: { timeoutMs: 10 },
+      onMessage: message => messages.push(message), onPermissionRequest: () => {}, onSessionId: () => {}
+    });
+    session.start();
+    await expect(session.ready()).rejects.toMatchObject({ code: "RUN_LIMIT_REACHED", limit: "timeoutMs" });
+    expect(messages).toContainEqual({ type: "limit", limit: "timeoutMs", value: 10 });
+    await session.dispose();
+  });
+
   it("groups native edits from one turn into a durable checkpoint", async () => {
     const root = mkdtempSync(join(tmpdir(), "cc-session-changes-"));
     const project = join(root, "project");
