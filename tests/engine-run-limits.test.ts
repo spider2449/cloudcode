@@ -25,8 +25,8 @@ const textTurn = () => [
 ];
 
 function client(turns: object[][]) {
-  let index = 0;
-  return { async *create() { for (const event of turns[index++] ?? []) yield event as never; } };
+  const remaining = [...turns];
+  return { async *create() { for (const event of remaining.shift() ?? []) yield event as never; } };
 }
 
 function loop(options: {
