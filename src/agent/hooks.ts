@@ -141,7 +141,8 @@ const defaultExecutor: HookExecutor = (command, options) =>
       windowsHide: true,
       env: { ...process.env, CLOUDCODE_HOOK_EVENT: eventName }
     }, (err, _stdout, stderr) => {
-      const killed = (err as { killed?: boolean }).killed === true;
+      // execFile passes err === null on success; guard before reading fields.
+      const killed = err !== null && (err as { killed?: boolean }).killed === true;
       const code = err === null
         ? 0
         : typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : 1;
