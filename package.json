@@ -39,7 +39,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "cli-highlight": "^2.1.11",
     "cli-table3": "^0.6.5",
-    "marked": "^15.0.12",
+    "marked": "^18.0.10",
     "turndown": "^7.2.4"
   },
   "devDependencies": {
