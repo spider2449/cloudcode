@@ -212,7 +212,7 @@ export class AgentSession {
     });
   }
 
-  send(text: string): void {
+  send(text: string, images?: Array<{ mediaType: string; base64: string }>): void {
     if (this.turnActive) {
       this.opts.onMessage(errorResult("A turn is already running."));
       return;
@@ -250,7 +250,7 @@ export class AgentSession {
         await this.hooksRunner?.run("UserPromptSubmit", { promptLength: text.length });
         this.changes?.beginCheckpoint();
         try {
-          await this.loop?.runTurn(text, controller.signal);
+          await this.loop?.runTurn(text, controller.signal, images);
           const added = this.loop?.messages.slice(before) ?? [];
           for (const entry of added) this.sessionFile?.append(entry);
           if (this.sessionFile && this.todos !== todosAtStart) {

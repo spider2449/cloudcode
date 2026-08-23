@@ -94,3 +94,19 @@ describe("KeyRouter", () => {
     expect(h.calls).toEqual(["paste:hello", "recompute", "inputKey", "recompute", "inputKey", "recompute"]);
   });
 });
+
+describe("KeyRouter clipboard attach", () => {
+  it("Ctrl+V asks the host to attach a clipboard image while idle", () => {
+    let attached = 0;
+    const h = host({ attachImage: () => { attached += 1; } });
+    new KeyRouter(h.host).handleKey(ctrl("v"));
+    expect(attached).toBe(1);
+  });
+
+  it("ignores Ctrl+V while streaming", () => {
+    let attached = 0;
+    const h = host({ isStreaming: () => true, attachImage: () => { attached += 1; } });
+    new KeyRouter(h.host).handleKey(ctrl("v"));
+    expect(attached).toBe(0);
+  });
+});

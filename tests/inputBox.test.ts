@@ -225,3 +225,12 @@ describe("InputBox", () => {
     expect(box.render(theme, 80, true).contentRows.join("\n")).toContain("pasted");
   });
 });
+
+describe("inputBox attachments", () => {
+  it("shows an attachment count in the hint row when images are pending", () => {
+    const box = new InputBox();
+    box.attachmentCount = 2;
+    const render = box.render(THEMES.dark, 80, false);
+    expect(render.hintRow).toContain("[image 2]");
+  });
+});

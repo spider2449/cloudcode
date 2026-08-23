@@ -26,6 +26,10 @@ import { DEFAULT_STATUS_LINE_ITEMS, type StatusLineItem } from "../statusLineIte
 import { collectGitReview } from "../agent/gitReview.js";
 import { Buffer } from "./buffer.js";
 import { InputBox } from "./widgets/inputBox.js";
+import { captureClipboardImage } from "./clipboard.js";
+import { existsSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { OverlayManager } from "./widgets/overlay.js";
 import { InlineRenderer, type BottomState } from "./term/render.js";
 import { CLEAR_AND_HOME, CLEAR_ALL_AND_HOME, sgr, SGR_RESET } from "./term/ansi.js";
@@ -34,7 +38,6 @@ import type { ITerminal } from "./term/terminal.js";
 import type { Key } from "./input.js";
 import { loadSettings, saveSetting } from "../agent/settings.js";
 import type { EffortLevel } from "../engine/effort.js";
-import { join } from "node:path";
 import type { NetworkDecisionRecorder, NetworkMode } from "../agent/networkPolicy.js";
 import { NetworkController } from "./networkController.js";
 import { SessionPresentation } from "./sessionPresentation.js";
@@ -380,9 +383,11 @@ export class App {
       if (this.session?.sessionId) this.recordSession(this.session.sessionId, this.providerName);
     }
     this.buffer.append({ kind: "user", text });
+    const images = this.pendingImages;
+    this.clearPendingImages();
     this.phase = "streaming";
     this.workStartedAt = Date.now();
-    this.session?.send(text);
+    this.session?.send(text, images);
     this.recompute();
   }
 
@@ -485,6 +490,34 @@ export class App {
     this.recompute();
   }
 
+  private pendingImages: Array<{ mediaType: string; base64: string }> = [];
+  private attachSeq = 0;
+
+  /** Ctrl+V: snapshot the clipboard image into the pending attachments. */
+  private attachClipboardImage(): void {
+    const targetPath = join(tmpdir(), `cloudcode-clipboard-${Date.now()}-${this.attachSeq++}.png`);
+    void captureClipboardImage(targetPath).then(result => {
+      if (!result.savedPath || !existsSync(result.savedPath)) {
+        this.notice("No image in clipboard.");
+        return;
+      }
+      try {
+        const buf = readFileSync(result.savedPath);
+        this.pendingImages.push({ mediaType: "image/png", base64: buf.toString("base64") });
+        this.inputBox.attachmentCount = this.pendingImages.length;
+        this.notice(`[image ${this.pendingImages.length} attached]`);
+        this.recompute();
+      } catch (err) {
+        this.notice(`Failed to attach image: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    });
+  }
+
+  private clearPendingImages(): void {
+    this.pendingImages = [];
+    this.inputBox.attachmentCount = 0;
+  }
+
   private keyRouterHost(): KeyRouterHost {
     return {
       isStreaming: () => this.phase === "streaming",
@@ -502,7 +535,14 @@ export class App {
       },
       handleOverlayKey: (k, input) => this.overlay.handleKey(k, input),
       handlePaste: text => this.inputBox.handlePaste(text),
-      handleInputKey: k => this.inputBox.handleKey(k),
+      handleInputKey: k => {
+        this.inputBox.handleKey(k);
+        if (k.t === "esc" && this.pendingImages.length > 0) {
+          this.clearPendingImages();
+          this.notice("Attachments cleared.");
+        }
+      },
+      attachImage: () => this.attachClipboardImage(),
       recompute: () => this.recompute()
     };
   }

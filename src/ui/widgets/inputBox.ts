@@ -19,6 +19,8 @@ export interface InputBoxRender {
 
 export class InputBox {
   onSubmit: ((text: string) => void) | undefined;
+  /** Pending clipboard image attachments, shown in the hint row. */
+  attachmentCount = 0;
 
   private value = "";
   private cursor = 0;
@@ -139,7 +141,10 @@ export class InputBox {
     const dividerCode = sgr(theme.muted);
     const divider = "─".repeat(Math.max(1, width));
     const borderRows = [dividerCode ? `${dividerCode}${divider}${SGR_RESET}` : divider];
-    const hintRow = streaming ? "working… (Esc to interrupt)" : null;
+    const attachHint = this.attachmentCount > 0 ? `[image ${this.attachmentCount}] ` : "";
+    const hintRow = this.attachmentCount > 0
+      ? `${attachHint}Ctrl+V attach - Esc clear`
+      : streaming ? "working… (Esc to interrupt)" : null;
     const suggestions = this.currentSuggestions();
     const menuRows = renderMenu(suggestions, Math.min(this.selected, Math.max(0, suggestions.length - 1)), theme, width);
     return {

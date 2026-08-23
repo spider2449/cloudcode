@@ -13,6 +13,7 @@ export interface KeyRouterHost {
   handleOverlayKey(k: Key, input: string | undefined): void;
   handlePaste(text: string): void;
   handleInputKey(k: Key): void;
+  attachImage(): void;
   recompute(): void;
 }
 
@@ -41,6 +42,10 @@ export class KeyRouter {
     if (k.t === "ctrl" && k.ch === "l") {
       this.host.clearScreen();
       this.host.recompute();
+      return;
+    }
+    if (k.t === "ctrl" && k.ch === "v" && !this.host.isStreaming()) {
+      this.host.attachImage();
       return;
     }
     if (k.t === "ctrl" && k.ch === "c") {
