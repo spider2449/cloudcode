@@ -14,22 +14,23 @@ describe("STANDARD_ROLES", () => {
   });
 
   it("values resolve through references for both modes", () => {
-    const json: ThemeJson = {
-      defs: { brand: "#123456" },
-      theme: {
-        primary: "brand", success: "brand", error: "brand", warning: "brand",
-        accent: "brand", text: "brand", textMuted: "brand",
-        backgroundPanel: "brand",
-        ...withStandardRoles({})
-      }
+    const core = {
+      primary: "#123456", success: "#123456", error: "#123456", warning: "#123456",
+      accent: "#123456", text: "#123456", textMuted: "#123456", backgroundPanel: "#123456"
     };
+    const json: ThemeJson = { theme: withStandardRoles(core) };
     expect(resolveThemeJson(json, "dark").markdownListItem).toBe("#123456");
     expect(resolveThemeJson(json, "light").diffAdded).toBe("#123456");
   });
 });
 
 describe("withStandardRoles", () => {
-  const core = { primary: "#111111", success: "#222222", error: "#333333" };
+  // Every core role the template references.
+  const core = {
+    primary: "#111111", success: "#222222", error: "#333333",
+    warning: "#444444", accent: "#555555", text: "#666666",
+    textMuted: "#777777", backgroundPanel: "#888888"
+  };
 
   it("fills missing keys with the template", () => {
     const out = withStandardRoles(core);
@@ -47,5 +48,12 @@ describe("withStandardRoles", () => {
     const input = { ...core };
     withStandardRoles(input);
     expect(input).toEqual(core);
+  });
+
+  it("skips a derivation whose references cannot resolve", () => {
+    // No backgroundPanel anywhere: diffContextBg must NOT be filled, or
+    // resolution would fail with an unknown reference.
+    const out = withStandardRoles({ primary: "#111111", success: "#222222" });
+    expect(out.diffContextBg).toBeUndefined();
   });
 });

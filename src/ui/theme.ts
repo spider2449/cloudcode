@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { loadSettings, saveSetting } from "../agent/settings.js";
 import { configDir } from "../agent/providers.js";
 import { resolveThemeJson, type ThemeJson, type ThemeMode } from "./themeJson.js";
+import { withStandardRoles } from "./standardRoles.js";
 import { BUILTIN_THEME_JSONS, BUILTIN_MODES } from "./themes/index.js";
 
 // App-facing theme: the 8 roles cloudcode's widgets consume, as "#rrggbb"
@@ -53,7 +54,8 @@ export function toAppTheme(resolved: Record<string, string>): Theme {
 export const THEMES: Record<string, Theme> = {};
 
 export function registerTheme(name: string, json: ThemeJson, mode?: ThemeMode): void {
-  THEMES[name] = toAppTheme(resolveThemeJson(json, mode ?? BUILTIN_MODES[name] ?? "dark"));
+  const effective: ThemeJson = { ...json, theme: withStandardRoles(json.theme, json.defs) };
+  THEMES[name] = toAppTheme(resolveThemeJson(effective, mode ?? BUILTIN_MODES[name] ?? "dark"));
 }
 
 for (const [name, json] of Object.entries(BUILTIN_THEME_JSONS)) registerTheme(name, json);
@@ -69,8 +71,10 @@ export function saveThemeName(name: string, filePath?: string): void {
 
 // Loads user theme files from <configDir>/themes/*.json. Theme name is the
 // filename without extension; a custom theme overrides a built-in of the
-// same name. Broken files are skipped with a warning so a bad theme can
-// never prevent startup.
+// same name. Roles a file does not declare are filled from the standard
+// role template (see standardRoles.ts), so a minimal theme renders fully
+// instead of falling back to gray. Broken files are skipped with a warning
+// so a bad theme can never prevent startup.
 export function loadCustomThemes(dir: string = join(configDir(), "themes")): string[] {
   let entries: string[];
   try {
@@ -88,7 +92,7 @@ export function loadCustomThemes(dir: string = join(configDir(), "themes")): str
       }
       registerTheme(name, json, "dark");
       // Validate the light variant too so a mode switch can't crash later.
-      resolveThemeJson(json, "light");
+      resolveThemeJson({ ...json, theme: withStandardRoles(json.theme, json.defs) }, "light");
     } catch (err) {
       if (BUILTIN_THEME_JSONS[name]) {
         registerTheme(name, BUILTIN_THEME_JSONS[name], BUILTIN_MODES[name]);

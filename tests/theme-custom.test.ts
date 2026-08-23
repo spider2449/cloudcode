@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { THEMES, loadCustomThemes, toAppTheme } from "../src/ui/theme.js";
+import { withStandardRoles } from "../src/ui/standardRoles.js";
 import { resolveThemeJson } from "../src/ui/themeJson.js";
 import { BUILTIN_THEME_JSONS, BUILTIN_MODES } from "../src/ui/themes/index.js";
 
@@ -59,7 +60,10 @@ describe("loadCustomThemes", () => {
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain("dark.json");
     expect(THEMES.dark).toBeDefined();
-    const expectedDark = toAppTheme(resolveThemeJson(BUILTIN_THEME_JSONS.dark, BUILTIN_MODES.dark ?? "dark"));
+    const expectedDark = toAppTheme(resolveThemeJson(
+      { ...BUILTIN_THEME_JSONS.dark, theme: withStandardRoles(BUILTIN_THEME_JSONS.dark.theme, BUILTIN_THEME_JSONS.dark.defs) },
+      BUILTIN_MODES.dark ?? "dark"
+    ));
     expect(THEMES.dark).toEqual(expectedDark);
     expect(THEMES.dark.accent).toMatch(/^#[0-9a-f]{6}$/i);
   });
@@ -68,5 +72,20 @@ describe("loadCustomThemes", () => {
     const dir = themeDir();
     writeFileSync(join(dir, "readme.txt"), "hi");
     expect(loadCustomThemes(dir)).toEqual([]);
+  });
+
+  it("a minimal custom theme gets standard-derived roles", () => {
+    const dir = themeDir();
+    writeFileSync(join(dir, "mini.json"), JSON.stringify({
+      theme: {
+        primary: "#ff0000", secondary: "#00ff00", accent: "#0000ff",
+        error: "#ff0011", warning: "#fff000", success: "#00ff11", info: "#000fff",
+        text: "#eeeeee", background: "#101010"
+      }
+    }));
+    expect(loadCustomThemes(dir)).toEqual([]);
+    expect(THEMES.mini).toBeDefined();
+    // markdownListItem derives from primary through the standard template.
+    expect(THEMES.mini["markdownListItem"]).toBe("#ff0000");
   });
 });

@@ -26,13 +26,31 @@ export const STANDARD_ROLES: Record<string, ColorValue> = {
 };
 // 15 entries — must match tests/standardRoles.test.ts's expected key list.
 
+function references(value: ColorValue): string[] {
+  const out: string[] = [];
+  const walk = (v: ColorValue): void => {
+    if (typeof v === "object" && v !== null) { walk(v.dark); walk(v.light); }
+    else if (typeof v === "string") out.push(v);
+  };
+  walk(value);
+  return out;
+}
+
 /** Returns the theme map extended with the standard derivation for every
- * key it does not already declare. Explicit keys always win; the input is
- * not mutated. */
-export function withStandardRoles(theme: Record<string, ColorValue>): Record<string, ColorValue> {
+ * key it does not already declare. Explicit keys always win; a derivation
+ * whose references cannot resolve anywhere in the theme (defs or map) is
+ * skipped rather than creating a dangling reference. The input is not
+ * mutated. */
+export function withStandardRoles(
+  theme: Record<string, ColorValue>,
+  defs?: Record<string, ColorValue>
+): Record<string, ColorValue> {
   const out = { ...theme };
+  const available = new Set([...Object.keys(theme), ...Object.keys(defs ?? {})]);
   for (const [key, value] of Object.entries(STANDARD_ROLES)) {
-    if (out[key] === undefined) out[key] = value;
+    if (out[key] !== undefined) continue;
+    if (!references(value).every(ref => available.has(ref))) continue;
+    out[key] = value;
   }
   return out;
 }
