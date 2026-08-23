@@ -127,6 +127,6 @@ export class BackgroundShellManager {
   }
 
   killAll(): void {
-    for (const id of [...this.shells.keys()]) void this.kill(id);
+    for (const id of this.shells.keys()) void this.kill(id);
   }
 }
