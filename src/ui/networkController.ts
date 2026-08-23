@@ -4,8 +4,12 @@ import {
   type NetworkDecisionRecorder, type NetworkMode
 } from "../agent/networkPolicy.js";
 
-/** Owns the TUI's effective network mode and creates provider-scoped policies. */
+/** Owns the TUI's effective network mode and creates provider-scoped policies.
+ * Policies are cached per provider so instances already held by a running
+ * session follow setMode() instead of keeping the startup snapshot. */
 export class NetworkController {
+  private policies = new Map<string, NetworkPolicy>();
+
   constructor(
     private current: NetworkMode,
     private providers: Record<string, ProviderConfig>,
@@ -14,11 +18,22 @@ export class NetworkController {
 
   get mode(): NetworkMode { return this.current; }
 
-  setMode(mode: NetworkMode): void { this.current = mode; }
+  setMode(mode: NetworkMode): void {
+    this.current = mode;
+    for (const policy of this.policies.values()) policy.setMode(mode);
+  }
 
   policyFor(providerName: string): NetworkPolicy {
-    const endpoint = providerEndpoint(this.providers[providerName] ?? {});
-    return new NetworkPolicy(this.current, endpoint, this.recorder);
+    let policy = this.policies.get(providerName);
+    if (!policy) {
+      policy = new NetworkPolicy(
+        this.current,
+        providerEndpoint(this.providers[providerName] ?? {}),
+        this.recorder
+      );
+      this.policies.set(providerName, policy);
+    }
+    return policy;
   }
 
   notice(): string {

@@ -14,4 +14,15 @@ describe("NetworkController", () => {
     expect(controller.mode).toBe("offlineStrict");
     expect(controller.notice()).toContain("Bash networking: disabled");
   });
+
+  it("policies already handed to a running session follow setMode", () => {
+    const controller = new NetworkController(
+      "providerOnly", {}, undefined
+    );
+    const issued = controller.policyFor("anthropic");
+    expect(() => issued.require({ capability: "webFetch", destination: "https://github.com" })).toThrow();
+    controller.setMode("unrestricted");
+    expect(issued.mode).toBe("unrestricted");
+    expect(() => issued.require({ capability: "webFetch", destination: "https://github.com" })).not.toThrow();
+  });
 });

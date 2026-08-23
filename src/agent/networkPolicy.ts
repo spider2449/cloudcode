@@ -125,14 +125,24 @@ export function decideNetwork(
 }
 
 export class NetworkPolicy {
+  private currentMode: NetworkMode;
+
   constructor(
-    readonly mode: NetworkMode,
+    mode: NetworkMode,
     private selectedProviderDestination?: string,
     private recorder?: NetworkDecisionRecorder
-  ) {}
+  ) {
+    this.currentMode = mode;
+  }
+
+  /** Live view: setMode() lets an already-running session widen or narrow. */
+  get mode(): NetworkMode { return this.currentMode; }
+
+  setMode(mode: NetworkMode): void { this.currentMode = mode; }
 
   decide(request: NetworkRequest): NetworkDecision {
-    const decision = decideNetwork(this.mode, request, this.selectedProviderDestination);
+    const mode = this.currentMode;
+    const decision = decideNetwork(mode, request, this.selectedProviderDestination);
     this.recorder?.record(decision);
     return decision;
   }
