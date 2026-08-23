@@ -405,9 +405,8 @@ export class App {
       this.firstMessage = text;
       if (this.session?.sessionId) this.recordSession(this.session.sessionId, this.providerName);
     }
-    for (const path of missingMentions(text, this.props.cwd)) {
-      this.notice(`Note: ${path} does not exist (yet)`);
-    }
+    // Warn but never block: a missing @path may be a file to be created.
+    for (const path of missingMentions(text, this.props.cwd)) this.notice(`Note: ${path} does not exist (yet)`);
     this.buffer.append({ kind: "user", text });
     const images = this.pendingImages.takeForSend();
     this.phase = "streaming";
