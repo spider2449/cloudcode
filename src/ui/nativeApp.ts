@@ -15,6 +15,7 @@ import { loadMcpServers, formatMcpStatus } from "../agent/mcp.js";
 import { loadRegistry } from "../engine/lsp/config.js";
 import { loadSkills, formatSkillList, type Skill } from "../agent/skills.js";
 import { mergeSkillCommands } from "../commands/skillCommands.js";
+import { missingMentions } from "../commands/mentions.js";
 import { THEMES, loadThemeName, saveThemeName } from "./theme.js";
 import { GitStatusPoller } from "./useGitStatus.js";
 import { PermissionController } from "./permissionController.js";
@@ -403,6 +404,9 @@ export class App {
     if (!this.firstMessage) {
       this.firstMessage = text;
       if (this.session?.sessionId) this.recordSession(this.session.sessionId, this.providerName);
+    }
+    for (const path of missingMentions(text, this.props.cwd)) {
+      this.notice(`Note: ${path} does not exist (yet)`);
     }
     this.buffer.append({ kind: "user", text });
     const images = this.pendingImages.takeForSend();

@@ -139,6 +139,16 @@ describe("App", () => {
     expect(all).toContain("hi there");
   });
 
+  it("warns on a nonexistent @path but still sends the message", async () => {
+    const { app, terminal } = makeApp([textTurn("ok")]);
+    void app.run();
+    app.submitForTest("look at @definitely-missing-file.ts");
+    await wait();
+    const all = terminal.writes.join("");
+    expect(all).toContain("does not exist");
+    expect(all).toContain("> look at @definitely-missing-file.ts");
+  });
+
   it("updates cost and token StatusBar segments from usage on result", async () => {
     const { app, terminal } = makeApp([textTurn("ok", { input_tokens: 100, output_tokens: 50 })]);
     void app.run();
