@@ -36,6 +36,7 @@ export interface CommandContext {
   openProjectPicker(): void;
   currentCwd(): string;
   openMemoryPicker(): void;
+  openStatusLinePicker(): void;
   changeSummaries(latestOnly?: boolean): ChangeSummary[];
   changeDiff(path?: string): { content: string; truncated: boolean };
   previewUndo(): UndoPreview;

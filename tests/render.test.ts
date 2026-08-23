@@ -517,7 +517,7 @@ describe("InlineRenderer (simple mode, no scroll region)", () => {
     // The status bar (footer's own last line) must remain the last thing
     // written, not a blank padding row.
     const lastLine = second.split("\r\n").at(-1) ?? "";
-    expect(lastLine).toContain("/repo");
+    expect(lastLine).toContain("default");
   });
 
   it("finalize() does not reset a scroll region, just parks the cursor on a fresh line", () => {

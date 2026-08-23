@@ -382,6 +382,14 @@ const commands: Command[] = [
     async run(ctx) { ctx.openMemoryPicker(); }
   },
   {
+    name: "statusline",
+    description: "Choose which segments the status bar shows",
+    async run(ctx, args) {
+      if (args.trim()) { ctx.notice("Usage: /statusline"); return; }
+      ctx.openStatusLinePicker();
+    }
+  },
+  {
     name: "mcp",
     description: "Show MCP server status and tools",
     async run(ctx) { ctx.notice(await ctx.mcpStatus()); }

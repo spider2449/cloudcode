@@ -21,7 +21,8 @@ import { GitStatusPoller } from "./useGitStatus.js";
 import { PermissionController } from "./permissionController.js";
 import { KeyRouter, type KeyRouterHost } from "./keyRouter.js";
 import { UsageTracker } from "./usageTracker.js";
-import { openMemoryPicker, openProjectPicker, openResumePicker, type PickerDeps } from "./appPickers.js";
+import { openMemoryPicker, openProjectPicker, openResumePicker, openStatusLinePicker, type PickerDeps } from "./appPickers.js";
+import { DEFAULT_STATUS_LINE_ITEMS, type StatusLineItem } from "../statusLineItems.js";
 import { collectGitReview } from "../agent/gitReview.js";
 import { Buffer } from "./buffer.js";
 import { InputBox } from "./widgets/inputBox.js";
@@ -74,6 +75,7 @@ export class App {
   private providerName: string;
   private model: string | undefined;
   private effort: EffortLevel = loadSettings().effort ?? "off";
+  private statusLineItems: StatusLineItem[] = loadSettings().statusLineItems ?? DEFAULT_STATUS_LINE_ITEMS;
   private servedModel: string | undefined;
   private mode: PermissionMode;
   private network: NetworkController;
@@ -356,6 +358,10 @@ export class App {
       openProjectPicker: () => openProjectPicker(this.pickerDeps(), path => this.ctx.switchProject(path)),
       openMemoryPicker: () =>
         openMemoryPicker(this.pickerDeps(), () => { void this.session?.refreshSystemPrompt(); }),
+      openStatusLinePicker: () =>
+        openStatusLinePicker(this.pickerDeps(), this.statusLineItems, next => {
+          this.statusLineItems = next; saveSetting("statusLineItems", next); this.recompute();
+        }),
       currentCwd: () => this.props.cwd,
       changeSummaries: latestOnly => this.session?.changeSummaries(latestOnly) ?? [], changeDiff: path =>
         this.session?.changeDiff(path) ?? { content: "No session-owned changes.", truncated: false },
@@ -539,7 +545,8 @@ export class App {
         gitDirty: this.git.status.dirty,
         tokens: this.usage.tokens,
         contextPct: this.usage.contextPct,
-        elapsedMs: Date.now() - this.startedAt
+        elapsedMs: Date.now() - this.startedAt,
+        items: this.statusLineItems
       },
       workIndFrame: this.workIndFrame,
       workStartedAt: this.workStartedAt

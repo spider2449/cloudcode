@@ -59,6 +59,7 @@ function mockCtx(): CommandContext {
     setEffort: vi.fn().mockResolvedValue(undefined),
     currentEffort: vi.fn().mockReturnValue("off"),
     openMemoryPicker: vi.fn(),
+    openStatusLinePicker: vi.fn(),
     changeSummaries: vi.fn().mockReturnValue([]),
     changeDiff: vi.fn().mockReturnValue({ content: "No session-owned changes.", truncated: false }),
     previewUndo: vi.fn().mockReturnValue({ operations: [], conflicts: [] }),
@@ -96,7 +97,7 @@ describe("parseSlash", () => {
 describe("builtins", () => {
   it("registers all v1 commands", () => {
     const names = [...buildRegistry().keys()].sort();
-    expect(names).toEqual(["changes", "clear", "compact", "config", "context", "cost", "diff", "effort", "exit", "help", "init", "mcp", "memory", "model", "new", "permissions", "provider", "resume", "review", "set", "skill", "skills", "theme", "undo"]);
+    expect(names).toEqual(["changes", "clear", "compact", "config", "context", "cost", "diff", "effort", "exit", "help", "init", "mcp", "memory", "model", "new", "permissions", "provider", "resume", "review", "set", "skill", "skills", "statusline", "theme", "undo"]);
   });
 
   it("/new starts a new session", async () => {
@@ -442,6 +443,21 @@ describe("/memory", () => {
     const ctx = mockCtx();
     await buildRegistry().get("memory")!.run(ctx, "");
     expect(ctx.openMemoryPicker).toHaveBeenCalled();
+  });
+});
+
+describe("/statusline", () => {
+  it("opens the picker", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("statusline")!.run(ctx, "");
+    expect(ctx.openStatusLinePicker).toHaveBeenCalled();
+  });
+
+  it("rejects arguments with a usage hint", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("statusline")!.run(ctx, "cost");
+    expect(ctx.openStatusLinePicker).not.toHaveBeenCalled();
+    expect(ctx.notice).toHaveBeenCalledWith(expect.stringContaining("Usage: /statusline"));
   });
 });
 

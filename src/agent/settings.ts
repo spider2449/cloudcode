@@ -4,7 +4,7 @@ import { configDir } from "./providers.js";
 import type { PermissionMode } from "./session.js";
 import { isEffortLevel, type EffortLevel } from "../engine/effort.js";
 import { isPersistedNetworkMode, type PersistedNetworkMode } from "./networkPolicy.js";
-import { normalizeStatusLineItems } from "../statusLineItems.js";
+import { normalizeStatusLineItems, type StatusLineItem } from "../statusLineItems.js";
 
 export interface Settings {
   provider?: string;
@@ -15,7 +15,7 @@ export interface Settings {
   autoMemoryEnabled?: boolean;
   networkMode?: PersistedNetworkMode;
   /** Segment IDs shown in the bottom status bar; absent means app default. */
-  statusLineItems?: string[];
+  statusLineItems?: StatusLineItem[];
 }
 
 // bypassPermissions is deliberately not persistable: a saved bypass would make

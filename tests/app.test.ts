@@ -22,9 +22,16 @@ vi.mock("../src/engine/loop.js", async () => {
   }
   return { ...actual, EngineLoop: vi.fn(SpiedEngineLoop as unknown as typeof actual.EngineLoop) };
 });
+vi.mock("../src/agent/settings.js", async importOriginal => ({
+  ...(await importOriginal<typeof import("../src/agent/settings.js")>()),
+  // Keep tests hermetic: never touch the developer's real ~/.cloudcode.
+  loadSettings: vi.fn().mockReturnValue({}),
+  saveSetting: vi.fn()
+}));
 
 import { makeClient } from "../src/engine/api.js";
 import { loadMcpServers } from "../src/agent/mcp.js";
+import { saveSetting } from "../src/agent/settings.js";
 
 const wait = (ms = 30) => new Promise(r => setTimeout(r, ms));
 type Event = Record<string, unknown>;
@@ -141,6 +148,21 @@ describe("App", () => {
     expect(last).toContain("tok");
   });
 
+  it("/statusline toggle persists statusLineItems through saveSetting", async () => {
+    vi.mocked(saveSetting).mockClear();
+    const { app } = makeApp([textTurn("ok")]);
+    void app.run();
+    await wait();
+    app.submitForTest("/statusline");
+    await wait();
+    app.handleKey({ t: "down" }); // cursor onto "Served model override"
+    app.handleKey({ t: "enter" }); // enable it -> persists immediately
+    const call = vi.mocked(saveSetting).mock.calls.find(c => c[0] === "statusLineItems");
+    expect(call).toBeDefined();
+    const value = call?.[1];
+    expect(Array.isArray(value) && value.includes("servedModel")).toBe(true);
+  });
+
   it("every emitted frame ends with the StatusBar as the last written row", async () => {
     const { app, terminal } = makeApp([textTurn("ok")]);
     void app.run();
@@ -148,7 +170,8 @@ describe("App", () => {
     await wait();
     for (const frame of terminal.writes) {
       const lines = frame.split("\r\n");
-      expect(lines[lines.length - 1]).toContain("/repo");
+      // The default status bar shows provider/model and permission mode.
+      expect(lines[lines.length - 1]).toContain("default");
     }
   });
 
@@ -228,7 +251,7 @@ describe("App resize handling", () => {
     const all = terminal.writes.join("");
     expect(all).toContain("\x1b[3J");
     expect(all).toContain("> hello"); // transcript re-committed, not lost
-    expect(all).toContain("/repo"); // status bar repainted
+    expect(all).toContain("anthropic · default"); // status bar repainted
   });
 
   it("a resize storm coalesces into a single full repaint", async () => {

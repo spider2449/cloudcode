@@ -4,10 +4,11 @@ import { openInEditor, openFolder } from "../commands/editor.js";
 import { ensureMemoryDir } from "../engine/memoryPaths.js";
 import { buildMemoryOptions } from "./MemoryPicker.js";
 import type { OverlayManager } from "./widgets/overlay.js";
+import type { StatusLineItem } from "../statusLineItems.js";
 
 /**
- * Wiring for the three list overlays the slash commands open (/resume,
- * /project, /memory). Each one is opened the same way: build its options,
+ * Wiring for the list overlays the slash commands open (/resume, /project,
+ * /memory, /statusline). Each one is opened the same way: build its options,
  * hand the overlay a pick callback and a cancel callback that closes and
  * repaints, then repaint so the overlay appears immediately.
  */
@@ -60,5 +61,16 @@ export function openMemoryPicker(deps: PickerDeps, onEdited: () => void): void {
     },
     cancel(deps)
   );
+  deps.recompute();
+}
+
+/** Toggle list for /statusline: every change flows through onChange so the
+ * app can persist and repaint while the overlay stays open. */
+export function openStatusLinePicker(
+  deps: PickerDeps,
+  initial: StatusLineItem[],
+  onChange: (next: StatusLineItem[]) => void
+): void {
+  deps.overlay.openStatusLine(initial, onChange, cancel(deps));
   deps.recompute();
 }

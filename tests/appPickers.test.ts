@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openResumePicker, openProjectPicker, openMemoryPicker, type PickerDeps } from "../src/ui/appPickers.js";
+import { openResumePicker, openProjectPicker, openMemoryPicker, openStatusLinePicker, type PickerDeps } from "../src/ui/appPickers.js";
 import { OverlayManager } from "../src/ui/widgets/overlay.js";
 import { SessionIndex } from "../src/agent/sessionIndex.js";
 
@@ -59,6 +59,19 @@ describe("appPickers", () => {
     openMemoryPicker(deps, () => {});
     expect(overlay.mode).toBe("memory");
     expect(repaints()).toBe(1);
+    overlay.handleKey({ t: "esc" });
+    expect(overlay.mode).toBe("none");
+  });
+
+  it("openStatusLinePicker opens the toggle list, forwards changes, repaints", () => {
+    const { deps, overlay, repaints } = setup();
+    const changes: string[][] = [];
+    openStatusLinePicker(deps, ["model", "cost"], next => changes.push(next));
+    expect(overlay.mode).toBe("statusline");
+    expect(repaints()).toBe(1);
+    overlay.handleKey({ t: "down" });
+    overlay.handleKey({ t: "enter" });
+    expect(changes).toHaveLength(1);
     overlay.handleKey({ t: "esc" });
     expect(overlay.mode).toBe("none");
   });
