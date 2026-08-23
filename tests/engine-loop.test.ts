@@ -591,3 +591,50 @@ describe("contextSnapshot", () => {
     expect(snap.messagesTokens).toBeGreaterThan(0);
   });
 });
+
+describe("EngineLoop knobs", () => {
+  it("honors a custom maxTurns cap and reports the limit", async () => {
+    const received: unknown[] = [];
+    const loop = new EngineLoop({
+      client: fakeClient(Array(6).fill(0).map(() => toolUseTurn())),
+      model: "test-model",
+      systemPrompt: "sys",
+      tools: [echoTool],
+      cwd: process.cwd(),
+      permissionMode: "bypassPermissions",
+      store: new PermissionStore(mkdtempSync(join(tmpdir(), "cc-loop-mt-"))),
+      onMessage: m => received.push(m),
+      requestPermission: async () => true,
+      maxTurns: 3
+    });
+    await loop.runTurn("go", new AbortController().signal);
+    const texts = received
+      .filter(m => (m as { type?: string }).type === "assistant")
+      .flatMap(m => (m as unknown as { message: { content: Array<{ type: string; text?: string }> } }).message.content)
+      .filter(b => b.type === "text")
+      .map(b => b.text ?? "")
+      .join("\n");
+    expect(texts).toContain("[Stopped after 3 tool-use turns without a final answer]");
+  });
+
+  it("exposes model, permission mode, and effort through getters", () => {
+    const loop = new EngineLoop({
+      client: fakeClient([]),
+      model: "test-model",
+      systemPrompt: "sys",
+      tools: [],
+      cwd: process.cwd(),
+      permissionMode: "acceptEdits",
+      store: new PermissionStore(mkdtempSync(join(tmpdir(), "cc-loop-g-"))),
+      onMessage: () => {},
+      requestPermission: async () => true,
+      effort: "high"
+    });
+    loop.setPermissionMode("default");
+    loop.setEffort("low");
+    loop.setModel("other-model");
+    expect(loop.getModel()).toBe("other-model");
+    expect(loop.getPermissionMode()).toBe("default");
+    expect(loop.getEffort()).toBe("low");
+  });
+});

@@ -28,6 +28,8 @@ export interface EngineOptions {
   lsp?: LspManager;
   fileMutations?: FileMutationObserver;
   networkPolicy?: NetworkPolicy;
+  /** Provider-turn ceiling for this loop. Defaults to MAX_LOOP_TURNS. */
+  maxTurns?: number;
   effort?: EffortLevel;
   contextWindow?: number;
   runLimits?: RunLimits;
@@ -104,6 +106,18 @@ export class EngineLoop {
     this.effort = level;
   }
 
+  getModel(): string {
+    return this.model;
+  }
+
+  getPermissionMode(): PermissionMode {
+    return this.mode;
+  }
+
+  getEffort(): EffortLevel {
+    return this.effort;
+  }
+
   async runTurn(userText: string, signal: AbortSignal): Promise<void> {
     const started = Date.now();
     this.messages.push({ role: "user", content: userText });
@@ -120,6 +134,7 @@ export class EngineLoop {
     let hitTurnLimit = true;
     let providerRequests = 0;
     let reached: RunLimitKind | undefined;
+    const maxTurns = this.opts.maxTurns ?? MAX_LOOP_TURNS;
     const markLimit = (limit: RunLimitKind, value: number) => {
       if (reached) return;
       reached = limit;
@@ -135,7 +150,7 @@ export class EngineLoop {
       };
     };
     try {
-      for (let i = 0; i < MAX_LOOP_TURNS; i++) {
+      for (let i = 0; i < maxTurns; i++) {
         if (this.opts.runLimits?.maxTurns !== undefined && providerRequests >= this.opts.runLimits.maxTurns) {
           markLimit("maxTurns", this.opts.runLimits.maxTurns);
           hitTurnLimit = false;
@@ -220,9 +235,9 @@ export class EngineLoop {
         // exactly what the model produced, but the user is told why the turn
         // ended without a final answer.
         this.opts.onMessage(assistantMessage([
-          { type: "text", text: `\n[Stopped after ${MAX_LOOP_TURNS} tool-use turns without a final answer]` }
+          { type: "text", text: `\n[Stopped after ${maxTurns} tool-use turns without a final answer]` }
         ]));
-        markLimit("maxTurns", MAX_LOOP_TURNS);
+        markLimit("maxTurns", maxTurns);
       }
       const abortLimit = signal.reason instanceof RunLimitError ? signal.reason : undefined;
       if (abortLimit) markLimit(abortLimit.limit, abortLimit.value);
