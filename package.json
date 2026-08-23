@@ -37,11 +37,11 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "marked": "^15.0.12",
-    "marked-terminal": "^7.3.0"
+    "cli-highlight": "^2.1.11",
+    "cli-table3": "^0.6.5",
+    "marked": "^15.0.12"
   },
   "devDependencies": {
-    "@types/marked-terminal": "^6.1.1",
     "@types/node": "^26.2.0",
     "oxlint": "^1.79.0",
     "tsx": "^4.23.12",
