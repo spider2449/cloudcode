@@ -3,6 +3,7 @@ import {
   NetworkPolicy, bashNetworkStatus, providerEndpoint,
   type NetworkDecisionRecorder, type NetworkMode
 } from "../agent/networkPolicy.js";
+import { sandboxEnablesBash } from "../agent/sandbox.js";
 
 /** Owns the TUI's effective network mode and creates provider-scoped policies.
  * Policies are cached per provider so instances already held by a running
@@ -13,7 +14,8 @@ export class NetworkController {
   constructor(
     private current: NetworkMode,
     private providers: Record<string, ProviderConfig>,
-    private recorder?: NetworkDecisionRecorder
+    private recorder?: NetworkDecisionRecorder,
+    private bashVerified?: boolean
   ) {}
 
   get mode(): NetworkMode { return this.current; }
@@ -37,7 +39,7 @@ export class NetworkController {
   }
 
   notice(): string {
-    const bash = bashNetworkStatus(this.current, false);
+    const bash = bashNetworkStatus(this.current, this.bashVerified ?? sandboxEnablesBash(this.current));
     return `Network mode: ${this.current}. Bash networking: ${bash.description}. ` +
       "Policy covers cloudcode-owned egress; LSP and stdio MCP child processes are governed by project trust.";
   }

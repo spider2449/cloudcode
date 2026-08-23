@@ -2,13 +2,14 @@ import { join } from "node:path";
 import { configDir } from "../../agent/providers.js";
 import { loadSettings } from "../../agent/settings.js";
 import { bashNetworkStatus, type NetworkMode } from "../../agent/networkPolicy.js";
+import { sandboxEnablesBash } from "../../agent/sandbox.js";
 
 // Read-only report of config file locations and effective settings.
 // The default model literal mirrors DEFAULT_MODEL in agent/session.ts.
-export function configReport(dir: string = configDir(), override?: NetworkMode): string {
+export function configReport(dir: string = configDir(), override?: NetworkMode, verified?: boolean): string {
   const s = loadSettings(join(dir, "settings.json"));
   const networkMode = override ?? s.networkMode ?? "providerOnly";
-  const bash = bashNetworkStatus(networkMode, false);
+  const bash = bashNetworkStatus(networkMode, verified ?? sandboxEnablesBash(networkMode));
   return [
     "Config files:",
     `  settings:  ${join(dir, "settings.json")}`,

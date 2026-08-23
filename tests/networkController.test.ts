@@ -5,7 +5,7 @@ describe("NetworkController", () => {
   it("owns mode, provider scoping, audit, and the visible guarantee", () => {
     const record = vi.fn();
     const controller = new NetworkController(
-      "providerOnly", { local: { baseUrl: "http://127.0.0.1:8080" } }, { record }
+      "providerOnly", { local: { baseUrl: "http://127.0.0.1:8080" } }, { record }, false
     );
     controller.policyFor("local").require({ capability: "provider", destination: "http://127.0.0.1:8080/v1" });
     expect(record).toHaveBeenCalledWith(expect.objectContaining({ allowed: true, destinationHost: "127.0.0.1" }));
@@ -24,5 +24,15 @@ describe("NetworkController", () => {
     controller.setMode("unrestricted");
     expect(issued.mode).toBe("unrestricted");
     expect(() => issued.require({ capability: "webFetch", destination: "https://github.com" })).not.toThrow();
+  });
+
+  it("notice reports contained when offlineStrict and verified", () => {
+    const controller = new NetworkController("offlineStrict", {}, undefined, true);
+    expect(controller.notice()).toContain("Bash networking: contained");
+  });
+
+  it("notice reports disabled when offlineStrict and not verified", () => {
+    const controller = new NetworkController("offlineStrict", {}, undefined, false);
+    expect(controller.notice()).toContain("Bash networking: disabled");
   });
 });

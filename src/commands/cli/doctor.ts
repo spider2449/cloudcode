@@ -7,6 +7,7 @@ import { loadSettings } from "../../agent/settings.js";
 import {
   bashNetworkStatus, decideNetwork, providerEndpoint, type NetworkMode
 } from "../../agent/networkPolicy.js";
+import { sandboxEnablesBash } from "../../agent/sandbox.js";
 
 export interface DoctorCheck {
   name: string;
@@ -83,7 +84,7 @@ export function checkLspServers(
 }
 
 export function runDoctor(
-  opts: { cwd?: string; dir?: string; env?: NodeJS.ProcessEnv; networkMode?: NetworkMode } = {}
+  opts: { cwd?: string; dir?: string; env?: NodeJS.ProcessEnv; networkMode?: NetworkMode; bashVerified?: boolean } = {}
 ): DoctorCheck[] {
   const dir = opts.dir ?? configDir();
   const cwd = opts.cwd ?? process.cwd();
@@ -96,7 +97,8 @@ export function runDoctor(
   const selected = providers[selectedName] ?? providers.anthropic ?? {};
   const endpoint = providerEndpoint(selected);
   const providerDecision = decideNetwork(mode, { capability: "provider", destination: endpoint }, endpoint);
-  const bash = bashNetworkStatus(mode, false);
+  const verified = opts.bashVerified ?? sandboxEnablesBash(mode);
+  const bash = bashNetworkStatus(mode, verified);
   return [
     checkNodeVersion(),
     checkConfigDirWritable(dir),
@@ -110,7 +112,9 @@ export function runDoctor(
     {
       name: "Bash network containment",
       ok: true,
-      detail: `${bash.description}; policy does not claim to contain arbitrary LSP/stdio MCP child egress`
+      detail: mode === "offlineStrict" && !verified
+        ? `${bash.description}; install unshare or bubblewrap to enable contained Bash`
+        : `${bash.description}; policy does not claim to contain arbitrary LSP/stdio MCP child egress`
     },
     checkJsonFile("user mcp.json", join(dir, "mcp.json")),
     checkJsonFile("project .mcp.json", join(cwd, ".mcp.json")),

@@ -55,4 +55,16 @@ describe("doctor checks", () => {
     const checks = runDoctor({ dir: d, cwd: dir(), env: { ANTHROPIC_API_KEY: "x" }, networkMode: "offlineStrict" });
     expect(checks.find(check => check.name === "network policy")).toMatchObject({ ok: false });
   });
+
+  it("reports Bash containment from the verified sandbox state", () => {
+    const d = dir();
+    const verified = runDoctor({
+      dir: d, cwd: dir(), env: { ANTHROPIC_API_KEY: "x" }, networkMode: "offlineStrict", bashVerified: true
+    });
+    expect(verified.find(c => c.name === "Bash network containment")?.detail).toContain("contained");
+    const unverified = runDoctor({
+      dir: d, cwd: dir(), env: { ANTHROPIC_API_KEY: "x" }, networkMode: "offlineStrict", bashVerified: false
+    });
+    expect(unverified.find(c => c.name === "Bash network containment")?.detail).toContain("disabled");
+  });
 });

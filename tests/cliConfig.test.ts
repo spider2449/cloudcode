@@ -26,7 +26,7 @@ describe("configReport", () => {
       provider: "local", model: "claude-sonnet-5", permissionMode: "acceptEdits",
       effort: "high", theme: "light", autoMemoryEnabled: false, networkMode: "offlineStrict"
     }));
-    const report = configReport(d);
+    const report = configReport(d, undefined, false);
     expect(report).toContain("provider:        local");
     expect(report).toContain("model:           claude-sonnet-5");
     expect(report).toContain("permissionMode:  acceptEdits");
@@ -35,5 +35,13 @@ describe("configReport", () => {
     expect(report).toContain("autoMemory:      disabled");
     expect(report).toContain("networkMode:     offlineStrict");
     expect(report).toContain("Bash networking: disabled");
+  });
+
+  it("shows contained Bash when offlineStrict and the sandbox is verified", () => {
+    const d = dir();
+    writeFileSync(join(d, "settings.json"), JSON.stringify({ networkMode: "offlineStrict" }));
+    const report = configReport(d, undefined, true);
+    expect(report).toContain("networkMode:     offlineStrict");
+    expect(report).toContain("Bash networking: contained");
   });
 });
