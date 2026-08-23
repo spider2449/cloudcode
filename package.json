@@ -35,7 +35,7 @@
     "package": "npm run package:npm && npm run package:bin"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.117.1",
+    "@anthropic-ai/sdk": "^0.120.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "cli-highlight": "^2.1.11",
     "cli-table3": "^0.6.5",
