@@ -28,6 +28,7 @@ export interface EngineOptions {
   lsp?: LspManager;
   fileMutations?: FileMutationObserver;
   networkPolicy?: NetworkPolicy;
+  bgShells?: import("./tools/backgroundShells.js").BackgroundShellManager;
   /** Provider-turn ceiling for this loop. Defaults to MAX_LOOP_TURNS. */
   maxTurns?: number;
   /** Lifecycle hooks, injected by the agent layer. Structural on purpose:
@@ -442,7 +443,8 @@ export class EngineLoop {
         signal,
         lsp: this.opts.lsp,
         fileMutations: this.opts.fileMutations,
-        networkPolicy: this.opts.networkPolicy
+        networkPolicy: this.opts.networkPolicy,
+        bgShells: this.opts.bgShells
       });
       if (out.images && out.images.length > 0) {
         const blocks: unknown[] = [{ type: "text", text: out.content }];

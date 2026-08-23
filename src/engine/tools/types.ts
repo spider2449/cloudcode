@@ -17,6 +17,8 @@ export interface ToolContext {
   signal?: AbortSignal;
   lsp?: LspManager;
   fileMutations?: FileMutationObserver;
+  /** Session-owned background shell manager (for Bash run_in_background). */
+  bgShells?: import("./backgroundShells.js").BackgroundShellManager;
   /** Outbound-network gate for tools like WebFetch. Structural on purpose:
    * engine code must not depend on the agent-layer NetworkPolicy class. */
   networkPolicy?: {

@@ -14,16 +14,26 @@ function shellArgs(command: string): { cmd: string; args: string[] } {
 export const bashTool: ToolDef = {
   name: "Bash",
   capabilities: { arbitraryChildNetwork: true },
-  description: "Run a shell command (PowerShell on Windows, sh elsewhere) and return its output.",
+  description: "Run a shell command (PowerShell on Windows, sh elsewhere) and return its output. Long-running commands can be started with run_in_background.",
   input_schema: {
     type: "object",
     properties: {
       command: { type: "string", description: "The command to execute" },
-      timeout: { type: "number", description: "Timeout in milliseconds (default 120000)" }
+      timeout: { type: "number", description: "Timeout in milliseconds (default 120000)" },
+      run_in_background: { type: "boolean", description: "Start without waiting; read output later with BashOutput" }
     },
     required: ["command"]
   },
   execute(input, ctx) {
+    if (input.run_in_background === true && ctx.bgShells) {
+      const started = ctx.bgShells.start(String(input.command ?? ""), ctx.cwd);
+      if (started.error || !started.id) {
+        return Promise.resolve({ content: `Cannot start background shell: ${started.error ?? "unknown error"}`, isError: true });
+      }
+      return Promise.resolve({
+        content: `Shell started in background (id: ${started.id}). Use BashOutput to read its output; KillShell to stop it.`
+      });
+    }
     const { cmd, args } = shellArgs(String(input.command ?? ""));
     const timeout = typeof input.timeout === "number" && input.timeout > 0 ? input.timeout : DEFAULT_TIMEOUT;
     return new Promise(resolvePromise => {

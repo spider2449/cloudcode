@@ -120,6 +120,9 @@ export function decidePermission(
   // TodoWrite only mutates the session's internal checklist — nothing on
   // disk, nothing outbound — so it never needs a prompt in any mode.
   if (toolName === "TodoWrite") return "allow";
+  // BashOutput/KillShell only touch state from an already-approved background
+  // command, so they never prompt in any mode.
+  if (toolName === "BashOutput" || toolName === "KillShell") return "allow";
   if (READ_ONLY.has(toolName)) return outsideCwdRead || outsideCwdSearch ? "ask" : "allow";
   if (mode === "acceptEdits" && EDIT_TOOLS.has(toolName)) return outsideCwdEdit ? "ask" : "allow";
   return "ask";
