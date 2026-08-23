@@ -75,8 +75,8 @@ form working and making its hints more informative.
 Choice lists are computed at overlay-open time from live context (same
 sources `completeArgs` uses). Picking a value closes the overlay and runs
 `applyConfigValue`, which handles persistence + session switch + notice.
-If a model list is unavailable for the current provider, phase 2 shows an
-"(unavailable)" hint row and Enter does nothing.
+If a model list is unavailable for the current provider, Enter on that key
+is a no-op — phase 2 is unreachable instead of rendered empty.
 
 ## Error handling
 
