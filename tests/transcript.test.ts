@@ -125,3 +125,25 @@ describe("toDisplayItems diff emission", () => {
     });
   });
 });
+
+describe("todos display", () => {
+  it("maps a todos message to checkbox items", () => {
+    const items = toDisplayItems({
+      type: "todos",
+      todos: [
+        { content: "done thing", status: "completed" },
+        { content: "current thing", status: "in_progress" },
+        { content: "later thing", status: "pending" }
+      ]
+    } as never);
+    expect(items).toHaveLength(1);
+    expect(items[0].kind).toBe("todos");
+    expect((items[0] as unknown as { items: Array<{ glyph: string; content: string }> }).items.map(x => x.glyph))
+      .toEqual(["\u2611", "\u25BA", "\u2610"]);
+  });
+
+  it("renders unknown statuses as pending rather than throwing", () => {
+    const items = toDisplayItems({ type: "todos", todos: [{ content: "weird", status: "odd" }] } as never);
+    expect((items[0] as unknown as { items: Array<{ glyph: string }> }).items[0].glyph).toBe("\u2610");
+  });
+});

@@ -12,7 +12,8 @@ export type DisplayItem =
   | { kind: "error"; text: string }
   | { kind: "result"; costUsd?: number; durationMs?: number }
   | { kind: "diff"; lines: DiffLine[] }
-  | { kind: "toolResult"; text: string; extra: number; isError: boolean };
+  | { kind: "toolResult"; text: string; extra: number; isError: boolean }
+  | { kind: "todos"; items: Array<{ glyph: string; content: string }> };
 
 export function truncate(s: string, max = 80): string {
   return stringWidth(s) > max ? truncateToWidth(s, max) : s;
@@ -168,6 +169,17 @@ export function toDisplayItems(msg: EngineMessage): DisplayItem[] {
       return [{ kind: "result", costUsd: m.total_cost_usd as number, durationMs: m.duration_ms as number }];
     }
     return [{ kind: "error", text: String(m.result ?? m.subtype) }];
+  }
+  if (m.type === "todos") {
+    const glyphs: Record<string, string> = { completed: "\u2611", in_progress: "\u25BA", pending: "\u2610" };
+    const todos = Array.isArray(m.todos) ? m.todos as Array<{ content?: unknown; status?: unknown }> : [];
+    return [{
+      kind: "todos",
+      items: todos.map(t => ({
+        glyph: glyphs[String(t.status)] ?? glyphs.pending,
+        content: String(t.content ?? "")
+      }))
+    }];
   }
   return [];
 }

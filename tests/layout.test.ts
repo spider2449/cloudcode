@@ -86,3 +86,15 @@ describe("layoutItem", () => {
     expect(rows).toEqual(["● hi there"]);
   });
 });
+
+describe("todos layout", () => {
+  it("renders todos as one row per item plus a header", () => {
+    const rows = layoutItem(
+      { kind: "todos", items: [{ glyph: "\u2611", content: "alpha" }, { glyph: "\u2610", content: "beta" }] },
+      theme, 80
+    );
+    const joined = stripAnsi(rows.join("\n"));
+    expect(joined).toContain("alpha");
+    expect(joined).toContain("beta");
+  });
+});

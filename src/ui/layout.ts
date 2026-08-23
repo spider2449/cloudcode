@@ -153,6 +153,13 @@ export function layoutItem(item: DisplayItem, theme: Theme, width: number): stri
       ].filter((p): p is string => p !== undefined);
       return [colorize(parts.join(" · "), theme.muted)];
     }
+    case "todos": {
+      const rows = [colorize("Todos:", theme.muted)];
+      for (const t of item.items) {
+        rows.push(colorize(`  ${t.glyph} ${t.content}`, theme.muted));
+      }
+      return rows;
+    }
     default: {
       const _exhaustive: never = item;
       return [];
