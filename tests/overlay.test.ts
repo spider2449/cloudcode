@@ -2,8 +2,10 @@ import { describe, it, expect, vi } from "vitest";
 import { OverlayManager } from "../src/ui/widgets/overlay.js";
 import { THEMES } from "../src/ui/theme.js";
 import type { SessionEntry } from "../src/agent/sessionIndex.js";
+import { STATUS_LINE_ITEMS } from "../src/statusLineItems.js";
 
 const theme = THEMES.dark;
+const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "").replace(/\x1b\[7m|\x1b\[27m/g, "");
 
 function entries(n: number): SessionEntry[] {
   return Array.from({ length: n }, (_, i) => ({
@@ -273,5 +275,55 @@ describe("OverlayManager trust sub-mode", () => {
     mgr.handleKey({ t: "printable", ch: "y" }, "y");
     expect(onDecision).toHaveBeenCalledWith(true);
     expect(mgr.mode).toBe("none");
+  });
+});
+
+describe("OverlayManager statusline sub-mode", () => {
+  const items = [...STATUS_LINE_ITEMS];
+
+  it("opens, lists items, and reports the mode", () => {
+    const mgr = new OverlayManager();
+    mgr.openStatusLine(items, () => {}, () => {});
+    expect(mgr.mode).toBe("statusline");
+    expect(mgr.isOpen).toBe(true);
+    const rows = mgr.render(theme, 100).map(strip);
+    // Only MAX_ROWS fit at once; the first window shows the head of the list.
+    expect(rows.some(r => r.includes("Provider / model"))).toBe(true);
+    expect(rows.some(r => r.includes("Served model override"))).toBe(true);
+  });
+
+  it("enter/space toggles and fires onToggle with canonical-order list", () => {
+    const toggles: string[][] = [];
+    const mgr = new OverlayManager();
+    mgr.openStatusLine(["model", "mode"], next => toggles.push(next), () => {});
+    mgr.handleKey({ t: "down" }); // cursor onto servedModel
+    mgr.handleKey({ t: "enter" }); // enable servedModel
+    expect(toggles).toHaveLength(1);
+    expect(toggles[0]).toContain("servedModel");
+    expect(toggles[0].indexOf("model")).toBeLessThan(toggles[0].indexOf("servedModel"));
+    mgr.handleKey({ t: "printable", ch: " " }, " "); // space disables it again
+    expect(toggles).toHaveLength(2);
+    expect(toggles[1]).not.toContain("servedModel");
+    expect(mgr.mode).toBe("statusline"); // stays open while toggling
+  });
+
+  it("esc closes and fires onCancel without toggling", () => {
+    const onToggle = vi.fn();
+    const onCancel = vi.fn();
+    const mgr = new OverlayManager();
+    mgr.openStatusLine(items, onToggle, onCancel);
+    mgr.handleKey({ t: "esc" });
+    expect(mgr.mode).toBe("none");
+    expect(onToggle).not.toHaveBeenCalled();
+    expect(onCancel).toHaveBeenCalled();
+  });
+
+  it("renders checked markers for enabled items only", () => {
+    const mgr = new OverlayManager();
+    mgr.openStatusLine(["model", "cost"], () => {}, () => {});
+    const rows = mgr.render(theme, 100).map(strip);
+    expect(rows.some(r => r.includes("[x]") && r.includes("Session cost"))).toBe(true);
+    expect(rows.some(r => r.includes("[ ]") && r.includes("Permission mode"))).toBe(true);
+    expect(rows.some(r => r.includes("[x]") && r.includes("Permission mode"))).toBe(false);
   });
 });

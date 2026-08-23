@@ -8,8 +8,10 @@ import type { Theme } from "../theme.js";
 import type { MemoryOption } from "../MemoryPicker.js";
 import { commandPrefix } from "../../agent/permissionStore.js";
 import { ruleScope } from "../../engine/permissions.js";
+import { STATUS_LINE_ITEMS, STATUS_LINE_LABELS, canonicalOrder } from "../../statusLineItems.js";
+import type { StatusLineItem } from "../../statusLineItems.js";
 
-export type OverlayMode = "none" | "resume" | "project" | "permission" | "memory" | "trust";
+export type OverlayMode = "none" | "resume" | "project" | "permission" | "memory" | "trust" | "statusline";
 
 interface PermOption {
   label: string;
@@ -80,6 +82,14 @@ interface TrustState {
   onDecision: (allow: boolean) => void;
 }
 
+interface StatusLineState {
+  items: StatusLineItem[];
+  enabled: Set<StatusLineItem>;
+  index: number;
+  onToggle: (next: StatusLineItem[]) => void;
+  onCancel: () => void;
+}
+
 export class OverlayManager {
   private _mode: OverlayMode = "none";
   private resumeState: ResumeState | undefined;
@@ -87,6 +97,7 @@ export class OverlayManager {
   private permissionState: PermissionState | undefined;
   private memoryState: MemoryState | undefined;
   private trustState: TrustState | undefined;
+  private statusLineState: StatusLineState | undefined;
 
   get mode(): OverlayMode {
     return this._mode;
@@ -131,6 +142,21 @@ export class OverlayManager {
     this.trustState = { projectPath, commands, selected: 1, onDecision };
   }
 
+  openStatusLine(
+    current: StatusLineItem[],
+    onToggle: (next: StatusLineItem[]) => void,
+    onCancel: () => void
+  ): void {
+    this._mode = "statusline";
+    this.statusLineState = {
+      items: [...STATUS_LINE_ITEMS],
+      enabled: new Set(current),
+      index: 0,
+      onToggle,
+      onCancel
+    };
+  }
+
   close(): void {
     this._mode = "none";
     this.resumeState = undefined;
@@ -138,6 +164,7 @@ export class OverlayManager {
     this.permissionState = undefined;
     this.memoryState = undefined;
     this.trustState = undefined;
+    this.statusLineState = undefined;
   }
 
   handleKey(k: Key, input?: string): void {
@@ -146,6 +173,7 @@ export class OverlayManager {
     else if (this._mode === "permission") this.handlePermissionKey(k, input);
     else if (this._mode === "memory") this.handleMemoryKey(k);
     else if (this._mode === "trust") this.handleTrustKey(k, input);
+    else if (this._mode === "statusline") this.handleStatusLineKey(k, input);
   }
 
   private handleTrustKey(k: Key, input?: string): void {
@@ -169,6 +197,21 @@ export class OverlayManager {
       const opt = s.options[s.index];
       if (opt) { const cb = s.onPick; this.close(); cb(opt); }
     }
+  }
+
+  private handleStatusLineKey(k: Key, input?: string): void {
+    const s = this.statusLineState;
+    if (!s) return;
+    if (k.t === "esc") { const cb = s.onCancel; this.close(); cb(); return; }
+    if (k.t === "up") { s.index = Math.max(0, s.index - 1); return; }
+    if (k.t === "down") { s.index = Math.min(s.items.length - 1, s.index + 1); return; }
+    const toggle = k.t === "enter" || (k.t === "printable" && input === " ");
+    if (!toggle) return;
+    const item = s.items[s.index];
+    if (!item) return;
+    if (s.enabled.has(item)) s.enabled.delete(item);
+    else s.enabled.add(item);
+    s.onToggle(canonicalOrder(s.enabled));
   }
 
   private filteredProjects(s: ProjectState): string[] {
@@ -235,7 +278,26 @@ export class OverlayManager {
     if (this._mode === "permission") return this.renderPermission(theme, width);
     if (this._mode === "memory") return this.renderMemory(theme, width);
     if (this._mode === "trust") return this.renderTrust(theme, width);
+    if (this._mode === "statusline") return this.renderStatusLine(theme, width);
     return [];
+  }
+
+  private renderStatusLine(theme: Theme, width: number): string[] {
+    const s = this.statusLineState;
+    if (!s) return [];
+    const warning = sgr(theme.warning);
+    const rows: string[] = [
+      "╭" + "─".repeat(Math.max(0, width - 2)) + "╮",
+      `${warning}Status line (↑/↓ move, Enter/Space toggle, Esc done)${SGR_RESET}`
+    ];
+    const { start, end } = visibleWindow(s.items.length, s.index, MAX_ROWS);
+    for (let i = start; i < end; i++) {
+      const item = s.items[i];
+      const line = (s.enabled.has(item) ? "[x] " : "[ ] ") + STATUS_LINE_LABELS[item];
+      rows.push(i === s.index ? `\x1b[7m ${line}\x1b[27m` : ` ${line}`);
+    }
+    rows.push("╰" + "─".repeat(Math.max(0, width - 2)) + "╯");
+    return rows;
   }
 
   private renderTrust(theme: Theme, width: number): string[] {
