@@ -157,3 +157,24 @@ describe("createTaskTool", () => {
     expect(out.content).toBe("ok");
   });
 });
+
+import { builtinTools } from "../src/engine/registry.js";
+
+describe("builtinTools task option", () => {
+  it("omits Task when no deps are provided", () => {
+    expect(builtinTools().map(t => t.name)).not.toContain("Task");
+  });
+
+  it("registers Task when deps are provided", () => {
+    const deps = {
+      client: () => { throw new Error("not called"); },
+      model: () => "m",
+      effort: () => "off" as const,
+      permissionMode: () => "default" as const,
+      store: {},
+      requestPermission: async () => true
+    };
+    const names = builtinTools({ task: deps as never }).map(t => t.name);
+    expect(names).toContain("Task");
+  });
+});

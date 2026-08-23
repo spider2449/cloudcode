@@ -6,12 +6,17 @@ import { bashTool } from "./tools/bash.js";
 import { globTool } from "./tools/glob.js";
 import { grepTool } from "./tools/grep.js";
 import { webfetchTool } from "./tools/webfetch.js";
+import { createTaskTool, type TaskToolDeps } from "./tools/task.js";
 import { definitionTool, referencesTool, hoverTool, symbolsTool, diagnosticsTool } from "./tools/lsp.js";
 
-export function builtinTools(options: { allowArbitraryChildNetwork?: boolean } = {}): ToolDef[] {
+export function builtinTools(options: {
+  allowArbitraryChildNetwork?: boolean;
+  task?: TaskToolDeps;
+} = {}): ToolDef[] {
   const tools = [
     readTool, writeTool, editTool, bashTool, globTool, grepTool, webfetchTool,
-    definitionTool, referencesTool, hoverTool, symbolsTool, diagnosticsTool
+    definitionTool, referencesTool, hoverTool, symbolsTool, diagnosticsTool,
+    ...(options.task ? [createTaskTool(options.task)] : [])
   ];
   return options.allowArbitraryChildNetwork === false
     ? tools.filter(tool => tool.capabilities?.arbitraryChildNetwork !== true)

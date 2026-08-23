@@ -102,7 +102,21 @@ export class AgentSession {
     );
     networkPolicy.require({ capability: "provider", destination: endpoint });
     const bash = bashNetworkStatus(networkPolicy.mode, this.opts.verifiedNoNetworkSandbox === true);
-    const availableTools = builtinTools({ allowArbitraryChildNetwork: bash.available });
+    const availableTools = builtinTools({
+      allowArbitraryChildNetwork: bash.available,
+      task: {
+        client: () => makeClient(this.opts.provider),
+        model: () => this.loop?.getModel() ?? model,
+        effort: () => this.loop?.getEffort() ?? this.opts.effort ?? "off",
+        contextWindow: () => this.opts.provider.model_context_window,
+        permissionMode: () => this.loop?.getPermissionMode() ?? this.opts.permissionMode,
+        store,
+        lsp: this.lsp,
+        networkPolicy,
+        requestPermission: (toolName, input) =>
+          new Promise(resolve => this.opts.onPermissionRequest({ toolName, input, resolve }))
+      }
+    });
     const tools = this.opts.toolAllowlist
       ? availableTools.filter(tool => this.opts.toolAllowlist?.includes(tool.name))
       : availableTools;

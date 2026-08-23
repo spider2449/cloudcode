@@ -20,7 +20,7 @@ export interface TaskToolDeps {
   client(): MessagesClient;
   model(): string;
   effort(): EffortLevel;
-  contextWindow?(): number;
+  contextWindow?(): number | undefined;
   permissionMode(): PermissionMode;
   store: PermissionStore;
   lsp?: LspManager;
