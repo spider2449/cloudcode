@@ -34,7 +34,8 @@ export const bashTool: ToolDef = {
         content: `Shell started in background (id: ${started.id}). Use BashOutput to read its output; KillShell to stop it.`
       });
     }
-    const { cmd, args } = shellArgs(String(input.command ?? ""));
+    const command = String(input.command ?? "");
+    const { cmd, args } = ctx.sandbox ? ctx.sandbox.wrap(command) : shellArgs(command);
     const timeout = typeof input.timeout === "number" && input.timeout > 0 ? input.timeout : DEFAULT_TIMEOUT;
     return new Promise(resolvePromise => {
       execFile(

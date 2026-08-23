@@ -46,6 +46,20 @@ export function realBgSpawner(command: string, cwd: string): ChildLike {
   return shell as unknown as ChildLike;
 }
 
+/** Structural wrapper type matching agent/sandbox.ts SandboxAdapter. */
+export interface CommandWrapper {
+  wrap(command: string): { cmd: string; args: string[] };
+}
+
+/** Spawns background shells inside a verified no-network sandbox. */
+export function sandboxedBgSpawner(wrapper: CommandWrapper, spawnFn: typeof spawn = spawn): BgSpawner {
+  return (command, cwd) => {
+    const { cmd, args } = wrapper.wrap(command);
+    const child = spawnFn(cmd, args, { cwd });
+    return child as unknown as ChildLike;
+  };
+}
+
 /**
  * Owns every background shell of a session: sequential b1..bn ids, capped
  * concurrency, per-shell ring buffers, and bulk teardown at dispose.

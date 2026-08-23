@@ -5,7 +5,7 @@ import { createBashOutputTool, createKillShellTool } from "../src/engine/tools/b
 import { builtinTools } from "../src/engine/registry.js";
 import { decidePermission } from "../src/engine/permissions.js";
 import { PermissionStore } from "../src/agent/permissionStore.js";
-import { BackgroundShellManager, type ChildLike } from "../src/engine/tools/backgroundShells.js";
+import { BackgroundShellManager, sandboxedBgSpawner, type ChildLike } from "../src/engine/tools/backgroundShells.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +15,20 @@ function freshStore() {
 }
 
 describe("background bash tools", () => {
+  it("sandboxedBgSpawner spawns the wrapped argv", () => {
+    const seen: Array<{ cmd: string; args: string[] }> = [];
+    const fakeChild = { stdout: null, stderr: null, kill: () => {} };
+    const spawner = sandboxedBgSpawner(
+      { wrap: c => ({ cmd: "unshare", args: ["-n", "/bin/sh", "-c", c] }) },
+      (cmd: string, args: readonly string[]) => {
+        seen.push({ cmd, args: [...args] });
+        return fakeChild as unknown as ChildLike;
+      }
+    );
+    spawner("echo hi", "/tmp");
+    expect(seen[0]).toEqual({ cmd: "unshare", args: ["-n", "/bin/sh", "-c", "echo hi"] });
+  });
+
   it("permissions: BashOutput/KillShell always allowed, Bash unchanged", () => {
     const store = freshStore();
     expect(decidePermission("BashOutput", {}, "default", store, "/p")).toBe("allow");

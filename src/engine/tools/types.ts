@@ -24,6 +24,10 @@ export interface ToolContext {
   networkPolicy?: {
     require(request: { capability: "webFetch"; destination: string }): void;
   };
+  /** Verified no-network wrapper for child commands. Present only when a
+   * sandbox adapter is active (offlineStrict + verified probe). Shell-spawning
+   * tools MUST route their command through it when present. */
+  sandbox?: { wrap(command: string): { cmd: string; args: string[] } };
 }
 
 export interface ToolOutput {
