@@ -16,6 +16,8 @@ import { runExtraction, hasMemoryWrites, countModelMessages, MIN_NEW_MESSAGES } 
 import { memoryDir } from "../engine/memoryPaths.js";
 import { loadSettings } from "./settings.js";
 import { loadHooksConfig, HooksRunner } from "./hooks.js";
+import { type TodoItem, type TodoStore } from "../engine/tools/todo.js";
+import { todosMessage } from "../engine/messages.js";
 import {
   NetworkPolicy, bashNetworkStatus, providerEndpoint, type NetworkMode
 } from "./networkPolicy.js";
@@ -52,6 +54,8 @@ export interface AgentSessionOptions {
   cwd: string;
   /** Base directory for user-level hook config; defaults to configDir(). */
   configBase?: string;
+  /** Directory holding session transcripts; defaults to configDir()/sessions. */
+  sessionDir?: string;
   mcpServers?: Record<string, McpServerConfig>;
   lspRegistry?: Record<string, ServerConfig>;
   mcpManager?: McpManager;
@@ -72,6 +76,7 @@ export class AgentSession {
   private abortController: AbortController | undefined;
   private sessionFile: SessionFile | undefined;
   private hooksRunner: HooksRunner | undefined;
+  private todos: TodoItem[] = [];
   sessionId: string | undefined;
   tools: string[] = [];
   private mcp: McpManager;
@@ -96,7 +101,16 @@ export class AgentSession {
     validateRunLimits(this.opts.runLimits, model);
     this.runDeadline = this.opts.runLimits?.timeoutMs === undefined
       ? undefined : Date.now() + this.opts.runLimits.timeoutMs;
-    const resumedMessages = this.opts.resume ? SessionFile.load(this.opts.resume) : [];
+    const sessionDir = this.opts.sessionDir;
+    const resumedMessages = this.opts.resume ? SessionFile.load(this.opts.resume, sessionDir) : [];
+    // Todos records are UI state, not API history: pull them out of the
+    // transcript before it becomes the conversation, then replay the latest.
+    const todoRecords = resumedMessages.filter(e => (e as { type?: string }).type === "todos");
+    const resumedHistory = resumedMessages.filter(e => (e as { type?: string }).type !== "todos");
+    if (todoRecords.length > 0) {
+      const last = todoRecords[todoRecords.length - 1] as { todos?: TodoItem[] };
+      if (Array.isArray(last.todos)) this.todos = last.todos;
+    }
     const store = new PermissionStore(this.opts.cwd);
     this.changes = this.opts.changeJournalFactory?.(this.opts.cwd, this.sessionId) ??
       new ChangeJournal(this.opts.cwd, this.sessionId);
@@ -118,8 +132,16 @@ export class AgentSession {
     const hooksRunner = new HooksRunner(hooksConfig.hooks, this.opts.cwd);
     this.hooksRunner = hooksRunner;
     void hooksRunner.run("SessionStart").catch(() => {});
+    const todoStore: TodoStore = {
+      get: () => this.todos,
+      set: (todos: TodoItem[]) => {
+        this.todos = todos;
+        this.opts.onMessage(todosMessage(todos));
+      }
+    };
     const availableTools = builtinTools({
       allowArbitraryChildNetwork: bash.available,
+      todoStore,
       task: {
         client: () => makeClient(this.opts.provider),
         model: () => this.loop?.getModel() ?? model,
@@ -163,12 +185,13 @@ export class AgentSession {
       requestPermission: (toolName, input) =>
         new Promise(resolve => this.opts.onPermissionRequest({ toolName, input, resolve }))
     });
-    if (resumedMessages.length > 0) this.loop.messages = resumedMessages;
-    this.extractCursor = resumedMessages.length;
-    this.sessionFile = new SessionFile(this.sessionId);
+    if (resumedHistory.length > 0) this.loop.messages = resumedHistory;
+    this.extractCursor = resumedHistory.length;
+    this.sessionFile = new SessionFile(this.sessionId, sessionDir);
     this.tools = tools.map(t => t.name);
     this.opts.onSessionId(this.sessionId);
     for (const warning of this.changes.warnings()) this.opts.onMessage(errorResult(warning));
+    if (this.todos.length > 0) this.opts.onMessage(todosMessage(this.todos));
     this.opts.onMessage({
       type: "system",
       subtype: "init",
@@ -198,6 +221,7 @@ export class AgentSession {
     this.abortController = new AbortController();
     const controller = this.abortController;
     const before = this.loop?.messages.length ?? 0;
+    const todosAtStart = this.todos;
     if (this.runDeadline !== undefined) {
       const remaining = Math.max(0, this.runDeadline - Date.now());
       this.timeoutTimer = setTimeout(() => {
@@ -229,6 +253,9 @@ export class AgentSession {
           await this.loop?.runTurn(text, controller.signal);
           const added = this.loop?.messages.slice(before) ?? [];
           for (const entry of added) this.sessionFile?.append(entry);
+          if (this.sessionFile && this.todos !== todosAtStart) {
+            this.sessionFile.append({ type: "todos", todos: this.todos });
+          }
           this.maybeExtractMemories();
         } finally {
           if (this.timeoutTimer) clearTimeout(this.timeoutTimer);

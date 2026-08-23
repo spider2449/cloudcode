@@ -349,3 +349,90 @@ describe("AgentSession hooks", () => {
     expect(existsSync(marker)).toBe(true);
   });
 });
+
+import { SessionFile } from "../src/engine/sessions.js";
+
+describe("AgentSession todos", () => {
+  function todoSession(cwd: string, messages?: unknown[], clientTurns?: Event[][]) {
+    vi.mocked(makeClient).mockReturnValue(fakeClient(clientTurns ?? [[textTurn("ok")]]));
+    return new AgentSession({
+      providerName: "local", provider: { kind: "openai", baseUrl: "http://127.0.0.1:8080" },
+      permissionMode: "bypassPermissions", networkMode: "offlineStrict", cwd,
+      onMessage: m => messages?.push(m),
+      onPermissionRequest: () => {}, onSessionId: () => {}
+    });
+  }
+
+  const toolUseTodosTurn = (): Event[] => [
+    { type: "content_block_start", content_block: { type: "tool_use", id: "tu_9", name: "TodoWrite" } },
+    { type: "content_block_delta", delta: { type: "input_json_delta", partial_json: JSON.stringify({ todos: [{ content: "step one", status: "completed" }] }) } },
+    { type: "content_block_stop" },
+    { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: {} }
+  ];
+
+  it("broadcasts a todos message when the model calls TodoWrite", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "cc-sess-todo-"));
+    const messages: unknown[] = [];
+    const session = todoSession(cwd, messages, [toolUseTodosTurn(), [textTurn("done")]]);
+    session.start();
+    session.send("do the steps");
+    await vi.waitFor(() => {
+      expect(messages.some(m => (m as { type?: string }).type === "todos")).toBe(true);
+    });
+    const todosMsgs = messages.filter(m => (m as { type?: string }).type === "todos");
+    expect((todosMsgs[0] as { todos: Array<{ content: string }> }).todos[0].content).toBe("step one");
+    await session.dispose();
+  });
+
+  it("persists the additive todos record through SessionFile round-trip", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cc-sess-todofile-"));
+    const sf = new SessionFile("todo-session", dir);
+    sf.append({ role: "user", content: "go" });
+    sf.append({ type: "todos", todos: [{ content: "step one", status: "completed" }] });
+    sf.append({ role: "assistant", content: [{ type: "text", text: "ok" }] });
+    const loaded = SessionFile.load("todo-session", dir);
+    const todosRecords = loaded.filter(e => (e as { type?: string }).type === "todos");
+    expect(todosRecords).toHaveLength(1);
+    expect((todosRecords[0] as { todos: Array<{ status: string }> }).todos[0].status).toBe("completed");
+  });
+
+  it("excludes todos records from resumed API history and replays the latest", async () => {
+    // Build a session file by hand: API messages with a todos record sandwiched in.
+    const dir = mkdtempSync(join(tmpdir(), "cc-sess-todoresume-"));
+    const sf = new SessionFile("resume-todos", dir);
+    sf.append({ role: "user", content: "go" });
+    sf.append({ type: "todos", todos: [{ content: "old step", status: "completed" }] });
+    sf.append({ role: "assistant", content: [{ type: "text", text: "partial" }] });
+
+    const requests: unknown[] = [];
+    const messages: unknown[] = [];
+    vi.mocked(makeClient).mockReturnValue({
+      create: async function* (req: unknown) {
+        requests.push(req);
+        for (const e of [textTurn("resumed ok")]) yield e as never;
+      }
+    });
+    const session = new AgentSession({
+      providerName: "local", provider: { kind: "openai", baseUrl: "http://127.0.0.1:8080" },
+      permissionMode: "bypassPermissions", networkMode: "offlineStrict",
+      cwd: mkdtempSync(join(tmpdir(), "cc-sess-todoresume-cwd-")), resume: "resume-todos", sessionDir: dir,
+      onMessage: m => messages.push(m), onPermissionRequest: () => {}, onSessionId: () => {}
+    });
+    session.start();
+    // Replay: the UI receives the stored snapshot at startup.
+    const replayed = messages.filter(m => (m as { type?: string }).type === "todos");
+    expect(replayed).toHaveLength(1);
+    expect((replayed[0] as { todos: Array<{ content: string }> }).todos[0].content).toBe("old step");
+
+    session.send("continue");
+    await vi.waitFor(() => {
+      expect(requests.length).toBeGreaterThan(0);
+    });
+    // The todos record never enters API history.
+    const req = requests[requests.length - 1] as { messages: unknown[] };
+    for (const m of req.messages) {
+      expect((m as { type?: string }).type).not.toBe("todos");
+    }
+    await session.dispose();
+  });
+});
