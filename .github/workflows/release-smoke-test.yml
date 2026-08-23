@@ -71,3 +71,42 @@ jobs:
         run: |
           test -f "${{ matrix.binary }}"
           "${{ matrix.binary }}" --version | grep -q cloudcode
+
+  # The Inno Setup definition is never exercised by the other legs, so a
+  # broken .iss would otherwise surface only when someone runs
+  # package:installer mid-release with ISCC installed locally.
+  installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: npm ci
+
+      - name: Type-check and build
+        run: npm run build
+
+      # The installer packages release/cloudcode-win-x64.exe, so build it first.
+      - name: Build Windows binary
+        run: npm run package:bin
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Compile installer
+        shell: pwsh
+        run: ./scripts/build-installer.ps1
+
+      - name: Smoke test installer artifact
+        shell: pwsh
+        run: |
+          $version = (Get-Content src/version.ts | Select-String '"([^"]+)"').Matches[0].Groups[1].Value
+          $path = "release/cloudcode-setup-$version.exe"
+          if (-not (Test-Path $path)) { throw "installer artifact not found: $path" }
+          Write-Host "Installer built: $path"

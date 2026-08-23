@@ -62,6 +62,19 @@ describe("packaging artifact paths", () => {
     const unchecked = outputs.filter(o => !workflow.includes(o));
     expect(unchecked).toEqual([]);
   });
+
+  it("the release smoke test actually compiles and checks the installer", () => {
+    // Compiling is the only real validation of the .iss definition; without
+    // this leg a broken installer surfaces mid-release on a dev machine.
+    const workflow = read(".github/workflows/release-smoke-test.yml");
+    expect(workflow).toContain("build-installer.ps1");
+    const base = /OutputBaseFilename=([\w{}#-]+)/.exec(iss)?.[1];
+    expect(base).toBe("cloudcode-setup-{#AppVersion}");
+    // The artifact check must derive the version the same way the installer
+    // names its output: from AppVersion, which packaging pins to src/version.ts.
+    expect(workflow).toContain("src/version.ts");
+    expect(workflow).toContain("cloudcode-setup-");
+  });
 });
 
 describe("packaging entry points", () => {
