@@ -27,6 +27,7 @@ import { collectGitReview } from "../agent/gitReview.js";
 import { Buffer } from "./buffer.js";
 import { InputBox } from "./widgets/inputBox.js";
 import { ImageAttachments } from "./imageAttachments.js";
+import { InputQueue } from "./inputQueue.js";
 import { join } from "node:path";
 import { OverlayManager } from "./widgets/overlay.js";
 import { InlineRenderer, type BottomState } from "./term/render.js";
@@ -83,9 +84,9 @@ export class App {
   private presentation: SessionPresentation;
   private task: TaskUiController;
   private permissions: PermissionController;
-  // Messages submitted while a turn was in flight; sent FIFO, one per turn,
-  // when the agent returns to idle.
-  private queuedMessages: string[] = [];
+  // Messages submitted while a turn was in flight are owned by the queue;
+  // sent FIFO, one per turn, when the agent returns to idle.
+  private queue = new InputQueue();
   private usage: UsageTracker;
   private turnCount = 0;
   private startedAt = Date.now();
@@ -213,9 +214,10 @@ export class App {
 
   /** If idle with pending queued messages, submit the next one. */
   private drainQueueIfIdle(): void {
-    if (this.phase !== "idle" || this.queuedMessages.length === 0) return;
-    const next = this.queuedMessages.shift();
-    if (next !== undefined) this.handleSubmit(next);
+    this.queue.drainIfIdle(
+      () => this.phase === "idle",
+      text => this.handleSubmit(text)
+    );
   }
   private refreshSkills(): void {
     this.skills = loadSkills(this.props.cwd);
@@ -405,7 +407,7 @@ export class App {
     if (this.phase === "streaming") {
       // The agent is mid-turn: queue the message and send it when idle.
       // Slash parsing happens at dequeue time so queued commands run in order.
-      this.queuedMessages.push(text);
+      this.queue.enqueue(text);
       this.recompute();
       return;
     }
@@ -549,7 +551,7 @@ export class App {
     const size = this.terminal.size();
     const inputVisible = this.overlay.mode === "none" && this.phase !== "permission";
     const queueCode = sgr(this.theme.muted);
-    const queuedRows = this.queuedMessages.map(m => {
+    const queuedRows = this.queue.items().map(m => {
       const row = truncateToWidth(`⧉ queued: ${m.replace(/\n/g, " ")}`, Math.max(1, size.columns));
       return queueCode ? `${queueCode}${row}${SGR_RESET}` : row;
     });
