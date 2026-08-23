@@ -37,6 +37,8 @@ export interface CommandContext {
   currentCwd(): string;
   openMemoryPicker(): void;
   openStatusLinePicker(): void;
+  /** Opens the interactive settings picker (/config with no arguments). */
+  openConfigPicker(): void;
   changeSummaries(latestOnly?: boolean): ChangeSummary[];
   changeDiff(path?: string): { content: string; truncated: boolean };
   previewUndo(): UndoPreview;

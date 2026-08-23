@@ -88,6 +88,21 @@ function currentValue(ctx: CommandContext, key: ConfigKey): string {
   return configValue(key);
 }
 
+export interface ConfigEntry {
+  key: ConfigKey;
+  current: string;
+  choices: string[];
+}
+
+/** Everything the /config picker overlay needs, computed once at open time. */
+export function configChoices(cctx: CommandContext): ConfigEntry[] {
+  return CONFIG_KEYS.map(key => ({
+    key,
+    current: currentValue(cctx, key),
+    choices: valueOptions(cctx, key)
+  }));
+}
+
 /** Validate + persist + apply live. Shared by the typed /config form and the
  * /config picker overlay so both paths stay identical. */
 export async function applyConfigValue(ctx: CommandContext, key: ConfigKey, value: string): Promise<void> {
@@ -180,12 +195,12 @@ const commands: Command[] = [
   },
   {
     name: "config",
-    description: "Get/set startup defaults: /config [provider|model|permissionMode|theme] [value]",
+    description: "Get/set startup defaults; bare /config opens a picker",
     async run(ctx, args) {
       const [key, ...rest] = args.split(/\s+/).filter(Boolean);
       const value = rest.join(" ");
       if (!key) {
-        ctx.notice(CONFIG_KEYS.map(k => `${k} = ${k === "networkMode" ? ctx.currentNetworkMode() : configValue(k)}`).join("\n"));
+        ctx.openConfigPicker();
         return;
       }
       if (!CONFIG_KEYS.includes(key as ConfigKey)) {
@@ -193,7 +208,8 @@ const commands: Command[] = [
         return;
       }
       if (!value) {
-        ctx.notice(`${key} = ${currentValue(ctx, key as ConfigKey)}`);
+        const options = valueOptions(ctx, key as ConfigKey);
+        ctx.notice(`${key} = ${currentValue(ctx, key as ConfigKey)}\nValid: ${options.join(", ")}`);
         return;
       }
       await applyConfigValue(ctx, key as ConfigKey, value);

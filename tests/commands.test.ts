@@ -60,6 +60,7 @@ function mockCtx(): CommandContext {
     currentEffort: vi.fn().mockReturnValue("off"),
     openMemoryPicker: vi.fn(),
     openStatusLinePicker: vi.fn(),
+    openConfigPicker: vi.fn(),
     changeSummaries: vi.fn().mockReturnValue([]),
     changeDiff: vi.fn().mockReturnValue({ content: "No session-owned changes.", truncated: false }),
     previewUndo: vi.fn().mockReturnValue({ operations: [], conflicts: [] }),
@@ -326,20 +327,23 @@ describe("/effort", () => {
 });
 
 describe("/config", () => {
-  it("lists all keys with persisted values when no arg is given", async () => {
+  it("opens the picker when no arg is given", async () => {
     vi.mocked(loadSettings).mockReturnValue({ provider: "local" });
     const ctx = mockCtx();
     await buildRegistry().get("config")!.run(ctx, "");
-    expect(ctx.notice).toHaveBeenCalledWith(
-      "provider = local\nmodel = (unset)\npermissionMode = (unset)\nnetworkMode = providerOnly\ntheme = dark\neffort = off\nautoMemory = true"
-    );
+    expect(ctx.openConfigPicker).toHaveBeenCalled();
+    expect(ctx.notice).not.toHaveBeenCalled();
   });
 
-  it("shows a single key's value", async () => {
+  it("shows a key's value plus valid options when no value is given", async () => {
     vi.mocked(loadSettings).mockReturnValue({});
     const ctx = mockCtx();
+    await buildRegistry().get("config")!.run(ctx, "theme");
+    expect(ctx.notice).toHaveBeenCalledWith(expect.stringContaining("theme = dark"));
+    expect(ctx.notice).toHaveBeenCalledWith(expect.stringContaining("Valid: "));
     await buildRegistry().get("config")!.run(ctx, "model");
-    expect(ctx.notice).toHaveBeenCalledWith("model = (unset)");
+    // Model list unavailable for this mock provider: no bogus options offered.
+    expect(ctx.notice).toHaveBeenCalledWith("model = (unset)\nValid: ");
   });
 
   it("rejects an unknown key", async () => {
@@ -435,6 +439,25 @@ describe("/config", () => {
     await buildRegistry().get("config")!.run(ctx, "autoMemory false");
     expect(saveSetting).toHaveBeenCalledWith("autoMemoryEnabled", false);
     expect(ctx.notice).toHaveBeenCalledWith("autoMemory = false (saved)");
+  });
+});
+
+describe("configChoices", () => {
+  it("builds entries from live context with current values", async () => {
+    const { configChoices } = await import("../src/commands/builtins.js");
+    const ctx = mockCtx();
+    const entries = configChoices(ctx);
+    expect(entries.map(e => e.key)).toEqual([
+      "provider", "model", "permissionMode", "networkMode", "theme", "effort", "autoMemory"
+    ]);
+    const provider = entries.find(e => e.key === "provider");
+    if (!provider) throw new Error("missing provider entry");
+    expect(provider.choices).toEqual(["anthropic", "local"]);
+    const theme = entries.find(e => e.key === "theme");
+    expect(theme?.current).toBe("dark");
+    expect(theme?.choices).toContain("dark");
+    const model = entries.find(e => e.key === "model");
+    expect(model?.choices).toEqual([]);
   });
 });
 
