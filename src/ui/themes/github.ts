@@ -1,6 +1,5 @@
 import type { ThemeJson } from "../themeJson.js";
 
-// Ported verbatim from opencode (packages/tui/src/theme/assets/github.json).
 const theme: ThemeJson = {
   "$schema": "https://opencode.ai/theme.json",
   "defs": {
@@ -92,29 +91,9 @@ const theme: ThemeJson = {
       "dark": "#21262d",
       "light": "#d8dee4"
     },
-    "diffAdded": {
-      "dark": "darkGreen",
-      "light": "lightGreen"
-    },
-    "diffRemoved": {
-      "dark": "darkRed",
-      "light": "lightRed"
-    },
-    "diffContext": {
-      "dark": "darkFgMuted",
-      "light": "lightFgMuted"
-    },
     "diffHunkHeader": {
       "dark": "darkBlue",
       "light": "lightBlue"
-    },
-    "diffHighlightAdded": {
-      "dark": "#3fb950",
-      "light": "#1a7f37"
-    },
-    "diffHighlightRemoved": {
-      "dark": "#f85149",
-      "light": "#cf222e"
     },
     "diffAddedBg": {
       "dark": "#033a16",
@@ -123,10 +102,6 @@ const theme: ThemeJson = {
     "diffRemovedBg": {
       "dark": "#67060c",
       "light": "#ffebe9"
-    },
-    "diffContextBg": {
-      "dark": "darkBgAlt",
-      "light": "lightBgAlt"
     },
     "diffLineNumber": {
       "dark": "#95999e",
@@ -139,10 +114,6 @@ const theme: ThemeJson = {
     "diffRemovedLineNumberBg": {
       "dark": "#67060c",
       "light": "#ffebe9"
-    },
-    "markdownText": {
-      "dark": "darkFg",
-      "light": "lightFg"
     },
     "markdownHeading": {
       "dark": "darkBlue",
@@ -160,14 +131,6 @@ const theme: ThemeJson = {
       "dark": "darkPink",
       "light": "lightPink"
     },
-    "markdownBlockQuote": {
-      "dark": "darkFgMuted",
-      "light": "lightFgMuted"
-    },
-    "markdownEmph": {
-      "dark": "darkYellow",
-      "light": "lightYellow"
-    },
     "markdownStrong": {
       "dark": "darkOrange",
       "light": "lightOrange"
@@ -176,14 +139,6 @@ const theme: ThemeJson = {
       "dark": "#30363d",
       "light": "#d0d7de"
     },
-    "markdownListItem": {
-      "dark": "darkBlue",
-      "light": "lightBlue"
-    },
-    "markdownListEnumeration": {
-      "dark": "darkCyan",
-      "light": "lightCyan"
-    },
     "markdownImage": {
       "dark": "darkBlue",
       "light": "lightBlue"
@@ -191,14 +146,6 @@ const theme: ThemeJson = {
     "markdownImageText": {
       "dark": "darkCyan",
       "light": "lightCyan"
-    },
-    "markdownCodeBlock": {
-      "dark": "darkFg",
-      "light": "lightFg"
-    },
-    "syntaxComment": {
-      "dark": "darkFgMuted",
-      "light": "lightFgMuted"
     },
     "syntaxKeyword": {
       "dark": "darkPink",
@@ -227,13 +174,8 @@ const theme: ThemeJson = {
     "syntaxOperator": {
       "dark": "darkPink",
       "light": "lightRed"
-    },
-    "syntaxPunctuation": {
-      "dark": "darkFg",
-      "light": "lightFg"
     }
   }
-}
-;
+};
 
 export default theme;

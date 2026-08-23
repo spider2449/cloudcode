@@ -1,6 +1,5 @@
 import type { ThemeJson } from "../themeJson.js";
 
-// Ported verbatim from opencode (packages/tui/src/theme/assets/solarized.json).
 const theme: ThemeJson = {
   "$schema": "https://opencode.ai/theme.json",
   "defs": {
@@ -82,29 +81,9 @@ const theme: ThemeJson = {
       "dark": "#073642",
       "light": "#eee8d5"
     },
-    "diffAdded": {
-      "dark": "green",
-      "light": "green"
-    },
-    "diffRemoved": {
-      "dark": "red",
-      "light": "red"
-    },
-    "diffContext": {
-      "dark": "base01",
-      "light": "base1"
-    },
     "diffHunkHeader": {
       "dark": "base01",
       "light": "base1"
-    },
-    "diffHighlightAdded": {
-      "dark": "green",
-      "light": "green"
-    },
-    "diffHighlightRemoved": {
-      "dark": "red",
-      "light": "red"
     },
     "diffAddedBg": {
       "dark": "#073642",
@@ -113,10 +92,6 @@ const theme: ThemeJson = {
     "diffRemovedBg": {
       "dark": "#073642",
       "light": "#eee8d5"
-    },
-    "diffContextBg": {
-      "dark": "base02",
-      "light": "base2"
     },
     "diffLineNumber": {
       "dark": "#8b9b9f",
@@ -130,10 +105,6 @@ const theme: ThemeJson = {
       "dark": "#073642",
       "light": "#eee8d5"
     },
-    "markdownText": {
-      "dark": "base0",
-      "light": "base00"
-    },
     "markdownHeading": {
       "dark": "blue",
       "light": "blue"
@@ -146,18 +117,6 @@ const theme: ThemeJson = {
       "dark": "violet",
       "light": "violet"
     },
-    "markdownCode": {
-      "dark": "green",
-      "light": "green"
-    },
-    "markdownBlockQuote": {
-      "dark": "base01",
-      "light": "base1"
-    },
-    "markdownEmph": {
-      "dark": "yellow",
-      "light": "yellow"
-    },
     "markdownStrong": {
       "dark": "orange",
       "light": "orange"
@@ -166,14 +125,6 @@ const theme: ThemeJson = {
       "dark": "base01",
       "light": "base1"
     },
-    "markdownListItem": {
-      "dark": "blue",
-      "light": "blue"
-    },
-    "markdownListEnumeration": {
-      "dark": "cyan",
-      "light": "cyan"
-    },
     "markdownImage": {
       "dark": "cyan",
       "light": "cyan"
@@ -181,14 +132,6 @@ const theme: ThemeJson = {
     "markdownImageText": {
       "dark": "violet",
       "light": "violet"
-    },
-    "markdownCodeBlock": {
-      "dark": "base0",
-      "light": "base00"
-    },
-    "syntaxComment": {
-      "dark": "base01",
-      "light": "base1"
     },
     "syntaxKeyword": {
       "dark": "green",
@@ -217,13 +160,8 @@ const theme: ThemeJson = {
     "syntaxOperator": {
       "dark": "green",
       "light": "green"
-    },
-    "syntaxPunctuation": {
-      "dark": "base0",
-      "light": "base00"
     }
   }
-}
-;
+};
 
 export default theme;

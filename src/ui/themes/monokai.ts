@@ -1,6 +1,5 @@
 import type { ThemeJson } from "../themeJson.js";
 
-// Ported verbatim from opencode (packages/tui/src/theme/assets/monokai.json).
 const theme: ThemeJson = {
   "$schema": "https://opencode.ai/theme.json",
   "defs": {
@@ -80,29 +79,9 @@ const theme: ThemeJson = {
       "dark": "#1e1f1c",
       "light": "#e8e8e8"
     },
-    "diffAdded": {
-      "dark": "green",
-      "light": "green"
-    },
-    "diffRemoved": {
-      "dark": "red",
-      "light": "red"
-    },
-    "diffContext": {
-      "dark": "comment",
-      "light": "#75715e"
-    },
     "diffHunkHeader": {
       "dark": "comment",
       "light": "#75715e"
-    },
-    "diffHighlightAdded": {
-      "dark": "green",
-      "light": "green"
-    },
-    "diffHighlightRemoved": {
-      "dark": "red",
-      "light": "red"
     },
     "diffAddedBg": {
       "dark": "#1a3a1a",
@@ -128,10 +107,6 @@ const theme: ThemeJson = {
       "dark": "#3a1a1a",
       "light": "#ffe0e0"
     },
-    "markdownText": {
-      "dark": "foreground",
-      "light": "#272822"
-    },
     "markdownHeading": {
       "dark": "pink",
       "light": "pink"
@@ -144,18 +119,6 @@ const theme: ThemeJson = {
       "dark": "purple",
       "light": "purple"
     },
-    "markdownCode": {
-      "dark": "green",
-      "light": "green"
-    },
-    "markdownBlockQuote": {
-      "dark": "comment",
-      "light": "#75715e"
-    },
-    "markdownEmph": {
-      "dark": "yellow",
-      "light": "orange"
-    },
     "markdownStrong": {
       "dark": "orange",
       "light": "orange"
@@ -163,10 +126,6 @@ const theme: ThemeJson = {
     "markdownHorizontalRule": {
       "dark": "comment",
       "light": "#75715e"
-    },
-    "markdownListItem": {
-      "dark": "cyan",
-      "light": "blue"
     },
     "markdownListEnumeration": {
       "dark": "purple",
@@ -179,14 +138,6 @@ const theme: ThemeJson = {
     "markdownImageText": {
       "dark": "purple",
       "light": "purple"
-    },
-    "markdownCodeBlock": {
-      "dark": "foreground",
-      "light": "#272822"
-    },
-    "syntaxComment": {
-      "dark": "comment",
-      "light": "#75715e"
     },
     "syntaxKeyword": {
       "dark": "pink",
@@ -215,13 +166,8 @@ const theme: ThemeJson = {
     "syntaxOperator": {
       "dark": "pink",
       "light": "pink"
-    },
-    "syntaxPunctuation": {
-      "dark": "foreground",
-      "light": "#272822"
     }
   }
-}
-;
+};
 
 export default theme;

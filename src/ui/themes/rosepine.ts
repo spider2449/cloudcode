@@ -1,6 +1,5 @@
 import type { ThemeJson } from "../themeJson.js";
 
-// Ported verbatim from opencode (packages/tui/src/theme/assets/rosepine.json).
 const theme: ThemeJson = {
   "$schema": "https://opencode.ai/theme.json",
   "defs": {
@@ -93,29 +92,9 @@ const theme: ThemeJson = {
       "dark": "highlightLow",
       "light": "#f4ede8"
     },
-    "diffAdded": {
-      "dark": "pine",
-      "light": "#286983"
-    },
-    "diffRemoved": {
-      "dark": "love",
-      "light": "#b4637a"
-    },
-    "diffContext": {
-      "dark": "muted",
-      "light": "dawnMuted"
-    },
     "diffHunkHeader": {
       "dark": "iris",
       "light": "#907aa9"
-    },
-    "diffHighlightAdded": {
-      "dark": "pine",
-      "light": "#286983"
-    },
-    "diffHighlightRemoved": {
-      "dark": "love",
-      "light": "#b4637a"
     },
     "diffAddedBg": {
       "dark": "#1f2d3a",
@@ -124,10 +103,6 @@ const theme: ThemeJson = {
     "diffRemovedBg": {
       "dark": "#3a1f2d",
       "light": "#fce5e8"
-    },
-    "diffContextBg": {
-      "dark": "surface",
-      "light": "dawnSurface"
     },
     "diffLineNumber": {
       "dark": "#9491a6",
@@ -157,18 +132,6 @@ const theme: ThemeJson = {
       "dark": "rose",
       "light": "#d7827e"
     },
-    "markdownCode": {
-      "dark": "pine",
-      "light": "#286983"
-    },
-    "markdownBlockQuote": {
-      "dark": "muted",
-      "light": "dawnMuted"
-    },
-    "markdownEmph": {
-      "dark": "gold",
-      "light": "#ea9d34"
-    },
     "markdownStrong": {
       "dark": "love",
       "light": "#b4637a"
@@ -176,14 +139,6 @@ const theme: ThemeJson = {
     "markdownHorizontalRule": {
       "dark": "highlightMed",
       "light": "#dfdad9"
-    },
-    "markdownListItem": {
-      "dark": "foam",
-      "light": "pine"
-    },
-    "markdownListEnumeration": {
-      "dark": "rose",
-      "light": "#d7827e"
     },
     "markdownImage": {
       "dark": "foam",
@@ -196,10 +151,6 @@ const theme: ThemeJson = {
     "markdownCodeBlock": {
       "dark": "#e0def4",
       "light": "#575279"
-    },
-    "syntaxComment": {
-      "dark": "muted",
-      "light": "dawnMuted"
     },
     "syntaxKeyword": {
       "dark": "pine",
@@ -234,7 +185,6 @@ const theme: ThemeJson = {
       "light": "dawnSubtle"
     }
   }
-}
-;
+};
 
 export default theme;

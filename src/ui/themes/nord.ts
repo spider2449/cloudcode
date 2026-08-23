@@ -1,6 +1,5 @@
 import type { ThemeJson } from "../themeJson.js";
 
-// Ported verbatim from opencode (packages/tui/src/theme/assets/nord.json).
 const theme: ThemeJson = {
   "$schema": "https://opencode.ai/theme.json",
   "defs": {
@@ -82,14 +81,6 @@ const theme: ThemeJson = {
       "dark": "nord2",
       "light": "nord3"
     },
-    "diffAdded": {
-      "dark": "nord14",
-      "light": "nord14"
-    },
-    "diffRemoved": {
-      "dark": "nord11",
-      "light": "nord11"
-    },
     "diffContext": {
       "dark": "#8B95A7",
       "light": "nord3"
@@ -98,14 +89,6 @@ const theme: ThemeJson = {
       "dark": "#8B95A7",
       "light": "nord3"
     },
-    "diffHighlightAdded": {
-      "dark": "nord14",
-      "light": "nord14"
-    },
-    "diffHighlightRemoved": {
-      "dark": "nord11",
-      "light": "nord11"
-    },
     "diffAddedBg": {
       "dark": "#3B4252",
       "light": "#E5E9F0"
@@ -113,10 +96,6 @@ const theme: ThemeJson = {
     "diffRemovedBg": {
       "dark": "#3B4252",
       "light": "#E5E9F0"
-    },
-    "diffContextBg": {
-      "dark": "nord1",
-      "light": "nord5"
     },
     "diffLineNumber": {
       "dark": "#a9aeb6",
@@ -146,17 +125,9 @@ const theme: ThemeJson = {
       "dark": "nord7",
       "light": "nord7"
     },
-    "markdownCode": {
-      "dark": "nord14",
-      "light": "nord14"
-    },
     "markdownBlockQuote": {
       "dark": "#8B95A7",
       "light": "nord3"
-    },
-    "markdownEmph": {
-      "dark": "nord12",
-      "light": "nord12"
     },
     "markdownStrong": {
       "dark": "nord13",
@@ -165,14 +136,6 @@ const theme: ThemeJson = {
     "markdownHorizontalRule": {
       "dark": "#8B95A7",
       "light": "nord3"
-    },
-    "markdownListItem": {
-      "dark": "nord8",
-      "light": "nord10"
-    },
-    "markdownListEnumeration": {
-      "dark": "nord7",
-      "light": "nord7"
     },
     "markdownImage": {
       "dark": "nord9",
@@ -223,7 +186,6 @@ const theme: ThemeJson = {
       "light": "nord0"
     }
   }
-}
-;
+};
 
 export default theme;
