@@ -128,6 +128,25 @@ export function inspectProjectExecutableConfig(cwd: string, base?: string): Proj
     if (executable) files.push({ name: ".cloudcode/maintenance.json", raw: maintenance.raw });
   }
 
+  const hooks = readConfig(join(cwd, ".cloudcode", "hooks.json"));
+  if (hooks && hooks.value && typeof hooks.value === "object" && !Array.isArray(hooks.value)) {
+    const events = (hooks.value as { hooks?: unknown }).hooks;
+    let hasCommand = false;
+    if (events && typeof events === "object" && !Array.isArray(events)) {
+      for (const entries of Object.values(events)) {
+        if (!Array.isArray(entries)) continue;
+        for (const entry of entries) {
+          const command = (entry as { command?: unknown }).command;
+          if (typeof command === "string" && command !== "") {
+            commands.push(`Hook: ${command}`);
+            hasCommand = true;
+          }
+        }
+      }
+    }
+    if (hasCommand) files.push({ name: ".cloudcode/hooks.json", raw: hooks.raw });
+  }
+
   if (commands.length === 0) return undefined;
   const hash = createHash("sha256");
   for (const file of files) hash.update(file.name).update("\0").update(file.raw).update("\0");

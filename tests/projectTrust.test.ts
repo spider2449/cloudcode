@@ -91,3 +91,24 @@ describe("project executable configuration trust", () => {
     expect(new ProjectTrustStore(trustFile).isTrusted(inspectProjectExecutableConfig(cwd)!)).toBe(false);
   });
 });
+
+describe("hooks.json in the trust descriptor", () => {
+  it("lists hook commands and includes the file raw when present", () => {
+    const cwd = tempDir();
+    mkdirSync(join(cwd, ".cloudcode"), { recursive: true });
+    const hooksJson = JSON.stringify({
+      hooks: { PreToolUse: [{ command: "node guard.js" }] }
+    });
+    writeFileSync(join(cwd, ".cloudcode", "hooks.json"), hooksJson);
+    const descriptor = inspectProjectExecutableConfig(cwd);
+    if (!descriptor) throw new Error("expected a descriptor");
+    expect(descriptor.commands).toContain("Hook: node guard.js");
+  });
+
+  it("does not create a descriptor for an invalid or absent hooks file", () => {
+    const cwd = tempDir();
+    mkdirSync(join(cwd, ".cloudcode"), { recursive: true });
+    writeFileSync(join(cwd, ".cloudcode", "hooks.json"), "{nope");
+    expect(inspectProjectExecutableConfig(cwd)).toBeUndefined();
+  });
+});
