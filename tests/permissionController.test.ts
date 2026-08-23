@@ -76,6 +76,16 @@ describe("PermissionController", () => {
     expect(store.check("Grep", "/outside/other.log")).toBeUndefined();
   });
 
+  it("remembers a WebFetch decision scoped to the host", () => {
+    const { overlay, store, controller } = setup();
+    const answers: boolean[] = [];
+    controller.enqueue(request("WebFetch", { url: "https://docs.example.com/page" }, answers));
+    overlay.handleKey({ t: "printable", ch: "a" }, "a"); // "always allow" hotkey
+    expect(answers).toEqual([true]);
+    expect(store.checkHost("WebFetch", "docs.example.com")).toBe("allow");
+    expect(store.checkHost("WebFetch", "other.com")).toBeUndefined();
+  });
+
   it("reports a failed rule write without dropping the answer", () => {
     const { overlay, store, controller, errors } = setup();
     const answers: boolean[] = [];

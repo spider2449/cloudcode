@@ -338,7 +338,10 @@ export class App {
       listPermissionRules: () => {
         const rules = this.permissionStore.list();
         if (rules.length === 0) return "No permission rules.";
-        return rules.map(r => `${r.decision === "allow" ? "✓" : "✗"} ${r.tool} ${r.dir ?? `'${r.prefix}' commands`}`).join("\n");
+        return rules.map(r => {
+          const scope = r.dir ?? (r.host !== undefined ? r.host : `'${r.prefix}' commands`);
+          return `${r.decision === "allow" ? "✓" : "✗"} ${r.tool} ${scope}`;
+        }).join("\n");
       },
       clearPermissionRules: () => this.permissionStore.clear(),
       mcpStatus: async () =>

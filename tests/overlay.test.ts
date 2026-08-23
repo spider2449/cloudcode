@@ -119,7 +119,8 @@ describe("OverlayManager project sub-mode", () => {
 describe("OverlayManager permission sub-mode", () => {
   const fileRequest = { toolName: "Edit", input: { file_path: "/a/b.ts" } };
   const bashRequest = { toolName: "Bash", input: { command: "ls" } };
-  const otherRequest = { toolName: "WebFetch", input: { url: "https://example.com" } };
+  const otherRequest = { toolName: "SomeOtherTool", input: {} };
+  const webFetchRequest = { toolName: "WebFetch", input: { url: "https://example.com/docs" } };
 
   it("hotkey 'y' allows without remembering", () => {
     const onDecision = vi.fn();
@@ -183,6 +184,25 @@ describe("OverlayManager permission sub-mode", () => {
     const joined = mgr.render(THEMES.dark, 80).join("\n");
     expect(joined).toContain("Always allow 'ls' commands");
     expect(joined).toContain("Never allow 'ls' commands");
+  });
+
+  it("offers Always/Never allow '<host>' for WebFetch requests", () => {
+    const onDecision = vi.fn();
+    const mgr = new OverlayManager();
+    mgr.openPermission(webFetchRequest as never, onDecision);
+    const joined = mgr.render(THEMES.dark, 80).join("\n");
+    expect(joined).toContain("Always allow example.com");
+    expect(joined).toContain("Never allow example.com");
+    mgr.handleKey({ t: "printable", ch: "a" }, "a");
+    expect(onDecision).toHaveBeenCalledWith(true, "allow");
+  });
+
+  it("offers plain Yes/No when the WebFetch url is unusable for host scoping", () => {
+    const mgr = new OverlayManager();
+    mgr.openPermission({ toolName: "WebFetch", input: { url: "garbage" } } as never, () => {});
+    const joined = mgr.render(THEMES.dark, 80).join("\n");
+    expect(joined).not.toContain("Always allow");
+    expect(joined).not.toContain("Always for this directory");
   });
 
   it("arrow navigation plus Enter selects the currently highlighted option", () => {

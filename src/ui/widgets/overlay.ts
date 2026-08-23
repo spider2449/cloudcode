@@ -7,7 +7,7 @@ import { sgr, SGR_RESET } from "../term/ansi.js";
 import type { Theme } from "../theme.js";
 import type { MemoryOption } from "../MemoryPicker.js";
 import { commandPrefix } from "../../agent/permissionStore.js";
-import { ruleScope } from "../../engine/permissions.js";
+import { hostScope, ruleScope } from "../../engine/permissions.js";
 import { STATUS_LINE_ITEMS, STATUS_LINE_LABELS, canonicalOrder } from "../../statusLineItems.js";
 import type { StatusLineItem } from "../../statusLineItems.js";
 
@@ -42,6 +42,15 @@ function commandOptions(prefix: string): PermOption[] {
     { label: `Always allow '${prefix}' commands (a)`, hotkey: "a", allow: true, rememberAs: "allow" },
     { label: "No (n)", hotkey: "n", allow: false },
     { label: `Never allow '${prefix}' commands (d)`, hotkey: "d", allow: false, rememberAs: "deny" }
+  ];
+}
+
+function hostOptions(host: string): PermOption[] {
+  return [
+    { label: "Yes (y)", hotkey: "y", allow: true },
+    { label: `Always allow ${host} (a)`, hotkey: "a", allow: true, rememberAs: "allow" },
+    { label: "No (n)", hotkey: "n", allow: false },
+    { label: `Never allow ${host} (d)`, hotkey: "d", allow: false, rememberAs: "deny" }
   ];
 }
 
@@ -119,16 +128,19 @@ export class OverlayManager {
 
   openPermission(request: PermissionRequest, onDecision: (allow: boolean, rememberAs?: "allow" | "deny") => void): void {
     this._mode = "permission";
-    // Offer "always for this directory" exactly when a rule scoped that way
-    // would actually be consulted (see ruleScope) — Read/Write/Edit by their
-    // file_path, Glob/Grep by the directory they search.
+    // Offer "always" exactly when a remembered rule would actually be
+    // consulted later: path-scoped (see ruleScope), command-prefix (Bash),
+    // or host-scoped (WebFetch).
     const hasPathRule = ruleScope(request.toolName, request.input) !== undefined;
     const isBashCommand = request.toolName === "Bash" && typeof request.input.command === "string";
+    const host = hostScope(request.toolName, request.input);
     const options = hasPathRule
       ? FILE_OPTIONS
       : isBashCommand
         ? commandOptions(commandPrefix(String(request.input.command)))
-        : BASE_OPTIONS;
+        : host
+          ? hostOptions(host)
+          : BASE_OPTIONS;
     this.permissionState = { request, options, selected: 0, onDecision };
   }
 
