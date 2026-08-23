@@ -9,6 +9,9 @@ import { SessionIndex } from "../src/agent/sessionIndex.js";
 vi.mock("../src/agent/models.js", () => ({
   fetchModels: vi.fn().mockResolvedValue(["model-a", "model-b"])
 }));
+vi.mock("../src/agent/contextProbe.js", () => ({
+  applyContextWindow: vi.fn().mockResolvedValue(undefined)
+}));
 vi.mock("../src/engine/api.js", () => ({ makeClient: vi.fn() }));
 vi.mock("../src/agent/mcp.js", async () => {
   const actual = await vi.importActual<typeof import("../src/agent/mcp.js")>("../src/agent/mcp.js");
@@ -32,6 +35,7 @@ vi.mock("../src/agent/settings.js", async importOriginal => ({
 import { makeClient } from "../src/engine/api.js";
 import { loadMcpServers } from "../src/agent/mcp.js";
 import { saveSetting } from "../src/agent/settings.js";
+import { applyContextWindow } from "../src/agent/contextProbe.js";
 
 const wait = (ms = 30) => new Promise(r => setTimeout(r, ms));
 type Event = Record<string, unknown>;
@@ -128,6 +132,29 @@ describe("App", () => {
     const all = terminal.writes.join("");
     expect(all).toContain("Welcome to cloudcode");
     expect(all).not.toContain("hi there");
+  });
+
+  it("re-probes the context window when switching providers", async () => {
+    vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("ok")]) as never);
+    vi.mocked(applyContextWindow).mockClear();
+    const terminal = new FakeTerminal({ rows: 24, columns: 80 });
+    const app = new App({
+      cwd: "/repo",
+      providers: {
+        anthropic: {},
+        llama: { kind: "openai", baseUrl: "http://localhost:8080" }
+      },
+      initialProvider: "anthropic",
+      sessionIndex: new SessionIndex()
+    }, terminal);
+    const running = app.run();
+    await wait(5);
+    app.submitForTest("/provider llama");
+    await wait(10);
+    expect(applyContextWindow).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(applyContextWindow).mock.calls[0][0]).toMatchObject({ baseUrl: "http://localhost:8080" });
+    app.submitForTest("/exit");
+    await running;
   });
 
   it("commits the assistant reply to the buffer on result", async () => {

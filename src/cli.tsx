@@ -3,6 +3,7 @@ import { basename } from "node:path";
 import { App } from "./ui/nativeApp.js";
 import { Terminal } from "./ui/term/terminal.js";
 import { loadProviders } from "./agent/providers.js";
+import { applyContextWindow } from "./agent/contextProbe.js";
 import { loadSettings } from "./agent/settings.js";
 import { loadMcpServersByScope } from "./agent/mcp.js";
 import { SessionIndex } from "./agent/sessionIndex.js";
@@ -163,6 +164,11 @@ if (!providers[providerName]) {
   console.error(`Saved default provider "${providerName}" not found; using anthropic.`);
   providerName = "anthropic";
 }
+
+// Best-effort llama.cpp /props probe: fills model_context_window for
+// openai-kind providers before any session (interactive, print, or task)
+// is constructed. Manual providers.json values always win.
+await applyContextWindow(providers[providerName]);
 
 // Resolve OAuth bearer auth once: used when the selected anthropic-kind
 // provider carries no explicit key. Refresh needs real egress, so it only

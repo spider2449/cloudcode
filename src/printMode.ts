@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { AgentSession, DEFAULT_MODEL, type PermissionMode } from "./agent/session.js";
 import type { ProviderConfig } from "./agent/providers.js";
 import { loadMcpServers } from "./agent/mcp.js";
+import { applyContextWindow } from "./agent/contextProbe.js";
 import type { EffortLevel } from "./engine/effort.js";
 import type { SessionIndex } from "./agent/sessionIndex.js";
 import { inspectProjectExecutableConfig, ProjectTrustStore } from "./agent/projectTrust.js";
@@ -47,6 +48,7 @@ export interface PrintOptions {
 // engine/permission/checkpoint boundaries as the interactive TUI.
 export async function runPrint(opts: PrintOptions, io: PrintIo): Promise<number> {
   const started = Date.now();
+  await applyContextWindow(opts.provider);
   const model = opts.model ?? opts.provider.model ?? DEFAULT_MODEL;
   let finish!: () => void;
   const done = new Promise<void>(resolve => { finish = resolve; });

@@ -11,6 +11,7 @@ import { FileIndex } from "../commands/fileIndex.js";
 import { liveCompletionContext, type CompletionContext } from "../commands/completion.js";
 import { toDisplayItems, streamDelta, streamThinkingDelta, type DisplayItem } from "./transcript.js";
 import { fetchModels } from "../agent/models.js";
+import { applyContextWindow } from "../agent/contextProbe.js";
 import { loadMcpServers, formatMcpStatus } from "../agent/mcp.js";
 import { loadRegistry } from "../engine/lsp/config.js";
 import { loadSkills, formatSkillList, type Skill } from "../agent/skills.js";
@@ -271,6 +272,7 @@ export class App {
 
   private async restartSession(name: string, resume?: string, modeOverride?: PermissionMode): Promise<void> {
     await this.session?.dispose();
+    await applyContextWindow(this.props.providers[name]);
     this.firstMessage = undefined;
     this.usage.resetForNewSession();
     this.session = this.createSession(name, resume, modeOverride);
