@@ -56,6 +56,7 @@ export interface AppProps {
   switchedFrom?: string;
   networkMode?: NetworkMode;
   networkAudit?: NetworkDecisionRecorder;
+  oauthAuthToken?: string;
   task?: TaskUiOptions;
 }
 
@@ -246,6 +247,7 @@ export class App {
       resume,
       cwd: this.props.cwd,
       networkPolicy: this.network.policyFor(name),
+      oauthAuthToken: this.props.oauthAuthToken,
       mcpServers: this.mcpServers,
       lspRegistry: loadRegistry(undefined, join(this.props.cwd, ".cloudcode", "lsp.json"), this.allowProjectConfig),
       toolAllowlist: this.props.task?.toolAllowlist,

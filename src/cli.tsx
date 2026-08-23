@@ -25,6 +25,8 @@ import { TaskCoordinator } from "./agent/taskCoordinator.js";
 import { runPackCommand } from "./commands/cli/pack.js";
 import { runMaintainCommand } from "./commands/cli/maintain.js";
 import { createMaintenanceExecutor } from "./commands/cli/maintenanceExecutor.js";
+import { runLoginCommand } from "./commands/cli/login.js";
+import { loadOwnCredentials, loadBorrowedCredentials, refreshTokens, isExpired } from "./agent/oauth.js";
 
 const parsed = parseCli(process.argv.slice(2));
 
@@ -102,6 +104,13 @@ if (parsed.kind === "subcommand") {
       process.exit(result.exitCode);
       break;
     }
+    case "login": {
+      const result = await runLoginCommand(parsed.args, { networkMode: subNetworkMode });
+      if (result.stdout) console.log(result.stdout);
+      if (result.stderr) console.error(result.stderr);
+      process.exit(result.exitCode);
+      break;
+    }
     case "maintain": {
       const providers = loadProviders();
       const providerName = subSettings.provider ?? "anthropic";
@@ -155,6 +164,23 @@ if (!providers[providerName]) {
   providerName = "anthropic";
 }
 
+// Resolve OAuth bearer auth once: used when the selected anthropic-kind
+// provider carries no explicit key. Refresh needs real egress, so it only
+// happens under unrestricted; otherwise an expired token just means off.
+const selectedForAuth = providers[providerName] ?? {};
+let oauthAuthToken: string | undefined;
+if (selectedForAuth.kind !== "openai" && !selectedForAuth.apiKey && !process.env.ANTHROPIC_API_KEY) {
+  const oauth = loadOwnCredentials() ?? loadBorrowedCredentials();
+  if (oauth && !isExpired(oauth)) {
+    oauthAuthToken = oauth.accessToken;
+  } else if (oauth?.refreshToken && networkMode === "unrestricted") {
+    try { oauthAuthToken = (await refreshTokens(oauth.refreshToken)).accessToken; }
+    catch { console.error("OAuth token refresh failed; continuing unauthenticated."); }
+  } else if (oauth) {
+    console.error("OAuth token expired; refresh requires --network-mode unrestricted.");
+  }
+}
+
 const sessionIndex = new SessionIndex();
 if (taskLaunch) process.chdir(taskLaunch.cwd);
 const initialCwd = taskLaunch?.cwd ?? process.cwd();
@@ -192,6 +218,7 @@ if (sessionParsed.kind === "print") {
       trustProjectConfig: sessionParsed.trustProjectConfig,
       networkMode,
       networkAudit,
+      oauthAuthToken,
       outputFormat: sessionParsed.outputFormat,
       runLimits: sessionParsed.runLimits
     }, {
@@ -239,6 +266,7 @@ if (sessionParsed.kind === "print") {
         switchedFrom,
         networkMode,
         networkAudit,
+        oauthAuthToken,
         task: currentTask && taskRunner ? {
           initialPrompt: currentTask.initialPrompt,
           planning: currentTask.planning,

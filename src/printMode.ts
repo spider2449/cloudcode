@@ -37,6 +37,7 @@ export interface PrintOptions {
   networkAudit?: NetworkDecisionRecorder;
   outputFormat?: OutputFormat;
   runLimits?: RunLimits;
+  oauthAuthToken?: string;
   interruptSource?: InterruptSource;
   toolAllowlist?: readonly string[];
   disableMcp?: boolean;
@@ -81,6 +82,7 @@ export async function runPrint(opts: PrintOptions, io: PrintIo): Promise<number>
     cwd: opts.cwd,
     runLimits: opts.runLimits,
     toolAllowlist: opts.toolAllowlist,
+    oauthAuthToken: opts.oauthAuthToken,
     networkPolicy: policy,
     mcpServers: opts.disableMcp ? {} : loadMcpServers(opts.cwd, undefined, includeProjectConfig),
     lspRegistry: loadRegistry(undefined, join(opts.cwd, ".cloudcode", "lsp.json"), includeProjectConfig),
