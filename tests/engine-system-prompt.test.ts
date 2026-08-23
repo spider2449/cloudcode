@@ -18,6 +18,12 @@ describe("buildSystemPrompt", () => {
     expect(p).toContain("coding agent");
     expect(p).toContain(dir);
   });
+  it("documents the @path mention convention", () => {
+    const prompt = buildSystemPrompt("/tmp");
+    expect(prompt).toContain(
+      "@path tokens referencing project-relative files"
+    );
+  });
   it("appends CLAUDE.md when present", () => {
     const dir = mkdtempSync(join(tmpdir(), "cc-sys2-"));
     writeFileSync(join(dir, "CLAUDE.md"), "Always use tabs.");
