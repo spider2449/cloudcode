@@ -23,6 +23,7 @@ import {
   NetworkPolicy, bashNetworkStatus, providerEndpoint, type NetworkMode
 } from "./networkPolicy.js";
 import { probeSandboxCached, type SandboxProbeResult } from "./sandbox.js";
+import { OAUTH_BETA_HEADER } from "../engine/api.js";
 import {
   ChangeJournal, type ChangeSummary, type UndoPreview, type UndoResult
 } from "./changeJournal.js";
@@ -66,6 +67,9 @@ export interface AgentSessionOptions {
   networkPolicy?: NetworkPolicy;
   /** Probe override for tests; defaults to the cached real machine probe. */
   sandboxProbe?: () => SandboxProbeResult;
+  /** Resolved OAuth bearer token for anthropic-kind providers without an
+   * API key; resolved by the CLI before the session starts. */
+  oauthAuthToken?: string;
   runLimits?: RunLimits;
   toolAllowlist?: readonly string[];
   onMessage(msg: EngineMessage): void;
@@ -93,6 +97,7 @@ export class AgentSession {
   private turnActive = false;
   private runDeadline: number | undefined;
   private timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+  private clientAuth: { authToken: string; betaHeader?: string } | undefined;
 
   constructor(private opts: AgentSessionOptions) {
     this.lsp = new LspManager(opts.lspRegistry);
@@ -149,12 +154,16 @@ export class AgentSession {
         this.opts.onMessage(todosMessage(todos));
       }
     };
+    const clientAuth = this.opts.oauthAuthToken
+      ? { authToken: this.opts.oauthAuthToken, betaHeader: OAUTH_BETA_HEADER }
+      : undefined;
+    this.clientAuth = clientAuth;
     const availableTools = builtinTools({
       allowArbitraryChildNetwork: bash.available,
       todoStore,
       bgShells,
       task: {
-        client: () => makeClient(this.opts.provider),
+        client: () => makeClient(this.opts.provider, clientAuth),
         model: () => this.loop?.getModel() ?? model,
         effort: () => this.loop?.getEffort() ?? this.opts.effort ?? "off",
         contextWindow: () => this.opts.provider.model_context_window,
@@ -170,7 +179,7 @@ export class AgentSession {
       ? availableTools.filter(tool => this.opts.toolAllowlist?.includes(tool.name))
       : availableTools;
     this.loop = new EngineLoop({
-      client: makeClient(this.opts.provider),
+      client: makeClient(this.opts.provider, clientAuth),
       model,
       systemPrompt: buildSystemPrompt(this.opts.cwd),
       tools,
@@ -324,7 +333,7 @@ export class AgentSession {
     this.extractCursor = messages.length;
     if (!shouldExtract(messages, from, dir)) return;
     void runExtraction({
-      client: makeClient(this.opts.provider),
+      client: makeClient(this.opts.provider, this.clientAuth),
       model: this.opts.model ?? this.opts.provider.model ?? DEFAULT_MODEL,
       memoryDir: dir,
       messages: [...messages],

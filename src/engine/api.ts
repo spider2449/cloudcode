@@ -16,11 +16,26 @@ export interface MessagesClient {
   create(req: StreamRequest, signal: AbortSignal): AsyncIterable<Record<string, unknown>>;
 }
 
-export function makeClient(cfg: ProviderConfig): MessagesClient {
+export const OAUTH_BETA_HEADER = "oauth-2025-04-20";
+
+/** Optional OAuth bearer authentication for anthropic-kind providers. */
+export interface ClientAuth {
+  authToken: string;
+  betaHeader?: string;
+}
+
+export function makeClient(cfg: ProviderConfig, auth?: ClientAuth): MessagesClient {
   if (cfg.kind === "openai") return makeOpenAIClient(cfg);
   const anthropic = new Anthropic({
     apiKey: cfg.apiKey ?? process.env.ANTHROPIC_API_KEY ?? "none",
-    baseURL: cfg.baseUrl
+    baseURL: cfg.baseUrl,
+    // Explicit keys win; OAuth flows through Bearer auth plus its beta header.
+    ...(auth
+      ? {
+          authToken: auth.authToken,
+          defaultHeaders: { "anthropic-beta": auth.betaHeader ?? OAUTH_BETA_HEADER }
+        }
+      : {})
   });
   return {
     async *create(req, signal) {
