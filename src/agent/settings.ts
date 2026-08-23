@@ -4,6 +4,7 @@ import { configDir } from "./providers.js";
 import type { PermissionMode } from "./session.js";
 import { isEffortLevel, type EffortLevel } from "../engine/effort.js";
 import { isPersistedNetworkMode, type PersistedNetworkMode } from "./networkPolicy.js";
+import { normalizeStatusLineItems } from "../statusLineItems.js";
 
 export interface Settings {
   provider?: string;
@@ -13,6 +14,8 @@ export interface Settings {
   theme?: string;
   autoMemoryEnabled?: boolean;
   networkMode?: PersistedNetworkMode;
+  /** Segment IDs shown in the bottom status bar; absent means app default. */
+  statusLineItems?: string[];
 }
 
 // bypassPermissions is deliberately not persistable: a saved bypass would make
@@ -43,10 +46,12 @@ export function loadSettings(filePath: string = DEFAULT_FILE()): Settings {
   if (typeof raw.theme === "string") out.theme = raw.theme;
   if (typeof raw.autoMemoryEnabled === "boolean") out.autoMemoryEnabled = raw.autoMemoryEnabled;
   if (isPersistedNetworkMode(raw.networkMode)) out.networkMode = raw.networkMode;
+  const statusLineItems = normalizeStatusLineItems(raw.statusLineItems);
+  if (statusLineItems) out.statusLineItems = statusLineItems;
   return out;
 }
 
-export function saveSetting(key: keyof Settings, value: string | boolean, filePath: string = DEFAULT_FILE()): void {
+export function saveSetting(key: keyof Settings, value: string | boolean | string[], filePath: string = DEFAULT_FILE()): void {
   const next = { ...loadRaw(filePath), [key]: value };
   mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(filePath, JSON.stringify(next, null, 2));

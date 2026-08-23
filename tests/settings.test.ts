@@ -84,3 +84,35 @@ describe("autoMemoryEnabled", () => {
     expect(loadSettings(file).autoMemoryEnabled).toBeUndefined();
   });
 });
+
+describe("statusLineItems setting", () => {
+  it("round-trips an array through save/load", () => {
+    const file = join(dir(), "settings.json");
+    saveSetting("statusLineItems", ["cost", "mode"], file);
+    expect(loadSettings(file).statusLineItems).toEqual(["cost", "mode"]);
+  });
+
+  it("drops unknown IDs and duplicates on load", () => {
+    const file = join(dir(), "settings.json");
+    writeFileSync(file, JSON.stringify({ statusLineItems: ["nope", "cost", "cost"] }));
+    expect(loadSettings(file).statusLineItems).toEqual(["cost"]);
+  });
+
+  it("ignores non-array values and preserves an explicit empty array", () => {
+    const bad = join(dir(), "bad.json");
+    writeFileSync(bad, JSON.stringify({ statusLineItems: "model" }));
+    expect(loadSettings(bad).statusLineItems).toBeUndefined();
+    const empty = join(dir(), "empty.json");
+    writeFileSync(empty, JSON.stringify({ statusLineItems: [] }));
+    expect(loadSettings(empty).statusLineItems).toEqual([]);
+  });
+
+  it("preserves unknown sibling keys when saving the array", () => {
+    const file = join(dir(), "settings.json");
+    saveSetting("provider", "local", file);
+    saveSetting("statusLineItems", ["cost"], file);
+    expect(loadSettings(file).statusLineItems).toEqual(["cost"]);
+    const raw = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+    expect(raw["provider"]).toBe("local");
+  });
+});
