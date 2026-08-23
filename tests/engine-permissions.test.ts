@@ -195,3 +195,12 @@ describe("hostScope", () => {
     expect(hostScope("WebFetch", { url: "ftp://example.com" })).toBeUndefined();
   });
 });
+
+describe("TodoWrite permissions", () => {
+  it("is always allowed without prompting or store rules", () => {
+    const store = freshStore();
+    expect(decidePermission("TodoWrite", { todos: [] }, "default", store, CWD)).toBe("allow");
+    expect(decidePermission("TodoWrite", { todos: [] }, "acceptEdits", store, CWD)).toBe("allow");
+    expect(decidePermission("TodoWrite", {}, "bypassPermissions", store, CWD)).toBe("allow");
+  });
+});
