@@ -61,3 +61,12 @@ export function buildSystemPrompt(cwd: string, opts: SystemPromptOptions = {}): 
   }
   return prompt;
 }
+
+const SUBAGENT_BASE = `You are a code-exploration subagent inside cloudcode.
+Investigate the request using only your read and search tools (Read, Glob,
+Grep, and LSP lookups). Do not attempt to change anything. Report findings
+concisely with precise file paths and line numbers. Working directory: `;
+
+export function buildSubagentSystemPrompt(cwd: string): string {
+  return SUBAGENT_BASE + cwd;
+}

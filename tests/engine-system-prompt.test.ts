@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildSystemPrompt } from "../src/engine/systemPrompt.js";
+import { buildSystemPrompt, buildSubagentSystemPrompt } from "../src/engine/systemPrompt.js";
 import { sanitizePath, memoryDir } from "../src/engine/memoryPaths.js";
 import { linkPack } from "../src/agent/packLinks.js";
 import { enablePack } from "../src/agent/packs.js";
@@ -93,5 +93,14 @@ describe("user CLOUDCODE.md and memory section", () => {
     const p = buildSystemPrompt(cwd, { configBase: base });
     expect(p).toContain("# Auto memory");
     expect(existsSync(memoryDir(cwd, base))).toBe(false);
+  });
+});
+
+describe("buildSubagentSystemPrompt", () => {
+  it("describes a read-only explorer scoped to the working directory", () => {
+    const prompt = buildSubagentSystemPrompt("/repo");
+    expect(prompt).toContain("code-exploration subagent");
+    expect(prompt).toContain("/repo");
+    expect(prompt.toLowerCase()).toContain("do not attempt to change");
   });
 });
