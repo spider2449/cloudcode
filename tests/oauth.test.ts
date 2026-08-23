@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -96,7 +96,7 @@ describe("credential store", () => {
     saveCredentials({ accessToken: "a", expiresAt: 1 }, base);
     expect(loadOwnCredentials(base)?.accessToken).toBe("a");
     if (process.platform !== "win32") {
-      expect(readFileSync(join(base, "credentials.json")).mode & 0o777).toBe(0o600);
+      expect(statSync(join(base, "credentials.json")).mode & 0o777).toBe(0o600);
     }
     clearCredentials(base);
     expect(loadOwnCredentials(base)).toBeUndefined();
