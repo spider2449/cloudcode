@@ -11,10 +11,12 @@ endpoints such as NVIDIA NIM.
     npm install
     npm run dev
 
-Auth: set `ANTHROPIC_API_KEY`. Reusing an existing Claude Code CLI login is not
-supported — cloudcode talks to `/v1/messages` directly rather than spawning the
-Claude Code CLI, so it needs its own API key (or a compatible local endpoint,
-see below).
+Auth: set `ANTHROPIC_API_KEY`, run `cloudcode login` to sign in with a
+Claude.ai subscription (PKCE browser flow; token exchange requires
+`--network-mode unrestricted cloudcode login`), or keep using an existing
+Claude Code CLI login — cloudcode picks up `~/.claude/.credentials.json`
+read-only when no other credential is configured. Local endpoints are also
+supported (see below).
 
 ## CLI usage
 

@@ -8,6 +8,7 @@ import {
   bashNetworkStatus, decideNetwork, providerEndpoint, type NetworkMode
 } from "../../agent/networkPolicy.js";
 import { sandboxEnablesBash } from "../../agent/sandbox.js";
+import { loadOwnCredentials, loadBorrowedCredentials } from "../../agent/oauth.js";
 
 export interface DoctorCheck {
   name: string;
@@ -104,6 +105,17 @@ export function runDoctor(
     checkConfigDirWritable(dir),
     checkJsonFile("providers.json", providersPath),
     ...checkProviderKeys(providers, env),
+    {
+      name: "authentication",
+      ok: true,
+      detail: (() => {
+        const own = loadOwnCredentials(dir);
+        if (own) return `claude.ai OAuth (expires ${new Date(own.expiresAt).toLocaleString()})`;
+        if (env.ANTHROPIC_API_KEY || Object.values(providers).some(p => p.apiKey)) return "api key";
+        if (loadBorrowedCredentials()) return "borrowed Claude Code login (~/.claude)";
+        return "none configured";
+      })()
+    },
     {
       name: "network policy",
       ok: providerDecision.allowed,

@@ -38,6 +38,7 @@ describe("doctor checks", () => {
     const d = dir();
     const checks = runDoctor({ dir: d, cwd: dir(), env: { ANTHROPIC_API_KEY: "sk-test" } });
     expect(checks.every(c => c.ok)).toBe(true);
+    expect(checks.find(c => c.name === "authentication")?.detail).toBe("api key");
   });
 
   it("formatDoctor marks failures", () => {
