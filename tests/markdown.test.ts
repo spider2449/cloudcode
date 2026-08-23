@@ -20,7 +20,9 @@ describe("renderMarkdown", () => {
 
   it("renders code blocks with their content preserved", () => {
     const out = renderMarkdown("```js\nconst x = 1;\n```");
-    expect(out).toContain("const x = 1;");
+    // Syntax highlighting wraps tokens in SGR codes; only stripped text is
+    // guaranteed contiguous.
+    expect(out.replace(/\x1b\[[0-9;]*m/g, "")).toContain("const x = 1;");
   });
 
   const strip = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");

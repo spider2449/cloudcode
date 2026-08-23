@@ -11,9 +11,8 @@ const LANG_ALIASES: Record<string, string> = {
 // when stdout is not a TTY (e.g. tests, pipes). Building the theme from raw
 // formatter functions keeps output deterministic everywhere.
 const CODE_THEME: Theme = {
-  default: (s) => s,
-  plain: (s) => s,
-  keyword: (s) => `\x1b[1m${fg(35)(s)}`,
+  default: (s: string) => s,
+  keyword: (s: string) => `\x1b[1m${fg(35)(s)}`,
   literal: fg(33),
   built_in: fg(33),
   type: fg(36),
