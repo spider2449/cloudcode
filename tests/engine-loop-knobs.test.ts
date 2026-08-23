@@ -24,6 +24,14 @@ const toolUseTurn = () => [
   { type: "message_stop" }
 ];
 
+const textTurn = (text: string) => [
+  { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+  { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } },
+  { type: "content_block_stop", index: 0 },
+  { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { input_tokens: 10, output_tokens: 5 } },
+  { type: "message_stop" }
+];
+
 const echoTool = {
   name: "EchoTool",
   description: "echoes",
@@ -77,5 +85,54 @@ describe("EngineLoop knobs", () => {
     expect(loop.getModel()).toBe("other-model");
     expect(loop.getPermissionMode()).toBe("default");
     expect(loop.getEffort()).toBe("low");
+  });
+});
+
+describe("EngineLoop hooks", () => {
+  const blockingGuard = (blocked: boolean) => ({
+    guard: async () => ({ blocked, reason: blocked ? "policy says no" : undefined }),
+    observe: async () => {}
+  });
+
+  it("a blocked PreToolUse becomes an error tool_result and the turn continues", async () => {
+    const received: unknown[] = [];
+    const loop = new EngineLoop({
+      client: fakeClient([toolUseTurn(), textTurn("gave up cleanly")]),
+      model: "test-model",
+      systemPrompt: "sys",
+      tools: [echoTool],
+      cwd: process.cwd(),
+      permissionMode: "bypassPermissions",
+      store: new PermissionStore(mkdtempSync(join(tmpdir(), "cc-loop-hb-"))),
+      onMessage: m => received.push(m),
+      requestPermission: async () => true,
+      hooks: blockingGuard(true)
+    });
+    await loop.runTurn("go", new AbortController().signal);
+    const toolResults = received.filter(m => (m as { type?: string }).type === "tool_result");
+    expect(toolResults).toHaveLength(1);
+    expect((toolResults[0] as { content: string }).content).toContain("Blocked by PreToolUse hook");
+    expect((toolResults[0] as { is_error: boolean }).is_error).toBe(true);
+  });
+
+  it("an allowed guard lets the tool run and observes PostToolUse and Stop", async () => {
+    const seenEvents: string[] = [];
+    const loop = new EngineLoop({
+      client: fakeClient([toolUseTurn(), textTurn("done")]),
+      model: "test-model",
+      systemPrompt: "sys",
+      tools: [echoTool],
+      cwd: process.cwd(),
+      permissionMode: "bypassPermissions",
+      store: new PermissionStore(mkdtempSync(join(tmpdir(), "cc-loop-ho-"))),
+      onMessage: () => {},
+      requestPermission: async () => true,
+      hooks: {
+        guard: async () => ({ blocked: false }),
+        observe: async event => { seenEvents.push(event); }
+      }
+    });
+    await loop.runTurn("go", new AbortController().signal);
+    expect(seenEvents).toEqual(["PostToolUse", "Stop"]);
   });
 });

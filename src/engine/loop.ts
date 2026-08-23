@@ -30,6 +30,14 @@ export interface EngineOptions {
   networkPolicy?: NetworkPolicy;
   /** Provider-turn ceiling for this loop. Defaults to MAX_LOOP_TURNS. */
   maxTurns?: number;
+  /** Lifecycle hooks, injected by the agent layer. Structural on purpose:
+   * engine code never reads hook config or spawns processes itself. */
+  hooks?: {
+    /** Runs before an approved tool executes; blocked=true rejects the call. */
+    guard(toolName: string, input: Record<string, unknown>): Promise<{ blocked: boolean; reason?: string }>;
+    /** Observational; failures inside implementations are not the loop's concern. */
+    observe(event: "PostToolUse" | "Stop", payload: Record<string, unknown>): Promise<void>;
+  };
   effort?: EffortLevel;
   contextWindow?: number;
   runLimits?: RunLimits;
@@ -241,6 +249,13 @@ export class EngineLoop {
       }
       const abortLimit = signal.reason instanceof RunLimitError ? signal.reason : undefined;
       if (abortLimit) markLimit(abortLimit.limit, abortLimit.value);
+      if (this.opts.hooks) {
+        try {
+          await this.opts.hooks.observe("Stop", {});
+        } catch {
+          // Observational only; never turn a Stop-hook failure into a turn error.
+        }
+      }
       this.opts.onMessage({
         type: "result",
         subtype: "success",
@@ -398,6 +413,12 @@ export class EngineLoop {
       decision = (await this.opts.requestPermission(block.name, block.input)) ? "allow" : "deny";
     }
     if (decision === "deny") return deniedResult("User denied this tool use");
+    if (this.opts.hooks) {
+      const verdict = await this.opts.hooks.guard(block.name, block.input);
+      if (verdict.blocked) {
+        return deniedResult(`Blocked by PreToolUse hook${verdict.reason ? `: ${verdict.reason}` : ""}`);
+      }
+    }
     try {
       const out = await tool.execute(block.input, {
         cwd: this.opts.cwd,
@@ -406,6 +427,9 @@ export class EngineLoop {
         fileMutations: this.opts.fileMutations,
         networkPolicy: this.opts.networkPolicy
       });
+      if (this.opts.hooks) {
+        await this.opts.hooks.observe("PostToolUse", { tool: block.name, isError: out.isError === true });
+      }
       const content = await appendDiagnostics(block.name, block.input, out.content, this.opts.lsp, this.opts.cwd);
       return { type: "tool_result", tool_use_id: block.id, content, is_error: out.isError === true };
     } catch (err) {
