@@ -151,6 +151,10 @@ const defaultExecutor: HookExecutor = (command, options) =>
         stderr: `${killed ? `[hook timed out after ${options.timeoutMs}ms]\n` : ""}${stderr}`
       });
     });
+    // A hook that never reads stdin (e.g. "echo bye > log") can exit before
+    // we finish writing, which surfaces as EPIPE on the pipe. The write is
+    // best-effort, so swallow stream errors and let the exit code decide.
+    child.stdin?.on("error", () => {});
     child.stdin?.end(options.input);
   });
 

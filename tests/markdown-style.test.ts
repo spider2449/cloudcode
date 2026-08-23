@@ -1,6 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import { highlightCode } from "../src/ui/markdown/highlight.js";
 import { paint } from "../src/ui/markdown/style.js";
+import { setColorDepth } from "../src/ui/term/ansi.js";
+
+// Hex expectations below assume truecolor output; CI terminals report 16-color
+// depth, so pin it explicitly instead of relying on the host environment.
+beforeAll(() => setColorDepth("truecolor"));
 
 describe("highlightCode", () => {
   it("highlights known languages without changing content", () => {

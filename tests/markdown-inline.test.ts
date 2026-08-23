@@ -1,6 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import { renderInline, renderLink } from "../src/ui/markdown/inline.js";
+import { setColorDepth } from "../src/ui/term/ansi.js";
 import type { Theme } from "../src/ui/theme.js";
+
+// Hex expectations below assume truecolor output; CI terminals report 16-color
+// depth, so pin it explicitly instead of relying on the host environment.
+beforeAll(() => setColorDepth("truecolor"));
 
 const THEME: Theme = {
   user: "#00ff00", accent: "#ff00ff", muted: "#808080", error: "#ff0000",
