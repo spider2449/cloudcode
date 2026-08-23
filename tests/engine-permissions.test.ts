@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { decidePermission } from "../src/engine/permissions.js";
+import { decidePermission, hostScope } from "../src/engine/permissions.js";
 import { PermissionStore } from "../src/agent/permissionStore.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -159,5 +159,39 @@ describe("out-of-cwd reads", () => {
     // bypassPermissions still short-circuits inside cwd, as it does for every
     // other tool — deny rules only apply in the modes that consult them.
     expect(decidePermission("Grep", { pattern: "x", path: join(CWD, "secrets") }, "bypassPermissions", store, CWD)).toBe("allow");
+  });
+});
+
+describe("WebFetch permissions", () => {
+  it("asks by default", () => {
+    const store = freshStore();
+    expect(decidePermission("WebFetch", { url: "https://example.com/x" }, "default", store, CWD)).toBe("ask");
+  });
+  it("honors remembered host allow/deny", () => {
+    const store = freshStore();
+    store.rememberHost("WebFetch", "docs.example.com", "allow");
+    store.rememberHost("WebFetch", "evil.example.com", "deny");
+    expect(decidePermission("WebFetch", { url: "https://docs.example.com/page#sec" }, "default", store, CWD)).toBe("allow");
+    expect(decidePermission("WebFetch", { url: "https://evil.example.com/" }, "default", store, CWD)).toBe("deny");
+  });
+  it("host matching ignores case", () => {
+    const store = freshStore();
+    store.rememberHost("WebFetch", "Docs.Example.com", "allow");
+    expect(decidePermission("WebFetch", { url: "https://DOCS.EXAMPLE.COM/x" }, "default", store, CWD)).toBe("allow");
+  });
+  it("an unparseable url falls through to ask", () => {
+    const store = freshStore();
+    expect(decidePermission("WebFetch", { url: "not a url" }, "default", store, CWD)).toBe("ask");
+  });
+});
+
+describe("hostScope", () => {
+  it("returns the hostname for a WebFetch call", () => {
+    expect(hostScope("WebFetch", { url: "https://Example.com/a" })).toBe("example.com");
+  });
+  it("returns undefined for other tools or bad urls", () => {
+    expect(hostScope("Read", { url: "https://example.com" })).toBeUndefined();
+    expect(hostScope("WebFetch", {})).toBeUndefined();
+    expect(hostScope("WebFetch", { url: "ftp://example.com" })).toBeUndefined();
   });
 });

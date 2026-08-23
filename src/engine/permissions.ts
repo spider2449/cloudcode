@@ -34,6 +34,22 @@ export function ruleScope(toolName: string, input: Record<string, unknown>): Rul
   return undefined;
 }
 
+/**
+ * The host a remembered WebFetch rule would be matched against, or undefined
+ * for anything else. Kept separate from RuleScope because hosts have no path
+ * component: the controller stores them via rememberHost, not rememberDir.
+ */
+export function hostScope(toolName: string, input: Record<string, unknown>): string | undefined {
+  if (toolName !== "WebFetch" || typeof input.url !== "string") return undefined;
+  try {
+    const url = new URL(input.url);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
+    return url.hostname.toLowerCase();
+  } catch {
+    return undefined;
+  }
+}
+
 // True for paths at or inside `cwd`. Resolves both sides first so ".."
 // segments and relative paths can't produce a false "inside" result.
 function isInsideCwd(filePath: string, cwd: string): boolean {
@@ -90,6 +106,16 @@ export function decidePermission(
     // prefix like "git" approved for "git status" must not silently widen
     // to approve "git status; rm -rf ~" — that's the whole bug this guards.
     if (ruling === "allow" && !compound) return "allow";
+  }
+  // Remembered host rules for WebFetch (deny beats allow), then always ask —
+  // fetching is outbound network access, so it is never unconditionally allowed.
+  if (toolName === "WebFetch") {
+    const host = hostScope(toolName, input);
+    if (host) {
+      const ruling = store.checkHost(toolName, host);
+      if (ruling) return ruling;
+    }
+    return "ask";
   }
   if (READ_ONLY.has(toolName)) return outsideCwdRead || outsideCwdSearch ? "ask" : "allow";
   if (mode === "acceptEdits" && EDIT_TOOLS.has(toolName)) return outsideCwdEdit ? "ask" : "allow";
