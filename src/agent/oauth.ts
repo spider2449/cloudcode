@@ -1,4 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { configDir } from "./providers.js";
 
 // Reverse-engineered Claude Code OAuth flow. Unofficial: Anthropic may
 // change these endpoints or restrict third-party use of this client id.
@@ -46,4 +50,86 @@ export function parsePastedCode(input: string): { code: string; state?: string }
   const hash = trimmed.indexOf("#");
   if (hash === -1) return { code: trimmed };
   return { code: trimmed.slice(0, hash), state: trimmed.slice(hash + 1) || undefined };
+}
+
+type FetchLike = typeof fetch;
+
+async function postToken(body: Record<string, unknown>, fetchImpl: FetchLike): Promise<OAuthTokens> {
+  const res = await fetchImpl(TOKEN_ENDPOINT, {
+    method: "POST",
+    headers: { "content-type": "application/json", "user-agent": "cloudcode" },
+    body: JSON.stringify(body)
+  });
+  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok || typeof json.access_token !== "string") {
+    throw new Error(`OAuth token request failed (HTTP ${res.status}).`);
+  }
+  const expiresIn = Number(json.expires_in ?? 3600);
+  return {
+    accessToken: json.access_token,
+    refreshToken: typeof json.refresh_token === "string" ? json.refresh_token : undefined,
+    expiresAt: Date.now() + expiresIn * 1000,
+    scopes: typeof json.scope === "string" ? json.scope.split(" ").filter(Boolean) : undefined
+  };
+}
+
+export async function exchangeCode(code: string, verifier: string, fetchImpl: FetchLike = fetch): Promise<OAuthTokens> {
+  return postToken({
+    grant_type: "authorization_code", code,
+    state: code, client_id: OAUTH_CLIENT_ID, redirect_uri: REDIRECT_URI,
+    code_verifier: verifier
+  }, fetchImpl);
+}
+
+export async function refreshTokens(refreshToken: string, fetchImpl: FetchLike = fetch): Promise<OAuthTokens> {
+  return postToken({
+    grant_type: "refresh_token", refresh_token: refreshToken, client_id: OAUTH_CLIENT_ID
+  }, fetchImpl);
+}
+
+export const EXPIRY_SKEW_MS = 60_000;
+
+export function isExpired(tokens: OAuthTokens, now = Date.now()): boolean {
+  return now + EXPIRY_SKEW_MS >= tokens.expiresAt;
+}
+
+function ownPath(configBase?: string): string {
+  return join(configBase ?? configDir(), "credentials.json");
+}
+
+export function loadOwnCredentials(configBase?: string): OAuthTokens | undefined {
+  try {
+    const parsed = JSON.parse(readFileSync(ownPath(configBase), "utf8")) as { claudeAiOauth?: OAuthTokens };
+    const t = parsed.claudeAiOauth;
+    return t && typeof t.accessToken === "string" ? t : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function saveCredentials(tokens: OAuthTokens, configBase?: string): void {
+  const path = ownPath(configBase);
+  mkdirSync(dirname(path), { recursive: true });
+  const tmp = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify({ claudeAiOauth: tokens }, null, 2));
+  if (process.platform !== "win32") chmodSync(tmp, 0o600);
+  renameSync(tmp, path);
+}
+
+export function clearCredentials(configBase?: string): void {
+  try { unlinkSync(ownPath(configBase)); } catch { /* already absent */ }
+}
+
+/** Read-only borrow of an existing Claude Code login. Never refreshed and
+ * never written back; expired borrows simply report not-logged-in. */
+export function loadBorrowedCredentials(home: string = homedir()): OAuthTokens | undefined {
+  const path = join(home, ".claude", ".credentials.json");
+  if (!existsSync(path)) return undefined;
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as { claudeAiOauth?: OAuthTokens };
+    const t = parsed.claudeAiOauth;
+    return t && typeof t.accessToken === "string" && !isExpired(t) ? t : undefined;
+  } catch {
+    return undefined;
+  }
 }
