@@ -126,9 +126,26 @@ export class EngineLoop {
     return this.effort;
   }
 
-  async runTurn(userText: string, signal: AbortSignal): Promise<void> {
+  async runTurn(
+    userText: string,
+    signal: AbortSignal,
+    images?: Array<{ mediaType: string; base64: string }>
+  ): Promise<void> {
     const started = Date.now();
-    this.messages.push({ role: "user", content: userText });
+    if (images && images.length > 0) {
+      this.messages.push({
+        role: "user",
+        content: [
+          ...images.map(im => ({
+            type: "image",
+            source: { type: "base64", media_type: im.mediaType, data: im.base64 }
+          })),
+          { type: "text", text: userText }
+        ]
+      });
+    } else {
+      this.messages.push({ role: "user", content: userText });
+    }
     let usage: Usage | undefined;
     let totalCost: number | undefined;
     let costKnown = false;
@@ -427,6 +444,16 @@ export class EngineLoop {
         fileMutations: this.opts.fileMutations,
         networkPolicy: this.opts.networkPolicy
       });
+      if (out.images && out.images.length > 0) {
+        const blocks: unknown[] = [{ type: "text", text: out.content }];
+        for (const im of out.images) {
+          blocks.push({
+            type: "image",
+            source: { type: "base64", media_type: im.mediaType, data: im.base64 }
+          });
+        }
+        return { type: "tool_result", tool_use_id: block.id, content: blocks, is_error: out.isError === true };
+      }
       if (this.opts.hooks) {
         await this.opts.hooks.observe("PostToolUse", { tool: block.name, isError: out.isError === true });
       }

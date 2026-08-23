@@ -10,7 +10,8 @@ export interface Usage {
 export type ContentBlock =
   | { type: "text"; text: string }
   | { type: "thinking"; thinking: string; signature: string }
-  | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> };
+  | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
+  | { type: "image"; source: { type: "base64"; media_type: string; data: string } };
 
 export type EngineMessage =
   | { type: "system"; subtype: "init"; session_id: string; tools: string[] }

@@ -136,3 +136,62 @@ describe("EngineLoop hooks", () => {
     expect(seenEvents).toEqual(["PostToolUse", "Stop"]);
   });
 });
+
+describe("EngineLoop image plumbing", () => {
+  it("tool outputs with images become block-array tool_results", async () => {
+    const received: unknown[] = [];
+    const imageTool = {
+      name: "EchoTool",
+      description: "echoes",
+      input_schema: { type: "object", properties: {}, required: [] },
+      execute: async () => ({ content: "[image: x.png]", images: [{ mediaType: "image/png", base64: "aGk=" }] })
+    };
+    const loop = new EngineLoop({
+      client: fakeClient([toolUseTurn(), textTurn("seen")]),
+      model: "test-model",
+      systemPrompt: "sys",
+      tools: [imageTool],
+      cwd: process.cwd(),
+      permissionMode: "bypassPermissions",
+      store: new PermissionStore(mkdtempSync(join(tmpdir(), "cc-loop-img-"))),
+      onMessage: m => received.push(m),
+      requestPermission: async () => true
+    });
+    await loop.runTurn("look", new AbortController().signal);
+    const results = received.filter(m => (m as { type?: string }).type === "tool_result");
+    expect((results[0] as { content: unknown }).content).toEqual([
+      { type: "text", text: "[image: x.png]" },
+      { type: "image", source: { type: "base64", media_type: "image/png", data: "aGk=" } }
+    ]);
+  });
+
+  it("attached images turn the user message into blocks with the image first", async () => {
+    const requests: unknown[] = [];
+    const client = {
+      async *create(req: unknown) { requests.push(req); for (const e of [textTurn("ok")]) yield e as never; }
+    };
+    const loop = new EngineLoop({
+      client,
+      model: "test-model",
+      systemPrompt: "sys",
+      tools: [],
+      cwd: process.cwd(),
+      permissionMode: "bypassPermissions",
+      store: new PermissionStore(mkdtempSync(join(tmpdir(), "cc-loop-imgu-"))),
+      onMessage: () => {},
+      requestPermission: async () => true
+    });
+    await loop.runTurn("what is this", new AbortController().signal, [
+      { mediaType: "image/png", base64: "aGk=" }
+    ]);
+    const req = requests[0] as { messages: Array<{ role: string; content: unknown }> };
+    const lastUser = [...req.messages].reverse().find(m => m.role === "user");
+    if (!lastUser) throw new Error("no user message");
+    expect(Array.isArray(lastUser.content)).toBe(true);
+    const content = lastUser.content as Array<{ type: string; source?: { media_type: string }; text?: string }>;
+    expect(content[0].type).toBe("image");
+    expect(content[0].source?.media_type).toBe("image/png");
+    expect(content[1].type).toBe("text");
+    expect(content[1].text).toBe("what is this");
+  });
+});
