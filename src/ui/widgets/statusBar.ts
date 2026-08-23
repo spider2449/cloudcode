@@ -1,6 +1,8 @@
 import { sgr, SGR_RESET } from "../term/ansi.js";
 import type { Theme } from "../theme.js";
 import { stringWidth, truncateToWidth } from "../width.js";
+import { DEFAULT_STATUS_LINE_ITEMS, STATUS_LINE_ITEMS } from "../../statusLineItems.js";
+import type { StatusLineItem } from "../../statusLineItems.js";
 
 export interface StatusBarProps {
   provider: string;
@@ -16,6 +18,8 @@ export interface StatusBarProps {
   tokens?: number;
   contextPct?: number;
   elapsedMs?: number;
+  /** Which segments to render, in order; omitted means the curated default. */
+  items?: StatusLineItem[];
 }
 
 export function formatTokens(n: number): string {
@@ -32,21 +36,50 @@ export function formatElapsed(ms: number): string {
   return `${s}s`;
 }
 
-export function renderStatusBar(p: StatusBarProps, theme: Theme, width: number): string[] {
-  const segments: string[] = [];
-  const modelLabel =
-    p.servedModel && p.model && p.servedModel !== p.model ? `${p.model}→${p.servedModel}` : p.servedModel ?? p.model;
-  segments.push(p.provider + (modelLabel ? `/${modelLabel}` : ""));
-  if (p.effort != null) segments.push(`effort: ${p.effort}`);
-  segments.push(p.mode);
-  if (p.networkMode) segments.push(`network: ${p.networkMode}`);
-  if (p.gitBranch) segments.push(`⎇ ${p.gitBranch}${p.gitDirty ? "*" : ""}`);
-  if (p.tokens != null && p.tokens > 0) {
-    segments.push(formatTokens(p.tokens) + (p.contextPct != null ? ` (${p.contextPct}%)` : ""));
+function segmentFor(item: StatusLineItem, p: StatusBarProps, servedEnabled: boolean): string | null {
+  switch (item) {
+    case "model": {
+      const base = servedEnabled ? p.servedModel ?? p.model : p.model;
+      const label =
+        servedEnabled && p.servedModel && p.model && p.servedModel !== p.model
+          ? `${p.model}→${p.servedModel}`
+          : base;
+      return label ? `${p.provider}/${label}` : p.provider;
+    }
+    case "servedModel":
+      return null; // folded into the model segment via the arrow
+    case "effort":
+      return p.effort != null ? `effort: ${p.effort}` : null;
+    case "mode":
+      return p.mode;
+    case "network":
+      return p.networkMode ? `network: ${p.networkMode}` : null;
+    case "branch":
+      return p.gitBranch ? `⎇ ${p.gitBranch}${p.gitDirty ? "*" : ""}` : null;
+    case "tokens":
+      return p.tokens != null && p.tokens > 0
+        ? formatTokens(p.tokens) + (p.contextPct != null ? ` (${p.contextPct}%)` : "")
+        : null;
+    case "cost":
+      return p.costUsd != null && p.costUsd > 0 ? `$${p.costUsd.toFixed(4)}` : null;
+    case "elapsed":
+      return p.elapsedMs != null && p.elapsedMs > 0 ? formatElapsed(p.elapsedMs) : null;
+    case "cwd":
+      return p.cwd;
   }
-  if (p.costUsd && p.costUsd > 0) segments.push(`$${p.costUsd.toFixed(4)}`);
-  if (p.elapsedMs != null && p.elapsedMs > 0) segments.push(formatElapsed(p.elapsedMs));
-  segments.push(p.cwd);
+}
+
+export function renderStatusBar(p: StatusBarProps, theme: Theme, width: number): string[] {
+  const requested = p.items ?? DEFAULT_STATUS_LINE_ITEMS;
+  const servedEnabled = requested.includes("servedModel");
+  const segments: string[] = [];
+  // Walk the registry (not the user list) so segment order is deterministic
+  // even if a caller passes an unordered or duplicated list.
+  for (const item of STATUS_LINE_ITEMS) {
+    if (!requested.includes(item)) continue;
+    const segment = segmentFor(item, p, servedEnabled);
+    if (segment != null) segments.push(segment);
+  }
   // Pack whole segments onto rows of at most `width` columns instead of
   // truncating: overflowing segments wrap onto extra rows. No emitted row may
   // ever exceed the terminal width (legacy conhost ignores DECAWM-off), so a

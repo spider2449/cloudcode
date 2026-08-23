@@ -1,8 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { renderStatusBar, formatTokens, formatElapsed } from "../src/ui/widgets/statusBar.js";
 import { THEMES } from "../src/ui/theme.js";
+import { STATUS_LINE_ITEMS, DEFAULT_STATUS_LINE_ITEMS } from "../src/statusLineItems.js";
+import type { StatusLineItem } from "../src/statusLineItems.js";
 
 const theme = THEMES.dark;
+const ALL: StatusLineItem[] = [...STATUS_LINE_ITEMS];
 
 describe("formatTokens", () => {
   it("formats sub-1000 counts as raw tokens", () => {
@@ -30,7 +33,7 @@ describe("renderStatusBar", () => {
 
   it("joins segments with the middle dot in provider/model/mode order", () => {
     const text = renderStatusBar(
-      { provider: "anthropic", model: "sonnet", mode: "default", cwd: "/repo" },
+      { provider: "anthropic", model: "sonnet", mode: "default", cwd: "/repo", items: ALL },
       theme, 80
     ).join("\n");
     expect(text).toContain("anthropic/sonnet");
@@ -41,7 +44,7 @@ describe("renderStatusBar", () => {
 
   it("shows served-model arrow when servedModel differs from requested model", () => {
     const text = renderStatusBar(
-      { provider: "anthropic", model: "sonnet", servedModel: "sonnet-5", mode: "default", cwd: "/repo" },
+      { provider: "anthropic", model: "sonnet", servedModel: "sonnet-5", mode: "default", cwd: "/repo", items: ALL },
       theme, 80
     ).join("\n");
     expect(text).toContain("sonnet→sonnet-5");
@@ -49,12 +52,12 @@ describe("renderStatusBar", () => {
 
   it("always shows the effort segment, including when off", () => {
     const off = renderStatusBar(
-      { provider: "anthropic", model: "sonnet", mode: "default", cwd: "/repo", effort: "off" },
+      { provider: "anthropic", model: "sonnet", mode: "default", cwd: "/repo", effort: "off", items: ALL },
       theme, 80
     ).join("\n");
     expect(off).toContain("effort: off");
     const high = renderStatusBar(
-      { provider: "anthropic", model: "sonnet", mode: "default", cwd: "/repo", effort: "high" },
+      { provider: "anthropic", model: "sonnet", mode: "default", cwd: "/repo", effort: "high", items: ALL },
       theme, 80
     ).join("\n");
     expect(high).toContain("effort: high");
@@ -62,7 +65,7 @@ describe("renderStatusBar", () => {
 
   it("places the effort segment immediately after provider/model", () => {
     const text = stripAnsi(renderStatusBar(
-      { provider: "anthropic", model: "sonnet", mode: "default", cwd: "/repo", effort: "medium" },
+      { provider: "anthropic", model: "sonnet", mode: "default", cwd: "/repo", effort: "medium", items: ALL },
       theme, 80
     ).join(" "));
     expect(text.indexOf("anthropic/sonnet")).toBeLessThan(text.indexOf("effort: medium"));
@@ -71,26 +74,26 @@ describe("renderStatusBar", () => {
 
   it("includes git branch with a dirty marker when dirty", () => {
     const text = renderStatusBar(
-      { provider: "a", mode: "default", cwd: "/r", gitBranch: "main", gitDirty: true },
+      { provider: "a", mode: "default", cwd: "/r", gitBranch: "main", gitDirty: true, items: ALL },
       theme, 80
     ).join("\n");
     expect(text).toContain("⎇ main*");
   });
 
   it("omits token/cost/elapsed segments when not provided or zero", () => {
-    const text = renderStatusBar({ provider: "a", mode: "default", cwd: "/r" }, theme, 80).join("\n");
+    const text = renderStatusBar({ provider: "a", mode: "default", cwd: "/r", items: ALL }, theme, 80).join("\n");
     expect(text).not.toContain("tok");
     expect(text).not.toContain("$");
   });
 
   it("stays on one row when all segments fit the width", () => {
-    const rows = renderStatusBar({ provider: "a", mode: "default", cwd: "/r" }, theme, 80);
+    const rows = renderStatusBar({ provider: "a", mode: "default", cwd: "/r", items: ALL }, theme, 80);
     expect(rows).toHaveLength(1);
   });
 
   it("wraps at segment boundaries onto extra rows when the width is narrow", () => {
     const rows = renderStatusBar(
-      { provider: "anthropic", model: "sonnet", mode: "acceptEdits", gitBranch: "master", gitDirty: true, elapsedMs: 55_000, cwd: "D:\\spider\\working\\cloudcode\\release" },
+      { provider: "anthropic", model: "sonnet", mode: "acceptEdits", gitBranch: "master", gitDirty: true, elapsedMs: 55_000, cwd: "D:\\spider\\working\\cloudcode\\release", items: ALL },
       theme, 44
     );
     expect(rows.length).toBeGreaterThan(1);
@@ -110,11 +113,67 @@ describe("renderStatusBar", () => {
 
   it("truncates a single segment wider than the terminal with an ellipsis on its own row", () => {
     const rows = renderStatusBar(
-      { provider: "a", mode: "default", cwd: "X".repeat(60) },
+      { provider: "a", mode: "default", cwd: "X".repeat(60), items: ALL },
       theme, 20
     );
     for (const row of rows) expect(stripAnsi(row).length).toBeLessThanOrEqual(20);
     expect(rows.map(stripAnsi).join("\n")).toContain("…");
+  });
+});
+
+describe("renderStatusBar item selection", () => {
+  const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
+
+  it("uses the curated default set when items is absent", () => {
+    const text = stripAnsi(renderStatusBar(
+      { provider: "anthropic", model: "sonnet", mode: "default", cwd: "/repo", costUsd: 1 },
+      theme, 120
+    ).join("\n"));
+    expect(text).toContain("anthropic/sonnet");
+    expect(text).toContain("default");
+    expect(text).not.toContain("/repo");
+    expect(text).not.toContain("$");
+    expect(DEFAULT_STATUS_LINE_ITEMS).toEqual(["model", "mode", "branch", "tokens"]);
+  });
+
+  it("renders exactly the requested segments in registry order", () => {
+    const text = stripAnsi(renderStatusBar(
+      { provider: "a", mode: "default", cwd: "/r", gitBranch: "main", costUsd: 0.5, items: ["cost", "branch"] },
+      theme, 120
+    ).join("\n"));
+    expect(text.indexOf("⎇ main")).toBeLessThan(text.indexOf("$0.5000"));
+    expect(text).not.toContain("default");
+    expect(text).not.toContain("/r");
+  });
+
+  it("suppresses the served-model arrow unless servedModel is enabled", () => {
+    const without = stripAnsi(renderStatusBar(
+      { provider: "anthropic", model: "sonnet", servedModel: "sonnet-5", mode: "default", cwd: "/r", items: ["model", "mode"] },
+      theme, 120
+    ).join("\n"));
+    expect(without).toContain("anthropic/sonnet");
+    expect(without).not.toContain("→");
+    const withServed = stripAnsi(renderStatusBar(
+      { provider: "anthropic", model: "sonnet", servedModel: "sonnet-5", mode: "default", cwd: "/r", items: ["model", "servedModel", "mode"] },
+      theme, 120
+    ).join("\n"));
+    expect(withServed).toContain("sonnet→sonnet-5");
+  });
+
+  it("skips null-yielding segments without leaving stray separators", () => {
+    const rows = renderStatusBar(
+      { provider: "a", mode: "default", cwd: "/r", items: ["branch", "tokens"] },
+      theme, 80
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  it("renders an empty bar for an explicitly empty list", () => {
+    const rows = renderStatusBar(
+      { provider: "a", mode: "default", cwd: "/r", items: [] },
+      theme, 80
+    );
+    expect(rows).toEqual([]);
   });
 });
 
