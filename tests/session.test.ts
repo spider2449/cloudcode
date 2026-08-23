@@ -2,7 +2,6 @@
 import { join } from "node:path";
 import { mkdtempSync, readFileSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { loadHooksConfig, HooksRunner, type HookEvent } from "../src/agent/hooks.js";
 
 vi.mock("../src/engine/api.js", () => ({ makeClient: vi.fn() }));
 
