@@ -1,4 +1,4 @@
-# Session Task Tool Implementation Plan
+﻿# Session Task Tool Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -13,14 +13,14 @@
 - Spec: `docs/superpowers/specs/2026-08-23-session-task-tool-design.md`.
 - All code/comments in English only.
 - `tsconfig.json` stays `"strict": true`; no `any`, no non-null `!` assertions (cast through `unknown` in tests where needed).
-- No file in `src/` may exceed ~600 lines (`npm run lint:size`; `nativeApp.ts` is already over the soft limit — do not add code there).
+- No file in `src/` may exceed ~600 lines (`npm run lint:size`; `nativeApp.ts` is already over the soft limit â€” do not add code there).
 - Subagent turn cap: **30** (exported as `SUBAGENT_MAX_TURNS`).
-- Error handling only at existing boundaries: the nested `runTurn` never rejects — it reports failures as `error_during_execution` messages; the task tool converts those into `{ isError: true }` results.
+- Error handling only at existing boundaries: the nested `runTurn` never rejects â€” it reports failures as `error_during_execution` messages; the task tool converts those into `{ isError: true }` results.
 - Tests land in the same commit as the code they cover.
 
 ---
 
-### Task 1: `EngineLoop` knobs — `maxTurns` option and state getters
+### Task 1: `EngineLoop` knobs â€” `maxTurns` option and state getters
 
 **Files:**
 - Modify: `src/engine/loop.ts` (`EngineOptions`, `runTurn`, class body)
@@ -28,8 +28,8 @@
 
 **Interfaces:**
 - Consumes: nothing new.
-- Produces (used by Tasks 3–4):
-  - `EngineOptions.maxTurns?: number` — caps provider turns; defaults to the existing `MAX_LOOP_TURNS` (100).
+- Produces (used by Tasks 3â€“4):
+  - `EngineOptions.maxTurns?: number` â€” caps provider turns; defaults to the existing `MAX_LOOP_TURNS` (100).
   - `loop.getModel(): string`
   - `loop.getPermissionMode(): PermissionMode`
   - `loop.getEffort(): EffortLevel`
@@ -88,7 +88,7 @@ Append inside the top-level `describe("EngineLoop", ...)` block of `tests/engine
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/engine-loop.test.ts`
-Expected: FAIL — `maxTurns` is not an accepted option (excess property / the cap stays at 100 so the "[Stopped after 3..." notice never appears), and `getModel` does not exist.
+Expected: FAIL â€” `maxTurns` is not an accepted option (excess property / the cap stays at 100 so the "[Stopped after 3..." notice never appears), and `getModel` does not exist.
 
 - [ ] **Step 3: Write minimal implementation**
 
@@ -107,7 +107,7 @@ In `src/engine/loop.ts`:
     const maxTurns = this.opts.maxTurns ?? MAX_LOOP_TURNS;
 ```
 
-(c) Replace every other use of `MAX_LOOP_TURNS` inside `runTurn` with `maxTurns` — three places: the `for` loop bound (`i < maxTurns`), the cut-off notice text (`` `\n[Stopped after ${maxTurns} tool-use turns without a final answer]` ``), and `markLimit("maxTurns", maxTurns)`. Leave the `const MAX_LOOP_TURNS = 100;` declaration itself untouched (it becomes the default).
+(c) Replace every other use of `MAX_LOOP_TURNS` inside `runTurn` with `maxTurns` â€” three places: the `for` loop bound (`i < maxTurns`), the cut-off notice text (`` `\n[Stopped after ${maxTurns} tool-use turns without a final answer]` ``), and `markLimit("maxTurns", maxTurns)`. Leave the `const MAX_LOOP_TURNS = 100;` declaration itself untouched (it becomes the default).
 
 (d) Add these getters to the class body (after `setEffort`):
 
@@ -128,7 +128,7 @@ In `src/engine/loop.ts`:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run tests/engine-loop.test.ts`
-Expected: PASS (all tests, including the pre-existing ones — they exercise the default cap path).
+Expected: PASS (all tests, including the pre-existing ones â€” they exercise the default cap path).
 
 - [ ] **Step 5: Commit**
 
@@ -147,7 +147,7 @@ git commit -m "feat(engine): maxTurns option and state getters on EngineLoop"
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `buildSubagentSystemPrompt(cwd: string): string` — used by Task 3.
+- Produces: `buildSubagentSystemPrompt(cwd: string): string` â€” used by Task 3.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -169,7 +169,7 @@ Extend the existing import from `../src/engine/systemPrompt.js` to include `buil
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/engine-system-prompt.test.ts`
-Expected: FAIL — `buildSubagentSystemPrompt` is not exported.
+Expected: FAIL â€” `buildSubagentSystemPrompt` is not exported.
 
 - [ ] **Step 3: Write minimal implementation**
 
@@ -211,9 +211,9 @@ git commit -m "feat(engine): explorer system prompt for subagents"
 - Produces:
   - `SUBAGENT_MAX_TURNS = 30`
   - `interface TaskToolDeps` (full definition below)
-  - `subagentTools(): ToolDef[]` — exactly the eight read-only tools
+  - `subagentTools(): ToolDef[]` â€” exactly the eight read-only tools
   - `runSubagent(deps: SubagentDeps, cwd: string, prompt: string, signal: AbortSignal): Promise<ToolOutput>`
-  - `createTaskTool(deps: TaskToolDeps): ToolDef` — tool named `"Task"`
+  - `createTaskTool(deps: TaskToolDeps): ToolDef` â€” tool named `"Task"`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -238,7 +238,7 @@ function fakeClient(turns: object[][]) {
   };
 }
 
-function capturingClient(turns: object[][][], requests: unknown[]) {
+function capturingClient(turns: object[][], requests: unknown[]) {
   let call = 0;
   return {
     async *create(req: unknown) {
@@ -301,7 +301,7 @@ describe("runSubagent", () => {
   it("exposes only the restricted toolset to the provider", async () => {
     const requests: unknown[] = [];
     const deps = makeDeps({
-      client: () => capturingClient([[grepTurn()], [textTurn("done")]], requests)
+      client: () => capturingClient([grepTurn(), textTurn("done")], requests)
     });
     await runSubagent(deps as never, "/tmp", "look around", new AbortController().signal);
     const first = requests[0] as { tools: Array<{ name: string }> };
@@ -368,7 +368,7 @@ describe("createTaskTool", () => {
   it("runs under the Task name and forwards the abort signal", async () => {
     const requests: unknown[] = [];
     const tool = createTaskTool(makeDeps({
-      client: () => capturingClient([[textTurn("ok")]], requests)
+      client: () => capturingClient([textTurn("ok")], requests)
     }) as never);
     const controller = new AbortController();
     const out = await tool.execute(
@@ -385,7 +385,7 @@ describe("createTaskTool", () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run tests/engine-task-tool.test.ts`
-Expected: FAIL — module does not exist.
+Expected: FAIL â€” module does not exist.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -435,7 +435,7 @@ export function subagentTools(): ToolDef[] {
 }
 
 // Scans backwards for the newest assistant history entry and joins its text
-// blocks — the subagent's "final answer".
+// blocks â€” the subagent's "final answer".
 function lastAssistantText(messages: unknown[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i] as { role?: string; content?: unknown };
@@ -539,7 +539,7 @@ git commit -m "feat(tools): Task tool running a read-only exploration subagent"
 
 **Interfaces:**
 - Consumes: `createTaskTool`, `TaskToolDeps` from Task 3; `EngineLoop` getters from Task 1.
-- Produces: `builtinTools(options: { allowArbitraryChildNetwork?: boolean; task?: TaskToolDeps })` — `Task` present iff `options.task` is set. Session supplies deps wired to live state.
+- Produces: `builtinTools(options: { allowArbitraryChildNetwork?: boolean; task?: TaskToolDeps })` â€” `Task` present iff `options.task` is set. Session supplies deps wired to live state.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -573,7 +573,7 @@ If `tests/engine-sessions.test.ts` (or the file you found) already imports `buil
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npx vitest run <that test file>`
-Expected: FAIL — `task` is not a known option (the "registers Task" case fails).
+Expected: FAIL â€” `task` is not a known option (the "registers Task" case fails).
 
 - [ ] **Step 3: Implement**
 
@@ -623,7 +623,7 @@ export function builtinTools(options: {
 ```
 
 Notes:
-- `makeClient`, `store`, `networkPolicy`, `bash`, and the local `model` binding already exist in scope at that point (see the surrounding code — `makeClient` is imported at the top of the file; reuse that import rather than adding a new one).
+- `makeClient`, `store`, `networkPolicy`, `bash`, and the local `model` binding already exist in scope at that point (see the surrounding code â€” `makeClient` is imported at the top of the file; reuse that import rather than adding a new one).
 - The getters keep the subagent live against `/model`, `/permissions`, and `/effort` switches made after session start.
 
 (c) Sweep for broken assertions: run the full suite and update any test that enumerates the builtin tool names to include `"Task"` **only** in contexts where the session provides deps (interactive session tests). Print-mode tests must continue to see NO `Task` (printMode does not pass `task` deps).
@@ -672,3 +672,4 @@ git status
 ```
 
 Expected: clean tree.
+
