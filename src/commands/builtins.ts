@@ -69,8 +69,9 @@ function configValue(key: ConfigKey): string {
   return loadSettings()[key as keyof Omit<Settings, "effort" | "autoMemoryEnabled" | "statusLineItems">] ?? "(unset)";
 }
 
-/** Valid values for a config key, from live context where applicable. */
-function valueOptions(cctx: CommandContext, key: ConfigKey): string[] {
+/** Valid values for a config key, from live context where applicable.
+ * Takes only what both CommandContext and CompletionContext provide. */
+function valueOptions(cctx: Pick<CommandContext, "providerNames" | "availableModels">, key: ConfigKey): string[] {
   switch (key) {
     case "provider": return cctx.providerNames();
     case "model": return cctx.availableModels();
@@ -224,14 +225,8 @@ const commands: Command[] = [
       const parts = prefix.split(/\s+/);
       if (parts.length <= 1) return CONFIG_KEYS.filter(k => k.startsWith(parts[0] ?? ""));
       const [key, valuePrefix = ""] = parts;
-      const values =
-        key === "provider" ? cctx.providerNames() :
-        key === "permissionMode" ? MODES :
-        key === "networkMode" ? ["offlineStrict", "providerOnly"] :
-        key === "theme" ? Object.keys(THEMES) :
-        key === "effort" ? [...EFFORT_LEVELS] :
-        key === "autoMemory" ? ["true", "false"] :
-        key === "model" ? cctx.availableModels() : [];
+      if (!CONFIG_KEYS.includes(key as ConfigKey)) return [];
+      const values = valueOptions(cctx, key as ConfigKey);
       return values.filter(v => v.startsWith(valuePrefix)).map(v => `${key} ${v}`);
     }
   },
