@@ -16,6 +16,7 @@ import { runExtraction, hasMemoryWrites, countModelMessages, MIN_NEW_MESSAGES } 
 import { memoryDir } from "../engine/memoryPaths.js";
 import { loadSettings } from "./settings.js";
 import { loadHooksConfig, HooksRunner } from "./hooks.js";
+import { BackgroundShellManager, realBgSpawner } from "../engine/tools/backgroundShells.js";
 import { type TodoItem, type TodoStore } from "../engine/tools/todo.js";
 import { todosMessage } from "../engine/messages.js";
 import {
@@ -76,6 +77,7 @@ export class AgentSession {
   private abortController: AbortController | undefined;
   private sessionFile: SessionFile | undefined;
   private hooksRunner: HooksRunner | undefined;
+  private bgShells: BackgroundShellManager | undefined;
   private todos: TodoItem[] = [];
   sessionId: string | undefined;
   tools: string[] = [];
@@ -132,6 +134,8 @@ export class AgentSession {
     const hooksRunner = new HooksRunner(hooksConfig.hooks, this.opts.cwd);
     this.hooksRunner = hooksRunner;
     void hooksRunner.run("SessionStart").catch(() => {});
+    const bgShells = new BackgroundShellManager(realBgSpawner);
+    this.bgShells = bgShells;
     const todoStore: TodoStore = {
       get: () => this.todos,
       set: (todos: TodoItem[]) => {
@@ -142,6 +146,7 @@ export class AgentSession {
     const availableTools = builtinTools({
       allowArbitraryChildNetwork: bash.available,
       todoStore,
+      bgShells,
       task: {
         client: () => makeClient(this.opts.provider),
         model: () => this.loop?.getModel() ?? model,
@@ -172,6 +177,7 @@ export class AgentSession {
       lsp: this.lsp,
       fileMutations: this.changes,
       networkPolicy,
+      bgShells,
       hooks: {
         guard: async (toolName, input) => {
           const outcome = await hooksRunner.run("PreToolUse", { tool: toolName, input });
@@ -400,6 +406,7 @@ export class AgentSession {
     this.timeoutTimer = undefined;
     this.abortController?.abort();
     await this.hooksRunner?.run("SessionEnd").catch(() => {});
+    await this.bgShells?.killAll();
     await this.mcp.dispose();
     this.lsp.shutdown();
   }

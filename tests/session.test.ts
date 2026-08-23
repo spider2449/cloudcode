@@ -436,3 +436,19 @@ describe("AgentSession todos", () => {
     await session.dispose();
   });
 });
+
+describe("AgentSession background shells", () => {
+  it("exposes BashOutput/KillShell and disposes cleanly", async () => {
+    vi.mocked(makeClient).mockReturnValue(fakeClient([[textTurn("ok")]]));
+    const session = new AgentSession({
+      providerName: "local", provider: { kind: "openai", baseUrl: "http://127.0.0.1:8080" },
+      permissionMode: "default", networkMode: "offlineStrict",
+      cwd: mkdtempSync(join(tmpdir(), "cc-sess-bg-")),
+      onMessage: () => {}, onPermissionRequest: () => {}, onSessionId: () => {}
+    });
+    session.start();
+    expect(session.tools).toContain("BashOutput");
+    expect(session.tools).toContain("KillShell");
+    await session.dispose();
+  });
+});
