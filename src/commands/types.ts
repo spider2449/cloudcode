@@ -46,6 +46,8 @@ export interface CommandContext {
   gitReview(stagedOnly?: boolean): Promise<GitReviewSnapshot>;
   currentNetworkMode(): NetworkMode;
   setNetworkMode(mode: Exclude<NetworkMode, "unrestricted">): Promise<void>;
+  /** Widens egress for this session only; never persisted. */
+  setSessionNetworkMode(mode: NetworkMode): Promise<void>;
   networkPolicy(): NetworkPolicy;
 }
 

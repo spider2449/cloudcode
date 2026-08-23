@@ -305,6 +305,10 @@ export class App {
         await this.restartSession(this.providerName);
         this.recompute();
       },
+      setSessionNetworkMode: async mode => {
+        this.network.setMode(mode);
+        this.recompute();
+      },
       networkPolicy: () => this.network.policyFor(this.providerName),
       switchProvider: async name => {
         if (!this.props.providers[name]) {

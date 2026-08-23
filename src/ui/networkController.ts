@@ -1,7 +1,7 @@
 import type { ProviderConfig } from "../agent/providers.js";
 import {
   NetworkPolicy, bashNetworkStatus, providerEndpoint,
-  type NetworkDecisionRecorder, type NetworkMode, type PersistedNetworkMode
+  type NetworkDecisionRecorder, type NetworkMode
 } from "../agent/networkPolicy.js";
 
 /** Owns the TUI's effective network mode and creates provider-scoped policies. */
@@ -14,7 +14,7 @@ export class NetworkController {
 
   get mode(): NetworkMode { return this.current; }
 
-  setMode(mode: PersistedNetworkMode): void { this.current = mode; }
+  setMode(mode: NetworkMode): void { this.current = mode; }
 
   policyFor(providerName: string): NetworkPolicy {
     const endpoint = providerEndpoint(this.providers[providerName] ?? {});

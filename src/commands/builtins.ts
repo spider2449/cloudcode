@@ -13,7 +13,6 @@ import {
 import { isDirLike } from "../agent/skills.js";
 import { EFFORT_LEVELS, isEffortLevel } from "../engine/effort.js";
 import { formatChanges, formatReviewPrompt, formatUndoPreview, formatUndoResult } from "./changeFormatting.js";
-import { isPersistedNetworkMode } from "../agent/networkPolicy.js";
 
 const MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
 
@@ -76,7 +75,7 @@ function valueOptions(cctx: CommandContext, key: ConfigKey): string[] {
     case "provider": return cctx.providerNames();
     case "model": return cctx.availableModels();
     case "permissionMode": return [...MODES];
-    case "networkMode": return ["offlineStrict", "providerOnly"];
+    case "networkMode": return ["offlineStrict", "providerOnly", "unrestricted"];
     case "theme": return Object.keys(THEMES);
     case "effort": return [...EFFORT_LEVELS];
     case "autoMemory": return ["true", "false"];
@@ -133,8 +132,15 @@ export async function applyConfigValue(ctx: CommandContext, key: ConfigKey, valu
       await ctx.setPermissionMode(value as PermissionMode);
       break;
     case "networkMode":
-      if (!isPersistedNetworkMode(value)) {
-        ctx.notice("Valid saved network modes: offlineStrict, providerOnly. unrestricted is invocation-only.");
+      if (
+        value !== "offlineStrict" && value !== "providerOnly" && value !== "unrestricted"
+      ) {
+        ctx.notice("Valid modes: offlineStrict, providerOnly, unrestricted (unrestricted is session only)");
+        return;
+      }
+      if (value === "unrestricted") {
+        await ctx.setSessionNetworkMode("unrestricted");
+        ctx.notice("networkMode = unrestricted (session only, not saved)");
         return;
       }
       await ctx.setNetworkMode(value);

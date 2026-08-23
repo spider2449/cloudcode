@@ -68,6 +68,7 @@ function mockCtx(): CommandContext {
     gitReview: vi.fn().mockResolvedValue({ isGitRepo: true, status: "", diff: "", truncated: false })
     , currentNetworkMode: vi.fn().mockReturnValue("providerOnly")
     , setNetworkMode: vi.fn().mockResolvedValue(undefined)
+    , setSessionNetworkMode: vi.fn().mockResolvedValue(undefined)
     , networkPolicy: vi.fn().mockReturnValue(new NetworkPolicy("providerOnly", "https://api.anthropic.com"))
   };
 }
@@ -398,9 +399,18 @@ describe("/config", () => {
     const ctx = mockCtx();
     await buildRegistry().get("config")!.run(ctx, "networkMode offlineStrict");
     expect(ctx.setNetworkMode).toHaveBeenCalledWith("offlineStrict");
+  });
+
+  it("applies unrestricted live but never persists it", async () => {
+    const ctx = mockCtx();
     await buildRegistry().get("config")!.run(ctx, "networkMode unrestricted");
+    expect(ctx.setSessionNetworkMode).toHaveBeenCalledWith("unrestricted");
+    expect(ctx.setNetworkMode).not.toHaveBeenCalled();
+    expect(saveSetting).not.toHaveBeenCalled();
+    expect(ctx.notice).toHaveBeenCalledWith("networkMode = unrestricted (session only, not saved)");
+    await buildRegistry().get("config")!.run(ctx, "networkMode yolo");
     expect(ctx.notice).toHaveBeenCalledWith(
-      "Valid saved network modes: offlineStrict, providerOnly. unrestricted is invocation-only."
+      "Valid modes: offlineStrict, providerOnly, unrestricted (unrestricted is session only)"
     );
   });
 
