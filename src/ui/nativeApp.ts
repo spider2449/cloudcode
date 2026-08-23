@@ -26,9 +26,7 @@ import { DEFAULT_STATUS_LINE_ITEMS, type StatusLineItem } from "../statusLineIte
 import { collectGitReview } from "../agent/gitReview.js";
 import { Buffer } from "./buffer.js";
 import { InputBox } from "./widgets/inputBox.js";
-import { captureClipboardImage } from "./clipboard.js";
-import { existsSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { ImageAttachments } from "./imageAttachments.js";
 import { join } from "node:path";
 import { OverlayManager } from "./widgets/overlay.js";
 import { InlineRenderer, type BottomState } from "./term/render.js";
@@ -146,6 +144,11 @@ export class App {
       recompute: () => this.recompute()
     });
     this.keys = new KeyRouter(this.keyRouterHost());
+    this.pendingImages = new ImageAttachments({
+      setAttachmentCount: n => { this.inputBox.attachmentCount = n; },
+      notice: text => this.notice(text),
+      recompute: () => this.recompute()
+    });
     this.ctx = this.buildCommandContext();
 
     this.appendWelcome();
@@ -391,8 +394,7 @@ export class App {
       if (this.session?.sessionId) this.recordSession(this.session.sessionId, this.providerName);
     }
     this.buffer.append({ kind: "user", text });
-    const images = this.pendingImages;
-    this.clearPendingImages();
+    const images = this.pendingImages.takeForSend();
     this.phase = "streaming";
     this.workStartedAt = Date.now();
     this.session?.send(text, images);
@@ -498,32 +500,12 @@ export class App {
     this.recompute();
   }
 
-  private pendingImages: Array<{ mediaType: string; base64: string }> = [];
-  private attachSeq = 0;
-
-  /** Ctrl+V: snapshot the clipboard image into the pending attachments. */
-  private attachClipboardImage(): void {
-    const targetPath = join(tmpdir(), `cloudcode-clipboard-${Date.now()}-${this.attachSeq++}.png`);
-    void captureClipboardImage(targetPath).then(result => {
-      if (!result.savedPath || !existsSync(result.savedPath)) {
-        this.notice("No image in clipboard.");
-        return;
-      }
-      try {
-        const buf = readFileSync(result.savedPath);
-        this.pendingImages.push({ mediaType: "image/png", base64: buf.toString("base64") });
-        this.inputBox.attachmentCount = this.pendingImages.length;
-        this.notice(`[image ${this.pendingImages.length} attached]`);
-        this.recompute();
-      } catch (err) {
-        this.notice(`Failed to attach image: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    });
-  }
+  private pendingImages: ImageAttachments;
+  private attachClipboardImage(): void { this.pendingImages.attachFromClipboard(); }
 
   private clearPendingImages(): void {
-    this.pendingImages = [];
-    this.inputBox.attachmentCount = 0;
+    this.pendingImages.clear();
+    this.notice("Attachments cleared.");
   }
 
   private keyRouterHost(): KeyRouterHost {
