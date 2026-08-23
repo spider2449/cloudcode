@@ -9,7 +9,8 @@ export type NetworkCapability =
   | "update"
   | "skillRepo"
   | "gitRemote"
-  | "packInstaller";
+  | "packInstaller"
+  | "webFetch";
 
 export type NetworkDenialReason =
   | "invalidDestination"

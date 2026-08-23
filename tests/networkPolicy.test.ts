@@ -49,3 +49,17 @@ describe("network policy", () => {
     expect(providerEndpoint({})).toBe("https://api.anthropic.com");
   });
 });
+
+describe("webFetch capability", () => {
+  const request = { capability: "webFetch", destination: "https://example.com/docs" };
+
+  it("is denied under offlineStrict", () => {
+    expect(decideNetwork("offlineStrict", request).allowed).toBe(false);
+  });
+  it("is denied under providerOnly", () => {
+    expect(decideNetwork("providerOnly", request).allowed).toBe(false);
+  });
+  it("is allowed under unrestricted", () => {
+    expect(decideNetwork("unrestricted", request).allowed).toBe(true);
+  });
+});
