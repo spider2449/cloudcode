@@ -169,3 +169,50 @@ describe("command prefix rules", () => {
     expect(new PermissionStore(cwd).check("Edit", join(cwd, "src", "b.ts"))).toBe("allow");
   });
 });
+
+describe("host rules", () => {
+  it("rememberHost persists and checkHost recalls", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cc-permstore-persist-"));
+    const persisted = new PermissionStore(dir);
+    persisted.rememberHost("WebFetch", "example.com", "allow");
+    // A fresh instance reads the same file back.
+    const reloaded = new PermissionStore(dir);
+    expect(reloaded.checkHost("WebFetch", "example.com")).toBe("allow");
+    expect(reloaded.checkHost("WebFetch", "other.com")).toBeUndefined();
+  });
+
+  it("deny beats allow for different hosts", () => {
+    const store = new PermissionStore(tempCwd());
+    store.rememberHost("WebFetch", "a.com", "allow");
+    store.rememberHost("WebFetch", "b.com", "deny");
+    expect(store.checkHost("WebFetch", "a.com")).toBe("allow");
+    expect(store.checkHost("WebFetch", "b.com")).toBe("deny");
+  });
+
+  it("host matching is case-insensitive while display keeps the typed case", () => {
+    const store = new PermissionStore(tempCwd());
+    store.rememberHost("WebFetch", "Docs.Example.com", "allow");
+    expect(store.checkHost("WebFetch", "DOCS.EXAMPLE.com")).toBe("allow");
+    expect(store.list()).toEqual([{ tool: "WebFetch", host: "Docs.Example.com", decision: "allow" }]);
+  });
+
+  it("re-membering the same host replaces the old rule", () => {
+    const store = new PermissionStore(tempCwd());
+    store.rememberHost("WebFetch", "a.com", "deny");
+    store.rememberHost("WebFetch", "a.com", "allow");
+    expect(store.checkHost("WebFetch", "a.com")).toBe("allow");
+    expect(store.list().filter(r => r.tool === "WebFetch")).toHaveLength(1);
+  });
+
+  it("host rules coexist with dir and prefix rules in one file", () => {
+    const cwd = tempCwd();
+    const store = new PermissionStore(cwd);
+    store.rememberHost("WebFetch", "a.com", "allow");
+    store.rememberCommand("git", "allow");
+    store.remember("Edit", join(cwd, "src", "a.ts"), "allow");
+    const reloaded = new PermissionStore(cwd);
+    expect(reloaded.checkHost("WebFetch", "a.com")).toBe("allow");
+    expect(reloaded.checkCommand("git status")).toBe("allow");
+    expect(reloaded.check("Edit", join(cwd, "src", "b.ts"))).toBe("allow");
+  });
+});

@@ -6,10 +6,12 @@ export type PermissionDecision = "allow" | "deny";
 export interface PermissionRule {
   tool: string;
   decision: PermissionDecision;
-  // Exactly one of the following is set: `dir` for file-path rules,
-  // `prefix` for Bash command rules (matched on the first token).
+  // Exactly one of the following is set: `dir` for path rules,
+  // `prefix` for Bash command rules (matched on the first token),
+  // `host` for WebFetch host rules.
   dir?: string;
   prefix?: string;
+  host?: string;
 }
 
 // Case folding is Windows-only on purpose: on a case-sensitive filesystem
@@ -22,11 +24,13 @@ function normalizePath(p: string): string {
 
 function isValidRule(r: unknown): r is PermissionRule {
   const rule = r as PermissionRule;
+  const scopeCount = [rule.dir, rule.prefix, rule.host]
+    .filter(value => typeof value === "string").length;
   return (
     !!rule &&
     typeof rule.tool === "string" &&
     (rule.decision === "allow" || rule.decision === "deny") &&
-    (typeof rule.dir === "string") !== (typeof rule.prefix === "string")
+    scopeCount === 1
   );
 }
 
@@ -120,6 +124,25 @@ export class PermissionStore {
     // Store the prefix as typed (for display in /permissions list) while
     // matching stays case-insensitive via checkCommand's .toLowerCase() calls.
     this.rules.push({ tool: "Bash", prefix, decision });
+    this.persist();
+  }
+
+  checkHost(tool: string, host: string): PermissionDecision | undefined {
+    const key = host.toLowerCase();
+    const matches = this.rules.filter(
+      r => r.tool === tool && r.host !== undefined && r.host.toLowerCase() === key
+    );
+    if (matches.some(r => r.decision === "deny")) return "deny";
+    if (matches.some(r => r.decision === "allow")) return "allow";
+    return undefined;
+  }
+
+  rememberHost(tool: string, host: string, decision: PermissionDecision): void {
+    const key = host.toLowerCase();
+    this.rules = this.rules.filter(r => !(r.tool === tool && r.host?.toLowerCase() === key));
+    // Store the host as typed (for display in /permissions list) while
+    // matching stays case-insensitive via checkHost's toLowerCase calls.
+    this.rules.push({ tool, host, decision });
     this.persist();
   }
 
