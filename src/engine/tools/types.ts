@@ -17,6 +17,11 @@ export interface ToolContext {
   signal?: AbortSignal;
   lsp?: LspManager;
   fileMutations?: FileMutationObserver;
+  /** Outbound-network gate for tools like WebFetch. Structural on purpose:
+   * engine code must not depend on the agent-layer NetworkPolicy class. */
+  networkPolicy?: {
+    require(request: { capability: "webFetch"; destination: string }): void;
+  };
 }
 
 export interface ToolOutput {

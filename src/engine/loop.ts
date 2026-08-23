@@ -4,6 +4,7 @@ import type { FileMutationObserver, ToolDef } from "./tools/types.js";
 import type { MessagesClient } from "./api.js";
 import type { PermissionMode } from "../agent/session.js";
 import type { PermissionStore } from "../agent/permissionStore.js";
+import type { NetworkPolicy } from "../agent/networkPolicy.js";
 import { decidePermission } from "./permissions.js";
 import { costUsd } from "./pricing.js";
 import { compactHistory } from "./compact.js";
@@ -26,6 +27,7 @@ export interface EngineOptions {
   store: PermissionStore;
   lsp?: LspManager;
   fileMutations?: FileMutationObserver;
+  networkPolicy?: NetworkPolicy;
   effort?: EffortLevel;
   contextWindow?: number;
   runLimits?: RunLimits;
@@ -386,7 +388,8 @@ export class EngineLoop {
         cwd: this.opts.cwd,
         signal,
         lsp: this.opts.lsp,
-        fileMutations: this.opts.fileMutations
+        fileMutations: this.opts.fileMutations,
+        networkPolicy: this.opts.networkPolicy
       });
       const content = await appendDiagnostics(block.name, block.input, out.content, this.opts.lsp, this.opts.cwd);
       return { type: "tool_result", tool_use_id: block.id, content, is_error: out.isError === true };

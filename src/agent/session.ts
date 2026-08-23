@@ -119,6 +119,7 @@ export class AgentSession {
       store,
       lsp: this.lsp,
       fileMutations: this.changes,
+      networkPolicy,
       onMessage: this.opts.onMessage,
       requestPermission: (toolName, input) =>
         new Promise(resolve => this.opts.onPermissionRequest({ toolName, input, resolve }))
