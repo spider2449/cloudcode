@@ -12,7 +12,6 @@ import { liveCompletionContext, type CompletionContext } from "../commands/compl
 import { toDisplayItems, streamDelta, streamThinkingDelta, type DisplayItem } from "./transcript.js";
 import { fetchModels } from "../agent/models.js";
 import { loadMcpServers, formatMcpStatus } from "../agent/mcp.js";
-import { inspectProjectExecutableConfig, ProjectTrustStore } from "../agent/projectTrust.js";
 import { loadRegistry } from "../engine/lsp/config.js";
 import { loadSkills, formatSkillList, type Skill } from "../agent/skills.js";
 import { mergeSkillCommands } from "../commands/skillCommands.js";
@@ -37,6 +36,7 @@ import { truncateToWidth } from "./width.js";
 import type { ITerminal } from "./term/terminal.js";
 import type { Key } from "./input.js";
 import { loadSettings, saveSetting } from "../agent/settings.js";
+import { resolveProjectConfigTrust } from "./projectTrustPrompt.js";
 import type { EffortLevel } from "../engine/effort.js";
 import type { NetworkDecisionRecorder, NetworkMode } from "../agent/networkPolicy.js";
 import { NetworkController } from "./networkController.js";
@@ -471,10 +471,6 @@ export class App {
     this.ctx.openResumePicker();
   }
 
-  private handleResize(): void {
-    this.resize.handleResize();
-  }
-
   tick(): void {
     if (this.phase === "idle" && this.usage.compactPct === undefined) return;
     this.workIndFrame += 1;
@@ -482,12 +478,6 @@ export class App {
   }
 
   private pendingImages: ImageAttachments;
-  private attachClipboardImage(): void { this.pendingImages.attachFromClipboard(); }
-
-  private clearPendingImages(): void {
-    this.pendingImages.clear();
-    this.notice("Attachments cleared.");
-  }
 
   private keyRouterHost(): KeyRouterHost {
     return {
@@ -509,11 +499,11 @@ export class App {
       handleInputKey: k => {
         this.inputBox.handleKey(k);
         if (k.t === "esc" && this.pendingImages.count > 0) {
-          this.clearPendingImages();
+          this.pendingImages.clear();
           this.notice("Attachments cleared.");
         }
       },
-      attachImage: () => this.attachClipboardImage(),
+      attachImage: () => this.pendingImages.attachFromClipboard(),
       recompute: () => this.recompute()
     };
   }
@@ -572,10 +562,16 @@ export class App {
     this.running = true;
     this.git.start();
     this.tickTimer = setInterval(() => this.tick(), 1000);
-    this.terminal.onResize(() => this.handleResize());
+    this.terminal.onResize(() => this.resize.handleResize());
     this.terminal.onKeys(keys => this.handleKeys(keys));
     this.terminal.onLine(line => this.handleSubmit(line));
-    const trust = this.resolveProjectConfigTrust();
+    const trust = resolveProjectConfigTrust({
+      cwd: this.props.cwd,
+      openTrust: (projectPath, commands, resolve) => this.overlay.openTrust(projectPath, commands, resolve),
+      notice: text => this.notice(text),
+      onError: text => this.buffer.append({ kind: "error", text }),
+      recompute: () => this.recompute()
+    });
     this.allowProjectConfig = typeof trust === "boolean" ? trust : await trust;
     this.session = this.createSession(this.props.initialProvider, this.props.resume);
     const initialPrompt = this.task.takeInitialPrompt();
@@ -588,24 +584,6 @@ export class App {
     // startup so the frame reflects the settled size instead of a stale one.
     setTimeout(() => { if (this.running) this.recompute(); }, 50);
     await new Promise<void>(resolve => { this.stopResolve = resolve; });
-  }
-  private resolveProjectConfigTrust(): boolean | Promise<boolean> {
-    const descriptor = inspectProjectExecutableConfig(this.props.cwd);
-    if (!descriptor) return true;
-    const store = new ProjectTrustStore();
-    if (store.isTrusted(descriptor)) return true;
-    return new Promise(resolve => {
-      this.overlay.openTrust(descriptor.projectPath, descriptor.commands, allow => {
-        if (allow) {
-          try { store.approve(descriptor); }
-          catch (err) { this.buffer.append({ kind: "error", text: `Failed to save project trust: ${err instanceof Error ? err.message : String(err)}` }); }
-        } else {
-          this.notice("Ignored untrusted project MCP/LSP configuration.");
-        }
-        resolve(allow);
-      });
-      this.recompute();
-    });
   }
   private stopResolve: (() => void) | undefined;
   private stop(): void {
