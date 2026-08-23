@@ -178,3 +178,41 @@ describe("makeOpenAIClient", () => {
     await expect(collect(client, baseReq)).rejects.toThrow(/404/);
   });
 });
+
+import { translateMessages } from "../src/engine/openaiApi.js";
+
+describe("vision translation", () => {
+  it("maps user image blocks to multimodal data-URL parts", () => {
+    const out = translateMessages([
+      {
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: "image/png", data: "aGk=" } },
+          { type: "text", text: "what is this" }
+        ]
+      }
+    ]) as Array<{ role: string; content: unknown }>;
+    expect(out).toHaveLength(1);
+    expect(out[0].content).toEqual([
+      { type: "image_url", image_url: { url: "data:image/png;base64,aGk=" } },
+      { type: "text", text: "what is this" }
+    ]);
+  });
+
+  it("emits tool results as text plus a follow-up user message for images", () => {
+    const out = translateMessages([
+      {
+        role: "user",
+        content: [
+          { type: "tool_result", tool_use_id: "t1", content: "result text" },
+          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "eHg=" } }
+        ]
+      }
+    ]) as Array<{ role: string; content: unknown }>;
+    expect(out[0]).toMatchObject({ role: "tool", tool_call_id: "t1", content: "result text" });
+    expect(out[1]).toEqual({
+      role: "user",
+      content: [{ type: "image_url", image_url: { url: "data:image/jpeg;base64,eHg=" } }]
+    });
+  });
+});

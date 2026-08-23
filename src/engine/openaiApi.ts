@@ -33,7 +33,7 @@ function flattenToolResultContent(content: unknown): string {
   return JSON.stringify(content);
 }
 
-function translateMessages(messages: unknown[]): unknown[] {
+export function translateMessages(messages: unknown[]): unknown[] {
   const out: unknown[] = [];
   for (const raw of messages) {
     const msg = raw as { role: string; content: unknown };
@@ -61,19 +61,50 @@ function translateMessages(messages: unknown[]): unknown[] {
       out.push(assistantMsg);
       continue;
     }
-    // role === "user" with block-array content: either tool_result blocks
-    // or (rarely) plain text blocks.
+    // role === "user" whose content is purely text/image blocks (no
+    // tool_results): one multimodal message with vision data-URL parts.
+    if (blocks.length > 0 && blocks.every(b => b.type === "image" || b.type === "text")) {
+      out.push({
+        role: "user",
+        content: blocks.map(b => b.type === "image"
+          ? {
+              type: "image_url",
+              image_url: {
+                url: `data:${(b.source as { media_type: string }).media_type};base64,${(b.source as { data: string }).data}`
+              }
+            }
+          : { type: "text", text: (b.text as string) ?? "" })
+      });
+      continue;
+    }
+    // Mixed user content: tool_result blocks plus optional text/image parts.
+    let pendingImages: Array<Record<string, unknown>> = [];
+    const flushImages = () => {
+      if (pendingImages.length > 0) {
+        out.push({ role: "user", content: pendingImages });
+        pendingImages = [];
+      }
+    };
     for (const block of blocks) {
       if (block.type === "tool_result") {
+        flushImages();
         out.push({
           role: "tool",
           tool_call_id: block.tool_use_id,
           content: flattenToolResultContent(block.content)
         });
+      } else if (block.type === "image") {
+        const source = block.source as { media_type?: string; data?: string };
+        pendingImages.push({
+          type: "image_url",
+          image_url: { url: `data:${source.media_type};base64,${source.data}` }
+        });
       } else if (block.type === "text") {
+        flushImages();
         out.push({ role: "user", content: (block.text as string) ?? "" });
       }
     }
+    flushImages();
   }
   return out;
 }
