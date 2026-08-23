@@ -31,7 +31,7 @@ export function listLinkedSkillNames(skillsDir: string, repoName: string): strin
 }
 
 const CONFIG_KEYS = ["provider", "model", "permissionMode", "networkMode", "theme", "effort", "autoMemory"] as const;
-type ConfigKey = (typeof CONFIG_KEYS)[number];
+export type ConfigKey = (typeof CONFIG_KEYS)[number];
 
 function fmtK(n: number): string {
   return `${(n / 1000).toFixed(1)}k`;
@@ -68,6 +68,87 @@ function configValue(key: ConfigKey): string {
   if (key === "effort") return loadSettings().effort ?? "off";
   if (key === "autoMemory") return String(loadSettings().autoMemoryEnabled ?? true);
   return loadSettings()[key as keyof Omit<Settings, "effort" | "autoMemoryEnabled" | "statusLineItems">] ?? "(unset)";
+}
+
+/** Valid values for a config key, from live context where applicable. */
+function valueOptions(cctx: CommandContext, key: ConfigKey): string[] {
+  switch (key) {
+    case "provider": return cctx.providerNames();
+    case "model": return cctx.availableModels();
+    case "permissionMode": return [...MODES];
+    case "networkMode": return ["offlineStrict", "providerOnly"];
+    case "theme": return Object.keys(THEMES);
+    case "effort": return [...EFFORT_LEVELS];
+    case "autoMemory": return ["true", "false"];
+  }
+}
+
+function currentValue(ctx: CommandContext, key: ConfigKey): string {
+  if (key === "networkMode") return ctx.currentNetworkMode();
+  return configValue(key);
+}
+
+/** Validate + persist + apply live. Shared by the typed /config form and the
+ * /config picker overlay so both paths stay identical. */
+export async function applyConfigValue(ctx: CommandContext, key: ConfigKey, value: string): Promise<void> {
+  switch (key) {
+    case "provider":
+      if (!ctx.providerNames().includes(value)) {
+        ctx.notice(`Unknown provider: ${value}. Providers: ${ctx.providerNames().join(", ")}`);
+        return;
+      }
+      saveSetting("provider", value);
+      await ctx.switchProvider(value);
+      break;
+    case "model":
+      saveSetting("model", value);
+      await ctx.setModel(value);
+      break;
+    case "permissionMode":
+      if (!MODES.includes(value as PermissionMode)) {
+        ctx.notice("Valid modes: default, acceptEdits, bypassPermissions");
+        return;
+      }
+      if (value === "bypassPermissions") {
+        await ctx.setPermissionMode(value);
+        ctx.notice("permissionMode = bypassPermissions (session only, not saved)");
+        return;
+      }
+      saveSetting("permissionMode", value);
+      await ctx.setPermissionMode(value as PermissionMode);
+      break;
+    case "networkMode":
+      if (!isPersistedNetworkMode(value)) {
+        ctx.notice("Valid saved network modes: offlineStrict, providerOnly. unrestricted is invocation-only.");
+        return;
+      }
+      await ctx.setNetworkMode(value);
+      break;
+    case "effort":
+      if (!isEffortLevel(value)) {
+        ctx.notice(`Unknown level: ${value}. Levels: ${EFFORT_LEVELS.join(", ")}`);
+        return;
+      }
+      saveSetting("effort", value);
+      await ctx.setEffort(value);
+      break;
+    case "autoMemory": {
+      if (value !== "true" && value !== "false") {
+        ctx.notice("Valid values: true, false");
+        return;
+      }
+      saveSetting("autoMemoryEnabled", value === "true");
+      break;
+    }
+    case "theme":
+      if (!(value in THEMES)) {
+        ctx.notice(`Unknown theme: ${value}. Themes: ${Object.keys(THEMES).join(", ")}`);
+        return;
+      }
+      ctx.setTheme(value);
+      break;
+  }
+  ctx.notice(`${key} = ${value} (saved)`);
 }
 
 const commands: Command[] = [
@@ -112,67 +193,10 @@ const commands: Command[] = [
         return;
       }
       if (!value) {
-        ctx.notice(`${key} = ${key === "networkMode" ? ctx.currentNetworkMode() : configValue(key as ConfigKey)}`);
+        ctx.notice(`${key} = ${currentValue(ctx, key as ConfigKey)}`);
         return;
       }
-      switch (key as ConfigKey) {
-        case "provider":
-          if (!ctx.providerNames().includes(value)) {
-            ctx.notice(`Unknown provider: ${value}. Providers: ${ctx.providerNames().join(", ")}`);
-            return;
-          }
-          saveSetting("provider", value);
-          await ctx.switchProvider(value);
-          break;
-        case "model":
-          saveSetting("model", value);
-          await ctx.setModel(value);
-          break;
-        case "permissionMode":
-          if (!MODES.includes(value as PermissionMode)) {
-            ctx.notice("Valid modes: default, acceptEdits, bypassPermissions");
-            return;
-          }
-          if (value === "bypassPermissions") {
-            await ctx.setPermissionMode(value);
-            ctx.notice("permissionMode = bypassPermissions (session only, not saved)");
-            return;
-          }
-          saveSetting("permissionMode", value);
-          await ctx.setPermissionMode(value as PermissionMode);
-          break;
-        case "networkMode":
-          if (!isPersistedNetworkMode(value)) {
-            ctx.notice("Valid saved network modes: offlineStrict, providerOnly. unrestricted is invocation-only.");
-            return;
-          }
-          await ctx.setNetworkMode(value);
-          break;
-        case "effort":
-          if (!isEffortLevel(value)) {
-            ctx.notice(`Unknown level: ${value}. Levels: ${EFFORT_LEVELS.join(", ")}`);
-            return;
-          }
-          saveSetting("effort", value);
-          await ctx.setEffort(value);
-          break;
-        case "autoMemory": {
-          if (value !== "true" && value !== "false") {
-            ctx.notice("Valid values: true, false");
-            return;
-          }
-          saveSetting("autoMemoryEnabled", value === "true");
-          break;
-        }
-        case "theme":
-          if (!(value in THEMES)) {
-            ctx.notice(`Unknown theme: ${value}. Themes: ${Object.keys(THEMES).join(", ")}`);
-            return;
-          }
-          ctx.setTheme(value);
-          break;
-      }
-      ctx.notice(`${key} = ${value} (saved)`);
+      await applyConfigValue(ctx, key as ConfigKey, value);
     },
     completeArgs(prefix, cctx) {
       const parts = prefix.split(/\s+/);
