@@ -347,3 +347,63 @@ describe("OverlayManager statusline sub-mode", () => {
     expect(rows.some(r => r.includes("[x]") && r.includes("Permission mode"))).toBe(false);
   });
 });
+
+const configEntries = [
+  { key: "theme", current: "dark", choices: ["dark", "light"] },
+  { key: "effort", current: "off", choices: ["off", "low", "medium", "high"] },
+  { key: "model", current: "(unset)", choices: [] }
+];
+
+describe("OverlayManager config sub-mode", () => {
+  it("phase 1 lists keys; Enter moves to phase 2; picking applies and closes", () => {
+    const mgr = new OverlayManager();
+    const onPick = vi.fn();
+    mgr.openConfig(configEntries, onPick, () => {});
+    expect(mgr.mode).toBe("config");
+    mgr.handleKey({ t: "down" });          // select effort
+    mgr.handleKey({ t: "enter" });         // -> values phase
+    expect(mgr.mode).toBe("config");       // still open
+    mgr.handleKey({ t: "down" });
+    mgr.handleKey({ t: "down" });          // select medium
+    mgr.handleKey({ t: "enter" });
+    expect(onPick).toHaveBeenCalledWith("effort", "medium");
+    expect(mgr.mode).toBe("none");
+  });
+
+  it("Esc in values phase returns to keys; Esc on keys cancels", () => {
+    const onCancel = vi.fn();
+    const mgr = new OverlayManager();
+    mgr.openConfig(configEntries, () => {}, onCancel);
+    mgr.handleKey({ t: "enter" });         // -> values for theme
+    mgr.handleKey({ t: "esc" });           // back to keys
+    expect(onCancel).not.toHaveBeenCalled();
+    mgr.handleKey({ t: "esc" });           // close
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(mgr.mode).toBe("none");
+  });
+
+  it("Enter on an entry without choices does nothing and stays open", () => {
+    const onPick = vi.fn();
+    const mgr = new OverlayManager();
+    mgr.openConfig(configEntries, onPick, () => {});
+    mgr.handleKey({ t: "down" });
+    mgr.handleKey({ t: "down" });          // model, empty choices
+    mgr.handleKey({ t: "enter" });
+    mgr.handleKey({ t: "enter" });
+    expect(onPick).not.toHaveBeenCalled();
+    expect(mgr.mode).toBe("config");       // still open in phase 1
+  });
+
+  it("renders keys with current values in phase 1 and marks the current choice in phase 2", () => {
+    const mgr = new OverlayManager();
+    mgr.openConfig(configEntries, () => {}, () => {});
+    const keysRows = mgr.render(theme, 80).map(strip).join("\n");
+    expect(keysRows).toContain("theme");
+    expect(keysRows).toContain("dark");
+    mgr.handleKey({ t: "enter" });         // -> values for theme
+    const valueRows = mgr.render(theme, 80).map(strip).join("\n");
+    expect(valueRows).toContain("\u25cf dark");
+    expect(valueRows).toContain("light");
+    expect(valueRows).not.toContain("effort");
+  });
+});

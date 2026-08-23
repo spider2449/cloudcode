@@ -11,7 +11,7 @@ import { hostScope, ruleScope } from "../../engine/permissions.js";
 import { STATUS_LINE_ITEMS, STATUS_LINE_LABELS, canonicalOrder } from "../../statusLineItems.js";
 import type { StatusLineItem } from "../../statusLineItems.js";
 
-export type OverlayMode = "none" | "resume" | "project" | "permission" | "memory" | "trust" | "statusline";
+export type OverlayMode = "none" | "resume" | "project" | "permission" | "memory" | "trust" | "statusline" | "config";
 
 interface PermOption {
   label: string;
@@ -99,6 +99,22 @@ interface StatusLineState {
   onCancel: () => void;
 }
 
+export interface ConfigEntry {
+  key: string;
+  current: string;
+  choices: string[];
+}
+
+interface ConfigState {
+  entries: ConfigEntry[];
+  phase: "keys" | "values";
+  keyIndex: number;
+  valueIndex: number;
+  activeKey: ConfigEntry | undefined;
+  onPick: (key: string, value: string) => void;
+  onCancel: () => void;
+}
+
 export class OverlayManager {
   private _mode: OverlayMode = "none";
   private resumeState: ResumeState | undefined;
@@ -107,6 +123,7 @@ export class OverlayManager {
   private memoryState: MemoryState | undefined;
   private trustState: TrustState | undefined;
   private statusLineState: StatusLineState | undefined;
+  private configState: ConfigState | undefined;
 
   get mode(): OverlayMode {
     return this._mode;
@@ -169,6 +186,15 @@ export class OverlayManager {
     };
   }
 
+  openConfig(
+    entries: ConfigEntry[],
+    onPick: (key: string, value: string) => void,
+    onCancel: () => void
+  ): void {
+    this._mode = "config";
+    this.configState = { entries, phase: "keys", keyIndex: 0, valueIndex: 0, activeKey: undefined, onPick, onCancel };
+  }
+
   close(): void {
     this._mode = "none";
     this.resumeState = undefined;
@@ -177,6 +203,7 @@ export class OverlayManager {
     this.memoryState = undefined;
     this.trustState = undefined;
     this.statusLineState = undefined;
+    this.configState = undefined;
   }
 
   handleKey(k: Key, input?: string): void {
@@ -186,6 +213,7 @@ export class OverlayManager {
     else if (this._mode === "memory") this.handleMemoryKey(k);
     else if (this._mode === "trust") this.handleTrustKey(k, input);
     else if (this._mode === "statusline") this.handleStatusLineKey(k, input);
+    else if (this._mode === "config") this.handleConfigKey(k);
   }
 
   private handleTrustKey(k: Key, input?: string): void {
@@ -272,6 +300,45 @@ export class OverlayManager {
     if (k.t === "printable" && input) { s.text += input; s.index = 0; }
   }
 
+  private handleConfigKey(k: Key): void {
+    const s = this.configState;
+    if (!s) return;
+    if (s.phase === "keys") {
+      if (k.t === "esc") { const cb = s.onCancel; this.close(); cb(); return; }
+      if (k.t === "up") { s.keyIndex = Math.max(0, s.keyIndex - 1); return; }
+      if (k.t === "down") { s.keyIndex = Math.min(s.entries.length - 1, s.keyIndex + 1); return; }
+      if (k.t === "enter") {
+        const entry = s.entries[s.keyIndex];
+        if (entry && entry.choices.length > 0) {
+          s.activeKey = entry;
+          s.valueIndex = Math.max(0, entry.choices.indexOf(entry.current));
+          s.phase = "values";
+        }
+      }
+      return;
+    }
+    if (k.t === "esc") {
+      s.phase = "keys";
+      s.activeKey = undefined;
+      s.valueIndex = 0;
+      return;
+    }
+    if (k.t === "up") { s.valueIndex = Math.max(0, s.valueIndex - 1); return; }
+    if (k.t === "down") {
+      if (s.activeKey) s.valueIndex = Math.min(s.activeKey.choices.length - 1, s.valueIndex + 1);
+      return;
+    }
+    if (k.t === "enter") {
+      const value = s.activeKey?.choices[s.valueIndex];
+      if (s.activeKey && value !== undefined) {
+        const cb = s.onPick;
+        const key = s.activeKey.key;
+        this.close();
+        cb(key, value);
+      }
+    }
+  }
+
   private handleResumeKey(k: Key): void {
     const s = this.resumeState;
     if (!s) return;
@@ -291,7 +358,38 @@ export class OverlayManager {
     if (this._mode === "memory") return this.renderMemory(theme, width);
     if (this._mode === "trust") return this.renderTrust(theme, width);
     if (this._mode === "statusline") return this.renderStatusLine(theme, width);
+    if (this._mode === "config") return this.renderConfig(theme, width);
     return [];
+  }
+
+  private renderConfig(theme: Theme, width: number): string[] {
+    const s = this.configState;
+    if (!s) return [];
+    const muted = sgr(theme.muted);
+    const warning = sgr(theme.warning);
+    const rows: string[] = [
+      "╭" + "─".repeat(Math.max(0, width - 2)) + "╮",
+      s.phase === "keys"
+        ? `${warning}Settings (↑/↓ move, Enter choose, Esc done)${SGR_RESET}`
+        : `${warning}Settings — ${s.activeKey?.key ?? ""} (↑/↓ move, Enter apply, Esc back)${SGR_RESET}`
+    ];
+    if (s.phase === "keys") {
+      const { start, end } = visibleWindow(s.entries.length, s.keyIndex, MAX_ROWS);
+      for (let i = start; i < end; i++) {
+        const e = s.entries[i];
+        const line = `${e.key.padEnd(16)}${e.choices.length === 0 ? `${muted}${e.current}${SGR_RESET}` : e.current}`;
+        rows.push(i === s.keyIndex ? `\x1b[7m ${line}\x1b[27m` : ` ${line}`);
+      }
+    } else if (s.activeKey) {
+      const { start, end } = visibleWindow(s.activeKey.choices.length, s.valueIndex, MAX_ROWS);
+      for (let i = start; i < end; i++) {
+        const choice = s.activeKey.choices[i];
+        const line = `${choice === s.activeKey.current ? "●" : " "} ${choice}`;
+        rows.push(i === s.valueIndex ? `\x1b[7m ${line}\x1b[27m` : ` ${line}`);
+      }
+    }
+    rows.push("╰" + "─".repeat(Math.max(0, width - 2)) + "╯");
+    return rows;
   }
 
   private renderStatusLine(theme: Theme, width: number): string[] {
