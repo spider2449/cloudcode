@@ -27,6 +27,8 @@ export interface ToolContext {
 export interface ToolOutput {
   content: string;
   isError?: boolean;
+  /** Image blocks to show the model (Read on image files). */
+  images?: Array<{ mediaType: string; base64: string }>;
 }
 
 export interface ToolDef {
