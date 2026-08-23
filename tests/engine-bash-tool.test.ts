@@ -59,8 +59,10 @@ describe("bashTool", () => {
 
   it("executes successfully inside a real netns sandbox on Linux", async () => {
     if (process.platform === "win32") return;
+    // A nonzero status means unshare exists but lacks permission to create
+    // a netns here (spawn's .error only covers ENOENT-style failures).
     const probe = spawnSync("unshare", ["-n", "true"]);
-    if (probe.error) return; // no unshare on this machine; skip silently
+    if (probe.error || probe.status !== 0) return;
     const out = await bashTool.execute(
       { command: "cat /sys/class/net/lo/operstate" },
       { cwd: process.cwd(), sandbox: { wrap: c => ({ cmd: "unshare", args: ["-n", "/bin/sh", "-c", c] }) } }
