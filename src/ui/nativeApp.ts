@@ -407,7 +407,6 @@ export class App {
       this.firstMessage = text;
       if (this.session?.sessionId) this.recordSession(this.session.sessionId, this.providerName);
     }
-    // Warn but never block: a missing @path may be a file to be created.
     for (const path of missingMentions(text, this.props.cwd)) this.notice(`Note: ${path} does not exist (yet)`);
     this.buffer.append({ kind: "user", text });
     const images = this.pendingImages.takeForSend();
@@ -513,13 +512,9 @@ export class App {
     };
   }
 
-  handleKeys(ks: Key[]): void {
-    this.keys.handleKeys(ks);
-  }
+  handleKeys(ks: Key[]): void { this.keys.handleKeys(ks); }
 
-  handleKey(k: Key): void {
-    this.keys.handleKey(k);
-  }
+  handleKey(k: Key): void { this.keys.handleKey(k); }
 
   recompute(): void {
     const size = this.terminal.size();
