@@ -68,6 +68,51 @@ describe("AgentSession", () => {
     await session.dispose();
   });
 
+  it("keeps Bash disabled under offlineStrict when the probe finds no sandbox", async () => {
+    vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("ok")]));
+    const session = new AgentSession({
+      providerName: "local", provider: { kind: "openai", baseUrl: "http://127.0.0.1:8080" },
+      permissionMode: "default", networkMode: "offlineStrict", cwd: "/p",
+      sandboxProbe: () => ({ available: false, reason: "none" }),
+      onMessage: () => {}, onPermissionRequest: () => {}, onSessionId: () => {}
+    });
+    session.start();
+    expect(session.tools).not.toContain("Bash");
+    await session.dispose();
+  });
+
+  it("enables Bash under offlineStrict when the probe verifies a sandbox", async () => {
+    vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("ok")]));
+    const session = new AgentSession({
+      providerName: "local", provider: { kind: "openai", baseUrl: "http://127.0.0.1:8080" },
+      permissionMode: "default", networkMode: "offlineStrict", cwd: "/p",
+      sandboxProbe: () => ({
+        available: true,
+        adapter: { kind: "netns", wrap: (command: string) => ({ cmd: "unshare", args: ["-n", "/bin/sh", "-c", command] }) }
+      }),
+      onMessage: () => {}, onPermissionRequest: () => {}, onSessionId: () => {}
+    });
+    session.start();
+    expect(session.tools).toContain("Bash");
+    await session.dispose();
+  });
+
+  it("does not wrap commands outside offlineStrict even when verified", async () => {
+    vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("ok")]));
+    const session = new AgentSession({
+      providerName: "anthropic", provider: {},
+      permissionMode: "default", networkMode: "providerOnly", cwd: "/p",
+      sandboxProbe: () => ({
+        available: true,
+        adapter: { kind: "netns", wrap: (command: string) => ({ cmd: "unshare", args: ["-n", "/bin/sh", "-c", command] }) }
+      }),
+      onMessage: () => {}, onPermissionRequest: () => {}, onSessionId: () => {}
+    });
+    session.start();
+    expect(session.tools).toContain("Bash"); // providerOnly always had Bash, unwrapped
+    await session.dispose();
+  });
+
   it("exposes only an explicit read-only tool allowlist", async () => {
     vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("ok")]));
     const session = new AgentSession({

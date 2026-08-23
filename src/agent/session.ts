@@ -16,12 +16,13 @@ import { runExtraction, hasMemoryWrites, countModelMessages, MIN_NEW_MESSAGES } 
 import { memoryDir } from "../engine/memoryPaths.js";
 import { loadSettings } from "./settings.js";
 import { loadHooksConfig, HooksRunner } from "./hooks.js";
-import { BackgroundShellManager, realBgSpawner } from "../engine/tools/backgroundShells.js";
+import { BackgroundShellManager, realBgSpawner, sandboxedBgSpawner } from "../engine/tools/backgroundShells.js";
 import { type TodoItem, type TodoStore } from "../engine/tools/todo.js";
 import { todosMessage } from "../engine/messages.js";
 import {
   NetworkPolicy, bashNetworkStatus, providerEndpoint, type NetworkMode
 } from "./networkPolicy.js";
+import { probeSandboxCached, type SandboxProbeResult } from "./sandbox.js";
 import {
   ChangeJournal, type ChangeSummary, type UndoPreview, type UndoResult
 } from "./changeJournal.js";
@@ -63,7 +64,8 @@ export interface AgentSessionOptions {
   changeJournalFactory?: (cwd: string, sessionId: string) => ChangeJournal;
   networkMode?: NetworkMode;
   networkPolicy?: NetworkPolicy;
-  verifiedNoNetworkSandbox?: boolean;
+  /** Probe override for tests; defaults to the cached real machine probe. */
+  sandboxProbe?: () => SandboxProbeResult;
   runLimits?: RunLimits;
   toolAllowlist?: readonly string[];
   onMessage(msg: EngineMessage): void;
@@ -121,7 +123,11 @@ export class AgentSession {
       this.opts.networkMode ?? "providerOnly", endpoint
     );
     networkPolicy.require({ capability: "provider", destination: endpoint });
-    const bash = bashNetworkStatus(networkPolicy.mode, this.opts.verifiedNoNetworkSandbox === true);
+    const probe = (this.opts.sandboxProbe ?? probeSandboxCached)();
+    // Wrapping applies ONLY under offlineStrict: in providerOnly/unrestricted
+    // children legitimately need the network and must not be confined.
+    const sandbox = probe.available && networkPolicy.mode === "offlineStrict" ? probe.adapter : undefined;
+    const bash = bashNetworkStatus(networkPolicy.mode, sandbox !== undefined);
     const hooksConfig = loadHooksConfig(this.opts.cwd, this.opts.configBase);
     for (const warning of hooksConfig.warnings) {
       this.opts.onMessage(errorResult(warning));
@@ -134,7 +140,7 @@ export class AgentSession {
     const hooksRunner = new HooksRunner(hooksConfig.hooks, this.opts.cwd);
     this.hooksRunner = hooksRunner;
     void hooksRunner.run("SessionStart").catch(() => {});
-    const bgShells = new BackgroundShellManager(realBgSpawner);
+    const bgShells = new BackgroundShellManager(sandbox ? sandboxedBgSpawner(sandbox) : realBgSpawner);
     this.bgShells = bgShells;
     const todoStore: TodoStore = {
       get: () => this.todos,
@@ -178,6 +184,7 @@ export class AgentSession {
       fileMutations: this.changes,
       networkPolicy,
       bgShells,
+      sandbox,
       hooks: {
         guard: async (toolName, input) => {
           const outcome = await hooksRunner.run("PreToolUse", { tool: toolName, input });
