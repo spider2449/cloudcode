@@ -3,6 +3,7 @@ import {
   NetworkPolicy, NetworkPolicyError, bashNetworkStatus, decideNetwork,
   effectiveNetworkMode, isLoopbackHost, isLoopbackUrl, providerEndpoint
 } from "../src/agent/networkPolicy.js";
+import { TOKEN_ENDPOINT } from "../src/agent/oauth.js";
 
 describe("network policy", () => {
   it("recognizes loopback hosts without accepting lookalikes", () => {
@@ -47,6 +48,13 @@ describe("network policy", () => {
     expect(bashNetworkStatus("offlineStrict", true)).toEqual({ available: true, description: "contained" });
     expect(bashNetworkStatus("providerOnly", false)).toEqual({ available: true, description: "uncontained" });
     expect(providerEndpoint({})).toBe("https://api.anthropic.com");
+  });
+
+  it("denies oauth egress under providerOnly but allows it unrestricted", () => {
+    const request = { capability: "oauth", destination: TOKEN_ENDPOINT };
+    expect(decideNetwork("providerOnly", request).allowed).toBe(false);
+    expect(decideNetwork("offlineStrict", request).allowed).toBe(false);
+    expect(decideNetwork("unrestricted", request).allowed).toBe(true);
   });
 });
 

@@ -10,7 +10,8 @@ export type NetworkCapability =
   | "skillRepo"
   | "gitRemote"
   | "packInstaller"
-  | "webFetch";
+  | "webFetch"
+  | "oauth";
 
 export type NetworkDenialReason =
   | "invalidDestination"
