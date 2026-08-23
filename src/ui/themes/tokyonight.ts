@@ -1,6 +1,5 @@
 import type { ThemeJson } from "../themeJson.js";
 
-// Ported verbatim from opencode (packages/tui/src/theme/assets/tokyonight.json).
 const theme: ThemeJson = {
   "$schema": "https://opencode.ai/theme.json",
   "defs": {
@@ -134,10 +133,6 @@ const theme: ThemeJson = {
       "dark": "#37222c",
       "light": "#f7d8db"
     },
-    "diffContextBg": {
-      "dark": "darkStep2",
-      "light": "lightStep2"
-    },
     "diffLineNumber": {
       "dark": "#8f909a",
       "light": "#59595b"
@@ -150,10 +145,6 @@ const theme: ThemeJson = {
       "dark": "#2d1f26",
       "light": "#e7c8cb"
     },
-    "markdownText": {
-      "dark": "darkStep12",
-      "light": "lightStep12"
-    },
     "markdownHeading": {
       "dark": "darkPurple",
       "light": "lightPurple"
@@ -165,10 +156,6 @@ const theme: ThemeJson = {
     "markdownLinkText": {
       "dark": "darkCyan",
       "light": "lightCyan"
-    },
-    "markdownCode": {
-      "dark": "darkGreen",
-      "light": "lightGreen"
     },
     "markdownBlockQuote": {
       "dark": "darkYellow",
@@ -186,10 +173,6 @@ const theme: ThemeJson = {
       "dark": "darkStep11",
       "light": "lightStep11"
     },
-    "markdownListItem": {
-      "dark": "darkStep9",
-      "light": "lightStep9"
-    },
     "markdownListEnumeration": {
       "dark": "darkCyan",
       "light": "lightCyan"
@@ -201,14 +184,6 @@ const theme: ThemeJson = {
     "markdownImageText": {
       "dark": "darkCyan",
       "light": "lightCyan"
-    },
-    "markdownCodeBlock": {
-      "dark": "darkStep12",
-      "light": "lightStep12"
-    },
-    "syntaxComment": {
-      "dark": "darkStep11",
-      "light": "lightStep11"
     },
     "syntaxKeyword": {
       "dark": "darkPurple",
@@ -237,13 +212,8 @@ const theme: ThemeJson = {
     "syntaxOperator": {
       "dark": "darkCyan",
       "light": "lightCyan"
-    },
-    "syntaxPunctuation": {
-      "dark": "darkStep12",
-      "light": "lightStep12"
     }
   }
-}
-;
+};
 
 export default theme;

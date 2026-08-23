@@ -1,6 +1,5 @@
 import type { ThemeJson } from "../themeJson.js";
 
-// Ported verbatim from opencode (packages/tui/src/theme/assets/dracula.json).
 const theme: ThemeJson = {
   "$schema": "https://opencode.ai/theme.json",
   "defs": {
@@ -78,29 +77,9 @@ const theme: ThemeJson = {
       "dark": "#191a21",
       "light": "#e0e0e0"
     },
-    "diffAdded": {
-      "dark": "green",
-      "light": "green"
-    },
-    "diffRemoved": {
-      "dark": "red",
-      "light": "red"
-    },
-    "diffContext": {
-      "dark": "comment",
-      "light": "#6272a4"
-    },
     "diffHunkHeader": {
       "dark": "comment",
       "light": "#6272a4"
-    },
-    "diffHighlightAdded": {
-      "dark": "green",
-      "light": "green"
-    },
-    "diffHighlightRemoved": {
-      "dark": "red",
-      "light": "red"
     },
     "diffAddedBg": {
       "dark": "#1a3a1a",
@@ -109,10 +88,6 @@ const theme: ThemeJson = {
     "diffRemovedBg": {
       "dark": "#3a1a1a",
       "light": "#ffe0e0"
-    },
-    "diffContextBg": {
-      "dark": "#21222c",
-      "light": "#e8e8e2"
     },
     "diffLineNumber": {
       "dark": "#989aa4",
@@ -126,10 +101,6 @@ const theme: ThemeJson = {
       "dark": "#3a1a1a",
       "light": "#ffe0e0"
     },
-    "markdownText": {
-      "dark": "foreground",
-      "light": "#282a36"
-    },
     "markdownHeading": {
       "dark": "purple",
       "light": "purple"
@@ -142,18 +113,6 @@ const theme: ThemeJson = {
       "dark": "pink",
       "light": "pink"
     },
-    "markdownCode": {
-      "dark": "green",
-      "light": "green"
-    },
-    "markdownBlockQuote": {
-      "dark": "comment",
-      "light": "#6272a4"
-    },
-    "markdownEmph": {
-      "dark": "yellow",
-      "light": "yellow"
-    },
     "markdownStrong": {
       "dark": "orange",
       "light": "orange"
@@ -162,14 +121,6 @@ const theme: ThemeJson = {
       "dark": "comment",
       "light": "#6272a4"
     },
-    "markdownListItem": {
-      "dark": "purple",
-      "light": "purple"
-    },
-    "markdownListEnumeration": {
-      "dark": "cyan",
-      "light": "cyan"
-    },
     "markdownImage": {
       "dark": "cyan",
       "light": "cyan"
@@ -177,14 +128,6 @@ const theme: ThemeJson = {
     "markdownImageText": {
       "dark": "pink",
       "light": "pink"
-    },
-    "markdownCodeBlock": {
-      "dark": "foreground",
-      "light": "#282a36"
-    },
-    "syntaxComment": {
-      "dark": "comment",
-      "light": "#6272a4"
     },
     "syntaxKeyword": {
       "dark": "pink",
@@ -213,13 +156,8 @@ const theme: ThemeJson = {
     "syntaxOperator": {
       "dark": "pink",
       "light": "pink"
-    },
-    "syntaxPunctuation": {
-      "dark": "foreground",
-      "light": "#282a36"
     }
   }
-}
-;
+};
 
 export default theme;
