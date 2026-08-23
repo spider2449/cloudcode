@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+﻿import { describe, it, expect, vi, beforeEach } from "vitest";
 import { join } from "node:path";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { loadHooksConfig, HooksRunner, type HookEvent } from "../src/agent/hooks.js";
 
 vi.mock("../src/engine/api.js", () => ({ makeClient: vi.fn() }));
 
@@ -299,5 +300,53 @@ describe("shouldExtract", () => {
     ];
     expect(shouldExtract(withWrite, 0, dir)).toBe(false);
     expect(shouldExtract(noWrites, 2, dir)).toBe(false); // fewer than MIN_NEW_MESSAGES since cursor
+  });
+});
+
+describe("AgentSession hooks", () => {
+  function hooksSession(cwd: string, configBase?: string, messages?: unknown[]) {
+    vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("ok")]));
+    const session = new AgentSession({
+      providerName: "local", provider: { kind: "openai", baseUrl: "http://127.0.0.1:8080" },
+      permissionMode: "default", networkMode: "offlineStrict",
+      cwd, ...(configBase ? { configBase } : {}),
+      onMessage: m => messages?.push(m),
+      onPermissionRequest: () => {}, onSessionId: () => {}
+    });
+    session.start();
+    return session;
+  }
+
+  it("surfaces exactly one untrusted-project notice at startup", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "cc-sess-hp-"));
+    mkdirSync(join(cwd, ".cloudcode"), { recursive: true });
+    writeFileSync(join(cwd, ".cloudcode", "hooks.json"), JSON.stringify({
+      hooks: { Stop: [{ command: "echo stop-hook-ran" }] }
+    }));
+    const messages: unknown[] = [];
+    const session = hooksSession(cwd, undefined, messages);
+    const noticeText = (m: unknown) =>
+      String((m as { content?: string }).content ?? "") + String((m as { result?: string }).result ?? "");
+    const notices = messages.filter(m =>
+      noticeText(m).includes("hooks.json") && noticeText(m).includes("not trusted"));
+    expect(notices).toHaveLength(1);
+    await session.dispose();
+  });
+
+  it("runs a trusted user-layer SessionEnd hook exactly once on dispose", async () => {
+    const { existsSync } = await import("node:fs");
+    const cwd = mkdtempSync(join(tmpdir(), "cc-sess-he-"));
+    const configBase = mkdtempSync(join(tmpdir(), "cc-sess-he-base-"));
+    const marker = join(mkdtempSync(join(tmpdir(), "cc-sess-he-mark-")), "marker.txt");
+    const command = process.platform === "win32"
+      ? `Set-Content -LiteralPath '${marker}' -Value done`
+      : `echo done > '${marker}'`;
+    writeFileSync(join(configBase, "hooks.json"), JSON.stringify({
+      hooks: { SessionEnd: [{ command, timeoutMs: 15000 }] }
+    }));
+    const session = hooksSession(cwd, configBase);
+    expect(existsSync(marker)).toBe(false); // nothing runs during construction
+    await session.dispose();
+    expect(existsSync(marker)).toBe(true);
   });
 });

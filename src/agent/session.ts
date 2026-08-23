@@ -15,6 +15,7 @@ import type { EffortLevel } from "../engine/effort.js";
 import { runExtraction, hasMemoryWrites, countModelMessages, MIN_NEW_MESSAGES } from "../engine/extractMemories.js";
 import { memoryDir } from "../engine/memoryPaths.js";
 import { loadSettings } from "./settings.js";
+import { loadHooksConfig, HooksRunner } from "./hooks.js";
 import {
   NetworkPolicy, bashNetworkStatus, providerEndpoint, type NetworkMode
 } from "./networkPolicy.js";
@@ -49,6 +50,8 @@ export interface AgentSessionOptions {
   permissionMode: PermissionMode;
   resume?: string;
   cwd: string;
+  /** Base directory for user-level hook config; defaults to configDir(). */
+  configBase?: string;
   mcpServers?: Record<string, McpServerConfig>;
   lspRegistry?: Record<string, ServerConfig>;
   mcpManager?: McpManager;
@@ -68,6 +71,7 @@ export class AgentSession {
   private loop: EngineLoop | undefined;
   private abortController: AbortController | undefined;
   private sessionFile: SessionFile | undefined;
+  private hooksRunner: HooksRunner | undefined;
   sessionId: string | undefined;
   tools: string[] = [];
   private mcp: McpManager;
@@ -102,6 +106,18 @@ export class AgentSession {
     );
     networkPolicy.require({ capability: "provider", destination: endpoint });
     const bash = bashNetworkStatus(networkPolicy.mode, this.opts.verifiedNoNetworkSandbox === true);
+    const hooksConfig = loadHooksConfig(this.opts.cwd, this.opts.configBase);
+    for (const warning of hooksConfig.warnings) {
+      this.opts.onMessage(errorResult(warning));
+    }
+    if (hooksConfig.projectUntrusted) {
+      this.opts.onMessage(errorResult(
+        "Project .cloudcode/hooks.json exists but is not trusted; approve the project configuration to enable its hooks."
+      ));
+    }
+    const hooksRunner = new HooksRunner(hooksConfig.hooks, this.opts.cwd);
+    this.hooksRunner = hooksRunner;
+    void hooksRunner.run("SessionStart").catch(() => {});
     const availableTools = builtinTools({
       allowArbitraryChildNetwork: bash.available,
       task: {
@@ -134,6 +150,15 @@ export class AgentSession {
       lsp: this.lsp,
       fileMutations: this.changes,
       networkPolicy,
+      hooks: {
+        guard: async (toolName, input) => {
+          const outcome = await hooksRunner.run("PreToolUse", { tool: toolName, input });
+          return { blocked: outcome.blocked, reason: outcome.notices.join("; ") || undefined };
+        },
+        observe: async (event, payload) => {
+          await hooksRunner.run(event, payload);
+        }
+      },
       onMessage: this.opts.onMessage,
       requestPermission: (toolName, input) =>
         new Promise(resolve => this.opts.onPermissionRequest({ toolName, input, resolve }))
@@ -198,6 +223,7 @@ export class AgentSession {
           this.turnActive = false;
           return;
         }
+        await this.hooksRunner?.run("UserPromptSubmit", { promptLength: text.length });
         this.changes?.beginCheckpoint();
         try {
           await this.loop?.runTurn(text, controller.signal);
@@ -346,6 +372,7 @@ export class AgentSession {
     if (this.timeoutTimer) clearTimeout(this.timeoutTimer);
     this.timeoutTimer = undefined;
     this.abortController?.abort();
+    await this.hooksRunner?.run("SessionEnd").catch(() => {});
     await this.mcp.dispose();
     this.lsp.shutdown();
   }
