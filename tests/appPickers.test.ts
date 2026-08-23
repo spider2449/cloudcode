@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openResumePicker, openProjectPicker, openMemoryPicker, openStatusLinePicker, type PickerDeps } from "../src/ui/appPickers.js";
+import { openResumePicker, openProjectPicker, openMemoryPicker, openStatusLinePicker, openConfigPicker, type PickerDeps } from "../src/ui/appPickers.js";
 import { OverlayManager } from "../src/ui/widgets/overlay.js";
 import { SessionIndex } from "../src/agent/sessionIndex.js";
 
@@ -74,5 +74,25 @@ describe("appPickers", () => {
     expect(changes).toHaveLength(1);
     overlay.handleKey({ t: "esc" });
     expect(overlay.mode).toBe("none");
+  });
+
+  it("openConfigPicker opens the settings picker, repaints once, forwards picks", () => {
+    const { deps, overlay, repaints } = setup();
+    const picks: Array<[string, string]> = [];
+    openConfigPicker(deps, [{ key: "theme", current: "dark", choices: ["dark", "light"] }], (k, v) => picks.push([k, v]));
+    expect(overlay.mode).toBe("config");
+    expect(repaints()).toBe(1);
+    overlay.handleKey({ t: "enter" });   // -> values phase
+    overlay.handleKey({ t: "enter" });   // pick current value
+    expect(picks).toEqual([["theme", "dark"]]);
+    expect(overlay.mode).toBe("none");
+  });
+
+  it("openConfigPicker Esc cancels and repaints twice total", () => {
+    const { deps, overlay, repaints } = setup();
+    openConfigPicker(deps, [], () => {});
+    overlay.handleKey({ t: "esc" });
+    expect(overlay.mode).toBe("none");
+    expect(repaints()).toBe(2); // once on open, once on cancel
   });
 });

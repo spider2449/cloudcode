@@ -4,7 +4,7 @@ import { History } from "../agent/history.js";
 import type { ProviderConfig } from "../agent/providers.js";
 import { SessionIndex } from "../agent/sessionIndex.js";
 import { PermissionStore } from "../agent/permissionStore.js";
-import { buildRegistry } from "../commands/builtins.js";
+import { buildRegistry, applyConfigValue, configChoices, type ConfigKey } from "../commands/builtins.js";
 import { parseSlash } from "../commands/registry.js";
 import type { CommandContext } from "../commands/types.js";
 import { FileIndex } from "../commands/fileIndex.js";
@@ -21,7 +21,7 @@ import { GitStatusPoller } from "./useGitStatus.js";
 import { PermissionController } from "./permissionController.js";
 import { KeyRouter, type KeyRouterHost } from "./keyRouter.js";
 import { UsageTracker } from "./usageTracker.js";
-import { openMemoryPicker, openProjectPicker, openResumePicker, openStatusLinePicker, type PickerDeps } from "./appPickers.js";
+import { openConfigPicker, openMemoryPicker, openProjectPicker, openResumePicker, openStatusLinePicker, type PickerDeps } from "./appPickers.js";
 import { DEFAULT_STATUS_LINE_ITEMS, type StatusLineItem } from "../statusLineItems.js";
 import { collectGitReview } from "../agent/gitReview.js";
 import { Buffer } from "./buffer.js";
@@ -367,6 +367,10 @@ export class App {
       openStatusLinePicker: () =>
         openStatusLinePicker(this.pickerDeps(), this.statusLineItems, next => {
           this.statusLineItems = next; saveSetting("statusLineItems", next); this.recompute();
+        }),
+      openConfigPicker: () =>
+        openConfigPicker(this.pickerDeps(), configChoices(this.ctx), (key, value) => {
+          void applyConfigValue(this.ctx, key as ConfigKey, value);
         }),
       currentCwd: () => this.props.cwd,
       changeSummaries: latestOnly => this.session?.changeSummaries(latestOnly) ?? [], changeDiff: path =>

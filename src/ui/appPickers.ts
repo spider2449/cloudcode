@@ -3,12 +3,12 @@ import { recentProjects, resolveProjectPath } from "../commands/projectPath.js";
 import { openInEditor, openFolder } from "../commands/editor.js";
 import { ensureMemoryDir } from "../engine/memoryPaths.js";
 import { buildMemoryOptions } from "./MemoryPicker.js";
-import type { OverlayManager } from "./widgets/overlay.js";
+import type { ConfigEntry, OverlayManager } from "./widgets/overlay.js";
 import type { StatusLineItem } from "../statusLineItems.js";
 
 /**
  * Wiring for the list overlays the slash commands open (/resume, /project,
- * /memory, /statusline). Each one is opened the same way: build its options,
+ * /memory, /statusline, /config). Each one is opened the same way: build its options,
  * hand the overlay a pick callback and a cancel callback that closes and
  * repaints, then repaint so the overlay appears immediately.
  */
@@ -72,5 +72,16 @@ export function openStatusLinePicker(
   onChange: (next: StatusLineItem[]) => void
 ): void {
   deps.overlay.openStatusLine(initial, onChange, cancel(deps));
+  deps.recompute();
+}
+
+/** Settings picker for bare /config: entries are computed by the caller
+ * (configChoices) at open time; picks are applied by the caller's callback. */
+export function openConfigPicker(
+  deps: PickerDeps,
+  entries: ConfigEntry[],
+  onPick: (key: string, value: string) => void
+): void {
+  deps.overlay.openConfig(entries, onPick, cancel(deps));
   deps.recompute();
 }
