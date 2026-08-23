@@ -68,3 +68,19 @@ describe("TodoWrite tool", () => {
     expect(bad.isError).toBe(true);
   });
 });
+
+import { todosMessage } from "../src/engine/messages.js";
+
+describe("broadcast store", () => {
+  it("emits a todos message whenever the store is written", async () => {
+    const seen: unknown[] = [];
+    const store = {
+      get: () => [],
+      set: (t: TodoItem[]) => { seen.push(todosMessage(t)); }
+    };
+    const tool = createTodoTool(store);
+    await tool.execute({ todos: [{ content: "a", status: "pending" }] }, { cwd: "/tmp" });
+    expect(seen).toHaveLength(1);
+    expect((seen[0] as { type: string }).type).toBe("todos");
+  });
+});

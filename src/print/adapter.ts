@@ -102,6 +102,7 @@ export class PrintAdapter implements NetworkDecisionRecorder {
       this.finishReason = "limit";
       return;
     }
+    if (message.type !== "result") return;
     if (message.subtype === "error_during_execution") {
       const error = redactStructuredError(message.result, this.options.secrets);
       this.sequencer.emit({ kind: "error", message: error });

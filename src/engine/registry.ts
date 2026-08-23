@@ -7,16 +7,19 @@ import { globTool } from "./tools/glob.js";
 import { grepTool } from "./tools/grep.js";
 import { webfetchTool } from "./tools/webfetch.js";
 import { createTaskTool, type TaskToolDeps } from "./tools/task.js";
+import { createTodoTool, type TodoStore } from "./tools/todo.js";
 import { definitionTool, referencesTool, hoverTool, symbolsTool, diagnosticsTool } from "./tools/lsp.js";
 
 export function builtinTools(options: {
   allowArbitraryChildNetwork?: boolean;
   task?: TaskToolDeps;
+  todoStore?: TodoStore;
 } = {}): ToolDef[] {
   const tools = [
     readTool, writeTool, editTool, bashTool, globTool, grepTool, webfetchTool,
     definitionTool, referencesTool, hoverTool, symbolsTool, diagnosticsTool,
-    ...(options.task ? [createTaskTool(options.task)] : [])
+    ...(options.task ? [createTaskTool(options.task)] : []),
+    createTodoTool(options.todoStore)
   ];
   return options.allowArbitraryChildNetwork === false
     ? tools.filter(tool => tool.capabilities?.arbitraryChildNetwork !== true)

@@ -19,7 +19,12 @@ export type EngineMessage =
   | { type: "result"; subtype: "success"; total_cost_usd?: number; duration_ms: number; usage?: Usage; finish_reason?: "completed" | "limit" | "interrupted" }
   | { type: "result"; subtype: "error_during_execution"; result: string }
   | { type: "limit"; limit: "maxTurns" | "timeoutMs" | "maxCostUsd"; value: number }
-  | { type: "tool_result"; tool_use_id: string; content: unknown; is_error: boolean };
+  | { type: "tool_result"; tool_use_id: string; content: unknown; is_error: boolean }
+  | { type: "todos"; todos: Array<{ content: string; status: string }> };
+
+export function todosMessage(todos: Array<{ content: string; status: string }>): EngineMessage {
+  return { type: "todos", todos };
+}
 
 export function textDelta(text: string): EngineMessage {
   return { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text } } };
