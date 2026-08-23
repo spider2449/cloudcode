@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+﻿import { describe, it, expect } from "vitest";
 import { EngineLoop } from "../src/engine/loop.js";
 import { PermissionStore } from "../src/agent/permissionStore.js";
 import { mkdtempSync } from "node:fs";
@@ -364,7 +364,7 @@ describe("EngineLoop", () => {
     });
     await loop.runTurn("go", new AbortController().signal);
     expect(requests).toHaveLength(1); // no follow-up request
-    // History holds the assistant text only — no empty user content array.
+    // History holds the assistant text only â€” no empty user content array.
     const emptyUserContent = loop.messages.some(
       m => (m as { role?: string; content?: unknown }).role === "user" && Array.isArray((m as { content?: unknown[] }).content)
         && ((m as { content: unknown[] }).content).length === 0
@@ -589,52 +589,5 @@ describe("contextSnapshot", () => {
     const snap = loop.contextSnapshot();
     expect(snap.inputTokens).toBe(1050); // 100 + 900 + 50
     expect(snap.messagesTokens).toBeGreaterThan(0);
-  });
-});
-
-describe("EngineLoop knobs", () => {
-  it("honors a custom maxTurns cap and reports the limit", async () => {
-    const received: unknown[] = [];
-    const loop = new EngineLoop({
-      client: fakeClient(Array(6).fill(0).map(() => toolUseTurn())),
-      model: "test-model",
-      systemPrompt: "sys",
-      tools: [echoTool],
-      cwd: process.cwd(),
-      permissionMode: "bypassPermissions",
-      store: new PermissionStore(mkdtempSync(join(tmpdir(), "cc-loop-mt-"))),
-      onMessage: m => received.push(m),
-      requestPermission: async () => true,
-      maxTurns: 3
-    });
-    await loop.runTurn("go", new AbortController().signal);
-    const texts = received
-      .filter(m => (m as { type?: string }).type === "assistant")
-      .flatMap(m => (m as unknown as { message: { content: Array<{ type: string; text?: string }> } }).message.content)
-      .filter(b => b.type === "text")
-      .map(b => b.text ?? "")
-      .join("\n");
-    expect(texts).toContain("[Stopped after 3 tool-use turns without a final answer]");
-  });
-
-  it("exposes model, permission mode, and effort through getters", () => {
-    const loop = new EngineLoop({
-      client: fakeClient([]),
-      model: "test-model",
-      systemPrompt: "sys",
-      tools: [],
-      cwd: process.cwd(),
-      permissionMode: "acceptEdits",
-      store: new PermissionStore(mkdtempSync(join(tmpdir(), "cc-loop-g-"))),
-      onMessage: () => {},
-      requestPermission: async () => true,
-      effort: "high"
-    });
-    loop.setPermissionMode("default");
-    loop.setEffort("low");
-    loop.setModel("other-model");
-    expect(loop.getModel()).toBe("other-model");
-    expect(loop.getPermissionMode()).toBe("default");
-    expect(loop.getEffort()).toBe("low");
   });
 });

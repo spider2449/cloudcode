@@ -94,8 +94,14 @@ describe("runSubagent", () => {
   });
 
   it("converts a nested provider failure into an error result", async () => {
+    // A client whose stream rejects on first pull (no generator needed, so
+    // oxlint's require-yield rule stays quiet).
     const failing = {
-      async *create() { throw new Error("boom"); }
+      create: () => ({
+        [Symbol.asyncIterator]: () => ({
+          next: async () => { throw new Error("boom"); }
+        })
+      })
     };
     const deps = makeDeps({ client: () => failing });
     const out = await runSubagent(deps as never, "/tmp", "explode", new AbortController().signal);
