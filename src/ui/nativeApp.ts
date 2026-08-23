@@ -28,10 +28,11 @@ import { Buffer } from "./buffer.js";
 import { InputBox } from "./widgets/inputBox.js";
 import { ImageAttachments } from "./imageAttachments.js";
 import { InputQueue } from "./inputQueue.js";
+import { ResizeGuard } from "./resizeGuard.js";
 import { join } from "node:path";
 import { OverlayManager } from "./widgets/overlay.js";
 import { InlineRenderer, type BottomState } from "./term/render.js";
-import { CLEAR_AND_HOME, CLEAR_ALL_AND_HOME, sgr, SGR_RESET } from "./term/ansi.js";
+import { CLEAR_AND_HOME, sgr, SGR_RESET } from "./term/ansi.js";
 import { truncateToWidth } from "./width.js";
 import type { ITerminal } from "./term/terminal.js";
 import type { Key } from "./input.js";
@@ -98,6 +99,7 @@ export class App {
   private session: AgentSession | undefined;
   private history = new History();
   private keys: KeyRouter;
+  private resize: ResizeGuard;
   private permissionStore: PermissionStore;
   private registry = buildRegistry();
   private skills: Skill[] = [];
@@ -145,6 +147,13 @@ export class App {
       recompute: () => this.recompute()
     });
     this.keys = new KeyRouter(this.keyRouterHost());
+    this.resize = new ResizeGuard({
+      isRunning: () => this.running,
+      write: text => this.terminal.write(text),
+      invalidateRenderer: () => this.renderer.invalidate(),
+      recommitBuffer: () => this.buffer.recommitAll(),
+      recompute: () => this.recompute()
+    });
     this.pendingImages = new ImageAttachments({
       setAttachmentCount: n => { this.inputBox.attachmentCount = n; },
       notice: text => this.notice(text),
@@ -462,38 +471,8 @@ export class App {
     this.ctx.openResumePicker();
   }
 
-  private resizeRepaintTimer: ReturnType<typeof setTimeout> | undefined;
-
-  /**
-   * Any resize leaves debris that no in-place footer repaint can fix. On a
-   * width change the terminal reflows the transcript rows that were
-   * committed to scrollback at the old width, garbling history. On a height
-   * shrink the host pushes the viewport top -- including previously painted
-   * footer rows -- into scrollback, baking stale footer copies there, where
-   * no escape sequence can reach them. The only correct recovery for both
-   * is a scrollback-clearing reprint of the whole transcript at the settled
-   * size. Resize events arrive in storms while the user drags the window
-   * edge, so the expensive full repaint is debounced until the size
-   * settles; each in-storm frame is still repainted immediately so the
-   * footer tracks the live size.
-   */
   private handleResize(): void {
-    // A stopped App must be fully inert: without this guard, an instance
-    // whose resize callback outlives stop() (e.g. across a project switch)
-    // keeps repainting on every resize with its stale, empty renderer state,
-    // clearing the screen and stamping an outdated footer over the live
-    // App's frames.
-    if (!this.running) return;
-    this.recompute();
-    if (this.resizeRepaintTimer) clearTimeout(this.resizeRepaintTimer);
-    this.resizeRepaintTimer = setTimeout(() => {
-      this.resizeRepaintTimer = undefined;
-      if (!this.running) return;
-      this.terminal.write(CLEAR_ALL_AND_HOME);
-      this.renderer.invalidate();
-      this.buffer.recommitAll();
-      this.recompute();
-    }, 150);
+    this.resize.handleResize();
   }
 
   tick(): void {
@@ -529,7 +508,7 @@ export class App {
       handlePaste: text => this.inputBox.handlePaste(text),
       handleInputKey: k => {
         this.inputBox.handleKey(k);
-        if (k.t === "esc" && this.pendingImages.length > 0) {
+        if (k.t === "esc" && this.pendingImages.count > 0) {
           this.clearPendingImages();
           this.notice("Attachments cleared.");
         }
@@ -631,7 +610,7 @@ export class App {
   private stopResolve: (() => void) | undefined;
   private stop(): void {
     if (this.tickTimer) clearInterval(this.tickTimer);
-    if (this.resizeRepaintTimer) clearTimeout(this.resizeRepaintTimer);
+    this.resize.dispose();
     this.git.stop();
     this.terminal.write(this.renderer.finalize());
     this.running = false;
