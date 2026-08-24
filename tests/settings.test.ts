@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadSettings, saveSetting } from "../src/agent/settings.js";
+import { loadSettings, saveSetting, saveNetworkStorageRule } from "../src/agent/settings.js";
 
 const dir = () => mkdtempSync(join(tmpdir(), "settings-"));
 
@@ -111,8 +111,64 @@ describe("statusLineItems setting", () => {
     const file = join(dir(), "settings.json");
     saveSetting("provider", "local", file);
     saveSetting("statusLineItems", ["cost"], file);
-    expect(loadSettings(file).statusLineItems).toEqual(["cost"]);
+    expect(loadSettings(file)).toEqual({ provider: "local", statusLineItems: ["cost"] });
     const raw = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
     expect(raw["provider"]).toBe("local");
   });
 });
+
+describe("networkStorage setting", () => {
+  it("round-trips valid rules through save/load", () => {
+    const file = join(dir(), "settings.json");
+    saveSetting(
+      "networkStorage",
+      [{ target: "\\\\srv\\sh", decision: "allow" }],
+      file
+    );
+    expect(loadSettings(file).networkStorage).toEqual([
+      { target: "//srv/sh", decision: "allow" }
+    ]);
+  });
+
+  it("drops malformed entries but keeps valid siblings", () => {
+    const file = join(dir(), "settings.json");
+    writeFileSync(file, JSON.stringify({
+      networkStorage: [
+        { target: "//srv/sh", decision: "allow" },
+        { target: "//only-server", decision: "allow" },
+        { target: "Z:", decision: "maybe" },
+        "garbage",
+        { target: 42, decision: "deny" }
+      ]
+    }));
+    expect(loadSettings(file).networkStorage).toEqual([
+      { target: "//srv/sh", decision: "allow" }
+    ]);
+  });
+
+  it("ignores a non-array networkStorage", () => {
+    const file = join(dir(), "settings.json");
+    writeFileSync(file, JSON.stringify({ networkStorage: "all" }));
+    expect(loadSettings(file).networkStorage).toBeUndefined();
+  });
+
+  it("upserts a single rule via saveNetworkStorageRule, replacing same target", () => {
+    const file = join(dir(), "settings.json");
+    saveNetworkStorageRule("\\\\srv\\sh", "deny", file);
+    saveNetworkStorageRule("//srv/sh", "allow", file);
+    saveNetworkStorageRule("Z:", "allow", file);
+    expect(loadSettings(file).networkStorage).toEqual([
+      { target: "//srv/sh", decision: "allow" },
+      { target: "z:", decision: "allow" }
+    ]);
+  });
+
+  it("preserves unknown sibling keys when saving a rule", () => {
+    const file = join(dir(), "settings.json");
+    writeFileSync(file, JSON.stringify({ futureKey: "x" }));
+    saveNetworkStorageRule("Z:", "deny", file);
+    const raw = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+    expect(raw["futureKey"]).toBe("x");
+  });
+});
+

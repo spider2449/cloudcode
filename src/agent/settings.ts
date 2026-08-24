@@ -5,6 +5,11 @@ import type { PermissionMode } from "./session.js";
 import { isEffortLevel, type EffortLevel } from "../engine/effort.js";
 import { isPersistedNetworkMode, type PersistedNetworkMode } from "./networkPolicy.js";
 import { normalizeStatusLineItems, type StatusLineItem } from "../statusLineItems.js";
+import {
+  isValidNetworkStorageRule,
+  normalizeNetworkTarget,
+  type NetworkStorageRule
+} from "./networkStorage.js";
 
 export interface Settings {
   provider?: string;
@@ -16,6 +21,8 @@ export interface Settings {
   networkMode?: PersistedNetworkMode;
   /** Segment IDs shown in the bottom status bar; absent means app default. */
   statusLineItems?: StatusLineItem[];
+  /** Global allow/deny rules for network storage (UNC shares, mapped drives). */
+  networkStorage?: NetworkStorageRule[];
 }
 
 // bypassPermissions is deliberately not persistable: a saved bypass would make
@@ -48,11 +55,29 @@ export function loadSettings(filePath: string = DEFAULT_FILE()): Settings {
   if (isPersistedNetworkMode(raw.networkMode)) out.networkMode = raw.networkMode;
   const statusLineItems = normalizeStatusLineItems(raw.statusLineItems);
   if (statusLineItems) out.statusLineItems = statusLineItems;
+  if (Array.isArray(raw.networkStorage)) {
+    const rules = raw.networkStorage
+      .filter(isValidNetworkStorageRule)
+      .map(r => ({ target: normalizeNetworkTarget(r.target), decision: r.decision }));
+    out.networkStorage = rules;
+  }
   return out;
 }
 
-export function saveSetting(key: keyof Settings, value: string | boolean | string[], filePath: string = DEFAULT_FILE()): void {
+export function saveSetting(key: keyof Settings, value: string | boolean | string[] | NetworkStorageRule[], filePath: string = DEFAULT_FILE()): void {
   const next = { ...loadRaw(filePath), [key]: value };
   mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(filePath, JSON.stringify(next, null, 2));
+}
+
+/** Upserts one network-storage rule, keyed on the normalized target. */
+export function saveNetworkStorageRule(
+  target: string,
+  decision: NetworkStorageRule["decision"],
+  filePath: string = DEFAULT_FILE()
+): void {
+  const normalized = normalizeNetworkTarget(target);
+  const rules = (loadSettings(filePath).networkStorage ?? []).filter(r => r.target !== normalized);
+  rules.push({ target: normalized, decision });
+  saveSetting("networkStorage", rules, filePath);
 }
