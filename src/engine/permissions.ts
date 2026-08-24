@@ -1,6 +1,7 @@
 import { isAbsolute, resolve, sep } from "node:path";
 import type { PermissionMode } from "../agent/session.js";
 import { type PermissionStore, isCompoundCommand } from "../agent/permissionStore.js";
+import { matchNetworkStorage, networkStorageRoot, type NetworkStorageRule } from "../agent/networkStorage.js";
 
 const READ_ONLY = new Set(["Read", "Glob", "Grep"]);
 const EDIT_TOOLS = new Set(["Write", "Edit"]);
@@ -50,6 +51,23 @@ export function hostScope(toolName: string, input: Record<string, unknown>): str
   }
 }
 
+/**
+ * The network-storage root a remembered rule for this tool call would be
+ * written into global settings for, or undefined when the call does not name
+ * a network path outside cwd (those are remembered as project dir rules as
+ * before). Kept beside ruleScope/hostScope so the overlay's remember answer
+ * and the decider agree on scoping.
+ */
+export function networkRememberTarget(
+  toolName: string,
+  input: Record<string, unknown>,
+  cwd: string
+): string | undefined {
+  const scope = ruleScope(toolName, input);
+  if (!scope || isInsideCwd(scope.path, cwd)) return undefined;
+  return networkStorageRoot(scope.path);
+}
+
 // True for paths at or inside `cwd`. Resolves both sides first so ".."
 // segments and relative paths can't produce a false "inside" result.
 function isInsideCwd(filePath: string, cwd: string): boolean {
@@ -63,14 +81,29 @@ export function decidePermission(
   input: Record<string, unknown>,
   mode: PermissionMode,
   store: PermissionStore,
-  cwd: string
+  cwd: string,
+  networkStorage?: readonly NetworkStorageRule[]
 ): PermissionDecision {
+  // Global network-storage rules are consulted before everything else: a
+  // matching deny blocks even bypassPermissions, and a matching allow lets an
+  // outside-cwd network path be treated as inside-cwd for every check below
+  // (so reads auto-allow, edits follow acceptEdits, bypass allows). An
+  // unmatched network path falls through to the normal forced-ask behavior.
+  const scope = ruleScope(toolName, input);
+  let networkAllows = false;
+  if (scope && networkStorage && networkStorage.length > 0) {
+    const ruling = matchNetworkStorage(networkStorage, scope.path);
+    if (ruling === "deny") return "deny";
+    networkAllows = ruling === "allow";
+  }
   // acceptEdits/bypassPermissions auto-allow edits, but only inside cwd — a
   // write outside cwd always needs an explicit human "ask" (or a remembered
   // store rule, checked below), since those modes otherwise remove the only
   // barrier between model output and the rest of the filesystem.
   const outsideCwdFile =
-    typeof input.file_path === "string" && !isInsideCwd(input.file_path, cwd);
+    typeof input.file_path === "string" &&
+    !isInsideCwd(input.file_path, cwd) &&
+    !networkAllows;
   const outsideCwdEdit = EDIT_TOOLS.has(toolName) && outsideCwdFile;
   // Reads are otherwise unconditionally allowed (see READ_ONLY below), but a
   // read resolving outside cwd is the primary data-exfiltration path for a
@@ -82,12 +115,12 @@ export function decidePermission(
   // "secret" is the same exfiltration path as a targeted Read, only broader.
   // An omitted (or empty) `path` means cwd, which is inside by definition.
   const outsideCwdSearch =
-    SEARCH_TOOLS.has(toolName) && typeof input.path === "string" && !isInsideCwd(input.path, cwd);
+    SEARCH_TOOLS.has(toolName) && typeof input.path === "string" &&
+    !isInsideCwd(input.path, cwd) && !networkAllows;
 
   if (mode === "bypassPermissions" && !outsideCwdEdit && !outsideCwdRead && !outsideCwdSearch) return "allow";
   // Per-directory rules (deny beats allow) apply to every tool that names a
   // path, keyed on the input that tool actually takes.
-  const scope = ruleScope(toolName, input);
   if (scope) {
     const ruling = store.check(toolName, scope.path);
     if (ruling === "deny") return "deny";

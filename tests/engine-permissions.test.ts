@@ -4,8 +4,12 @@ import { PermissionStore } from "../src/agent/permissionStore.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { NetworkStorageRule } from "../src/agent/networkStorage.js";
 
 const CWD = process.cwd();
+
+const netRules = (...rs: Array<[string, "allow" | "deny"]>): NetworkStorageRule[] =>
+  rs.map(([target, decision]) => ({ target, decision }));
 
 function freshStore(): PermissionStore {
   // Point the store at an empty temp project so no real rules leak in.
@@ -202,5 +206,47 @@ describe("TodoWrite permissions", () => {
     expect(decidePermission("TodoWrite", { todos: [] }, "default", store, CWD)).toBe("allow");
     expect(decidePermission("TodoWrite", { todos: [] }, "acceptEdits", store, CWD)).toBe("allow");
     expect(decidePermission("TodoWrite", {}, "bypassPermissions", store, CWD)).toBe("allow");
+  });
+});
+
+describe("network storage rules", () => {
+  it("a network deny blocks reads and edits outright", () => {
+    const rs = netRules(["//server/share", "deny"]);
+    expect(decidePermission("Read", { file_path: "//server/share/f.txt" }, "default", freshStore(), CWD, rs)).toBe("deny");
+    expect(decidePermission("Write", { file_path: "//server/share/f.txt" }, "bypassPermissions", freshStore(), CWD, rs)).toBe("deny");
+  });
+
+  it("a network allow makes reads behave like inside-cwd", () => {
+    const rs = netRules(["//server/share", "allow"]);
+    expect(decidePermission("Read", { file_path: "//server/share/f.txt" }, "default", freshStore(), CWD, rs)).toBe("allow");
+    expect(decidePermission("Read", { file_path: "//server/share/f.txt" }, "bypassPermissions", freshStore(), CWD, rs)).toBe("allow");
+  });
+
+  it("a network allow makes edits follow mode logic instead of always asking", () => {
+    const rs = netRules(["//server/share", "allow"]);
+    expect(decidePermission("Write", { file_path: "//server/share/f.txt" }, "acceptEdits", freshStore(), CWD, rs)).toBe("allow");
+    expect(decidePermission("Write", { file_path: "//server/share/f.txt" }, "default", freshStore(), CWD, rs)).toBe("ask");
+  });
+
+  it("an unmatched network path still asks in every mode", () => {
+    const rs = netRules(["//other/share", "allow"], ["z:", "deny"]);
+    expect(decidePermission("Read", { file_path: "//server/share/f.txt" }, "bypassPermissions", freshStore(), CWD, rs)).toBe("ask");
+    expect(decidePermission("Grep", { pattern: "x", path: "//server/share" }, "default", freshStore(), CWD, rs)).toBe("ask");
+  });
+
+  it("a project-store deny wins over a network allow", () => {
+    const rs = netRules(["//server/share", "allow"]);
+    const store = freshStore();
+    store.rememberDir("Read", "//server/share/private", "deny");
+    expect(decidePermission("Read", { file_path: "//server/share/private/k.pem" }, "default", store, CWD, rs)).toBe("deny");
+  });
+
+  it("search tools honor network rules on their path input", () => {
+    const rs = netRules(["//server/share", "allow"]);
+    expect(decidePermission("Glob", { pattern: "*", path: "//server/share/src" }, "default", freshStore(), CWD, rs)).toBe("allow");
+  });
+
+  it("rules absent (undefined) preserves today's behavior", () => {
+    expect(decidePermission("Read", { file_path: "//server/share/f.txt" }, "bypassPermissions", freshStore(), CWD)).toBe("ask");
   });
 });
