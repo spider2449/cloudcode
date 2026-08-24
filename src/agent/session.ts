@@ -169,6 +169,7 @@ export class AgentSession {
         contextWindow: () => this.opts.provider.model_context_window,
         permissionMode: () => this.loop?.getPermissionMode() ?? this.opts.permissionMode,
         store,
+        networkStorage: loadSettings().networkStorage,
         lsp: this.lsp,
         networkPolicy,
         requestPermission: (toolName, input) =>
@@ -189,6 +190,7 @@ export class AgentSession {
       runLimits: this.opts.runLimits,
       permissionMode: this.opts.permissionMode,
       store,
+      networkStorage: loadSettings().networkStorage,
       lsp: this.lsp,
       fileMutations: this.changes,
       networkPolicy,

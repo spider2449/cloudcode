@@ -66,7 +66,7 @@ function configValue(key: ConfigKey): string {
   if (key === "theme") return loadThemeName();
   if (key === "effort") return loadSettings().effort ?? "off";
   if (key === "autoMemory") return String(loadSettings().autoMemoryEnabled ?? true);
-  return loadSettings()[key as keyof Omit<Settings, "effort" | "autoMemoryEnabled" | "statusLineItems">] ?? "(unset)";
+  return loadSettings()[key as keyof Omit<Settings, "effort" | "autoMemoryEnabled" | "statusLineItems" | "networkStorage">] ?? "(unset)";
 }
 
 /** Valid values for a config key, from live context where applicable.

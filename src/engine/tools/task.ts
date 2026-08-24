@@ -6,6 +6,7 @@ import type { EngineMessage } from "../messages.js";
 import type { MessagesClient } from "../api.js";
 import type { NetworkPolicy } from "../../agent/networkPolicy.js";
 import type { PermissionStore } from "../../agent/permissionStore.js";
+import type { NetworkStorageRule } from "../../agent/networkStorage.js";
 import type { PermissionMode } from "../../agent/session.js";
 import type { ToolDef, ToolOutput } from "./types.js";
 import { readTool } from "./read.js";
@@ -23,6 +24,7 @@ export interface TaskToolDeps {
   contextWindow?(): number | undefined;
   permissionMode(): PermissionMode;
   store: PermissionStore;
+  networkStorage?: NetworkStorageRule[];
   lsp?: LspManager;
   networkPolicy?: NetworkPolicy;
   requestPermission(toolName: string, input: Record<string, unknown>): Promise<boolean>;
@@ -30,7 +32,7 @@ export interface TaskToolDeps {
 
 type SubagentDeps = Pick<
   TaskToolDeps,
-  "client" | "model" | "effort" | "contextWindow" | "permissionMode" | "store" | "lsp" | "networkPolicy" | "requestPermission"
+  "client" | "model" | "effort" | "contextWindow" | "permissionMode" | "store" | "networkStorage" | "lsp" | "networkPolicy" | "requestPermission"
 >;
 
 export function subagentTools(): ToolDef[] {
@@ -67,6 +69,7 @@ export async function runSubagent(
     cwd,
     permissionMode: deps.permissionMode(),
     store: deps.store,
+    networkStorage: deps.networkStorage,
     lsp: deps.lsp,
     networkPolicy: deps.networkPolicy,
     effort: deps.effort(),

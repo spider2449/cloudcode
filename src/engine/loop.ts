@@ -5,6 +5,7 @@ import type { MessagesClient } from "./api.js";
 import type { PermissionMode } from "../agent/session.js";
 import type { PermissionStore } from "../agent/permissionStore.js";
 import type { NetworkPolicy } from "../agent/networkPolicy.js";
+import type { NetworkStorageRule } from "../agent/networkStorage.js";
 import { decidePermission } from "./permissions.js";
 import { costUsd } from "./pricing.js";
 import { compactHistory } from "./compact.js";
@@ -25,6 +26,8 @@ export interface EngineOptions {
   cwd: string;
   permissionMode: PermissionMode;
   store: PermissionStore;
+  /** Global network-storage allow/deny rules; undefined means no rules. */
+  networkStorage?: NetworkStorageRule[];
   lsp?: LspManager;
   fileMutations?: FileMutationObserver;
   networkPolicy?: NetworkPolicy;
@@ -428,7 +431,7 @@ export class EngineLoop {
     });
     const tool = this.tools.find(t => t.name === block.name);
     if (!tool) return deniedResult(`Unknown tool: ${block.name}`);
-    let decision = decidePermission(block.name, block.input, this.mode, this.opts.store, this.opts.cwd);
+    let decision = decidePermission(block.name, block.input, this.mode, this.opts.store, this.opts.cwd, this.opts.networkStorage);
     if (decision === "ask") {
       decision = (await this.opts.requestPermission(block.name, block.input)) ? "allow" : "deny";
     }
