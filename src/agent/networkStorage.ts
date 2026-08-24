@@ -117,6 +117,24 @@ function defaultResolver(driveRoot: string): string | null {
 }
 
 /**
+ * The target worth remembering for one tool path: the resolved UNC share
+ * root when the path sits on a mapped drive or is a UNC path itself, and
+ * undefined otherwise. Unmapped drive-letter paths are ordinary local paths
+ * on Windows (every absolute path has a drive letter), so they belong in the
+ * project permission store, not global network settings.
+ */
+export function networkRememberTargetForPath(rawPath: string): string | undefined {
+  const p = normalizeNetworkPath(rawPath);
+  if (!isNetworkPath(p)) return undefined;
+  if (p.startsWith("//")) {
+    const parts = p.split("/").filter(part => part.length > 0);
+    return parts.length >= 2 ? `//${parts[0]}/${parts[1]}` : undefined;
+  }
+  const unc = resolveMappedDriveUnc(p.charAt(0));
+  return unc ? networkStorageRoot(unc) : undefined;
+}
+
+/**
  * Consults the rules for one tool path. Both the literal drive form and its
  * resolved UNC form are matched independently; deny wins across both.
  * `resolveUnc` is injectable for tests.

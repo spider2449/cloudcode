@@ -1,11 +1,15 @@
 import { commandPrefix, type PermissionStore } from "../agent/permissionStore.js";
-import { hostScope, ruleScope } from "../engine/permissions.js";
+import { hostScope, networkRememberTarget, ruleScope } from "../engine/permissions.js";
+import { saveNetworkStorageRule } from "../agent/settings.js";
 import type { PermissionRequest } from "../agent/session.js";
 import type { OverlayManager } from "./widgets/overlay.js";
 
 export interface PermissionControllerDeps {
   overlay: OverlayManager;
   store: PermissionStore;
+  /** Project cwd; decides whether a remembered path belongs in global
+   * settings (network, outside cwd) or the project permission store. */
+  cwd: string;
   onError(text: string): void;
   /** Called once the last queued request has been answered. */
   onQueueEmpty(): void;
@@ -43,14 +47,22 @@ export class PermissionController {
         if (host) {
           this.deps.store.rememberHost(active.toolName, host, rememberAs);
         } else {
-          const scope = ruleScope(active.toolName, active.input);
-          if (scope) {
-            // "dir" inputs (Glob/Grep) already name the directory to scope to;
-            // "file" inputs are scoped to their containing directory.
-            if (scope.kind === "dir") this.deps.store.rememberDir(active.toolName, scope.path, rememberAs);
-            else this.deps.store.remember(active.toolName, scope.path, rememberAs);
-          } else if (active.toolName === "Bash" && typeof active.input.command === "string") {
-            this.deps.store.rememberCommand(commandPrefix(String(active.input.command)), rememberAs);
+          const netTarget = networkRememberTarget(active.toolName, active.input, this.deps.cwd);
+          if (netTarget) {
+            // Outside-cwd network paths are remembered globally, not in the
+            // project store, so the approval travels with the machine rather
+            // than one project.
+            saveNetworkStorageRule(netTarget, rememberAs);
+          } else {
+            const scope = ruleScope(active.toolName, active.input);
+            if (scope) {
+              // "dir" inputs (Glob/Grep) already name the directory to scope to;
+              // "file" inputs are scoped to their containing directory.
+              if (scope.kind === "dir") this.deps.store.rememberDir(active.toolName, scope.path, rememberAs);
+              else this.deps.store.remember(active.toolName, scope.path, rememberAs);
+            } else if (active.toolName === "Bash" && typeof active.input.command === "string") {
+              this.deps.store.rememberCommand(commandPrefix(String(active.input.command)), rememberAs);
+            }
           }
         }
       } catch (err) {

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,14 +7,19 @@ import { OverlayManager } from "../src/ui/widgets/overlay.js";
 import { PermissionStore } from "../src/agent/permissionStore.js";
 import type { PermissionRequest } from "../src/agent/session.js";
 
+vi.mock("../src/agent/settings.js", () => ({ saveNetworkStorageRule: vi.fn() }));
+import { saveNetworkStorageRule } from "../src/agent/settings.js";
+
 function setup() {
   const overlay = new OverlayManager();
   const store = new PermissionStore(mkdtempSync(join(tmpdir(), "cc-permctl-")));
+  const cwd = mkdtempSync(join(tmpdir(), "cc-permctl-cwd-"));
   const errors: string[] = [];
   let queueEmptied = 0;
   const controller = new PermissionController({
     overlay,
     store,
+    cwd,
     onError: t => { errors.push(t); },
     onQueueEmpty: () => { queueEmptied += 1; },
     recompute: () => {}
@@ -95,5 +100,31 @@ describe("PermissionController", () => {
     overlay.handleKey({ t: "printable", ch: "a" }, "a");
     expect(answers).toEqual([true]); // the tool call still proceeds
     expect(errors[0]).toContain("Failed to save permission rule");
+  });
+
+  describe("network path remembering", () => {
+    beforeEach(() => {
+      vi.mocked(saveNetworkStorageRule).mockClear();
+    });
+
+    it("routes an outside-cwd network remember into global settings, not the project store", () => {
+      const { overlay, store, controller } = setup();
+      const answers: boolean[] = [];
+      controller.enqueue(request("Write", { file_path: "//server/share/deep/f.txt" }, answers));
+      overlay.handleKey({ t: "printable", ch: "a" }, "a"); // "always allow" hotkey
+      expect(answers).toEqual([true]);
+      expect(vi.mocked(saveNetworkStorageRule)).toHaveBeenCalledWith("//server/share", "allow");
+      expect(store.list()).toEqual([]);
+    });
+
+    it("still remembers local paths in the project store without touching settings", () => {
+      const { overlay, store, controller } = setup();
+      const answers: boolean[] = [];
+      controller.enqueue(request("Write", { file_path: "/repo/src/a.ts" }, answers));
+      overlay.handleKey({ t: "printable", ch: "a" }, "a");
+      expect(answers).toEqual([true]);
+      expect(vi.mocked(saveNetworkStorageRule)).not.toHaveBeenCalled();
+      expect(store.check("Write", "/repo/src/b.ts")).toBe("allow");
+    });
   });
 });

@@ -62,7 +62,6 @@ export interface AppProps {
 }
 
 type Phase = "idle" | "streaming" | "permission";
-
 const MODE_CYCLE: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
 
 export class App {
@@ -145,6 +144,7 @@ export class App {
     this.permissions = new PermissionController({
       overlay: this.overlay,
       store: this.permissionStore,
+      cwd: this.props.cwd,
       onError: text => this.buffer.append({ kind: "error", text }),
       onQueueEmpty: () => { this.phase = "streaming"; },
       recompute: () => this.recompute()
@@ -515,7 +515,6 @@ export class App {
   }
 
   handleKeys(ks: Key[]): void { this.keys.handleKeys(ks); }
-
   handleKey(k: Key): void { this.keys.handleKey(k); }
 
   recompute(): void {

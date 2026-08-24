@@ -1,7 +1,7 @@
 import { isAbsolute, resolve, sep } from "node:path";
 import type { PermissionMode } from "../agent/session.js";
 import { type PermissionStore, isCompoundCommand } from "../agent/permissionStore.js";
-import { matchNetworkStorage, networkStorageRoot, type NetworkStorageRule } from "../agent/networkStorage.js";
+import { matchNetworkStorage, networkRememberTargetForPath, type NetworkStorageRule } from "../agent/networkStorage.js";
 
 const READ_ONLY = new Set(["Read", "Glob", "Grep"]);
 const EDIT_TOOLS = new Set(["Write", "Edit"]);
@@ -65,7 +65,7 @@ export function networkRememberTarget(
 ): string | undefined {
   const scope = ruleScope(toolName, input);
   if (!scope || isInsideCwd(scope.path, cwd)) return undefined;
-  return networkStorageRoot(scope.path);
+  return networkRememberTargetForPath(scope.path);
 }
 
 // True for paths at or inside `cwd`. Resolves both sides first so ".."
