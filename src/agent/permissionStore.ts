@@ -17,7 +17,9 @@ export interface PermissionRule {
 // Case folding is Windows-only on purpose: on a case-sensitive filesystem
 // "/srv/App" and "/srv/app" are different directories, so lowercasing there
 // would let an allow-rule for one silently cover the other.
-function normalizePath(p: string): string {
+// Shared with agent/networkStorage.ts so tool paths and network targets are
+// normalized identically (resolve + forward slashes + win32 case folding).
+export function normalizePath(p: string): string {
   const normalized = resolve(p).replace(/\\/g, "/");
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
