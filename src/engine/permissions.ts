@@ -2,6 +2,7 @@ import { isAbsolute, resolve, sep } from "node:path";
 import type { PermissionMode } from "../agent/session.js";
 import { type PermissionStore, isCompoundCommand } from "../agent/permissionStore.js";
 import { matchNetworkStorage, networkRememberTargetForPath, type NetworkStorageRule } from "../agent/networkStorage.js";
+import { memoryDir, userMemoryFile } from "./memoryPaths.js";
 
 const READ_ONLY = new Set(["Read", "Glob", "Grep"]);
 const EDIT_TOOLS = new Set(["Write", "Edit"]);
@@ -76,6 +77,23 @@ function isInsideCwd(filePath: string, cwd: string): boolean {
   return target === root || target.startsWith(root + sep);
 }
 
+/**
+ * True for cloudcode-owned memory locations: the current project's auto-memory
+ * directory and the global user-instructions file. Both live outside cwd by
+ * construction, so without this exemption every memory write would force an
+ * "ask" even under acceptEdits/bypassPermissions — yet memory is cloudcode's
+ * own workspace, not the rest of the filesystem the confinement exists to
+ * protect. Scoped to *this project's* memory dir (not every project's) and
+ * resolved on both sides so ".." cannot masquerade. Memory paths otherwise
+ * follow normal mode logic exactly like inside-cwd paths.
+ */
+function isMemoryLocation(rawPath: string, cwd: string): boolean {
+  const target = resolve(cwd, rawPath);
+  if (target === resolve(userMemoryFile())) return true;
+  const root = resolve(memoryDir(cwd));
+  return target === root || target.startsWith(root + sep);
+}
+
 export function decidePermission(
   toolName: string,
   input: Record<string, unknown>,
@@ -96,6 +114,10 @@ export function decidePermission(
     if (ruling === "deny") return "deny";
     networkAllows = ruling === "allow";
   }
+  // cloudcode-owned memory paths (auto-memory dir, user CLOUDCODE.md) are
+  // treated as inside-cwd for every confinement check below; see
+  // isMemoryLocation. A store deny rule for them still wins later.
+  const memoryAllows = scope !== undefined && isMemoryLocation(scope.path, cwd);
   // acceptEdits/bypassPermissions auto-allow edits, but only inside cwd — a
   // write outside cwd always needs an explicit human "ask" (or a remembered
   // store rule, checked below), since those modes otherwise remove the only
@@ -103,7 +125,8 @@ export function decidePermission(
   const outsideCwdFile =
     typeof input.file_path === "string" &&
     !isInsideCwd(input.file_path, cwd) &&
-    !networkAllows;
+    !networkAllows &&
+    !memoryAllows;
   const outsideCwdEdit = EDIT_TOOLS.has(toolName) && outsideCwdFile;
   // Reads are otherwise unconditionally allowed (see READ_ONLY below), but a
   // read resolving outside cwd is the primary data-exfiltration path for a
@@ -116,7 +139,7 @@ export function decidePermission(
   // An omitted (or empty) `path` means cwd, which is inside by definition.
   const outsideCwdSearch =
     SEARCH_TOOLS.has(toolName) && typeof input.path === "string" &&
-    !isInsideCwd(input.path, cwd) && !networkAllows;
+    !isInsideCwd(input.path, cwd) && !networkAllows && !memoryAllows;
 
   if (mode === "bypassPermissions" && !outsideCwdEdit && !outsideCwdRead && !outsideCwdSearch) return "allow";
   // Per-directory rules (deny beats allow) apply to every tool that names a

@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { decidePermission, hostScope } from "../src/engine/permissions.js";
 import { PermissionStore } from "../src/agent/permissionStore.js";
+import { configDir } from "../src/agent/providers.js";
+import { memoryDir, userMemoryFile } from "../src/engine/memoryPaths.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -206,6 +208,58 @@ describe("TodoWrite permissions", () => {
     expect(decidePermission("TodoWrite", { todos: [] }, "default", store, CWD)).toBe("allow");
     expect(decidePermission("TodoWrite", { todos: [] }, "acceptEdits", store, CWD)).toBe("allow");
     expect(decidePermission("TodoWrite", {}, "bypassPermissions", store, CWD)).toBe("allow");
+  });
+});
+
+describe("memory file permissions", () => {
+  const MEM = memoryDir(CWD);
+  const USER_MD = userMemoryFile();
+
+  it("acceptEdits auto-allows writes into the project memory dir", () => {
+    const store = freshStore();
+    expect(decidePermission("Write", { file_path: join(MEM, "topic.md") }, "acceptEdits", store, CWD)).toBe("allow");
+    expect(decidePermission("Edit", { file_path: join(MEM, "MEMORY.md") }, "acceptEdits", store, CWD)).toBe("allow");
+  });
+
+  it("bypassPermissions auto-allows memory writes", () => {
+    expect(decidePermission("Write", { file_path: join(MEM, "topic.md") }, "bypassPermissions", freshStore(), CWD)).toBe("allow");
+  });
+
+  it("memory edits still follow default mode and ask, like inside-cwd edits", () => {
+    expect(decidePermission("Write", { file_path: join(MEM, "topic.md") }, "default", freshStore(), CWD)).toBe("ask");
+  });
+
+  it("reads and searches inside the memory dir are allowed in default mode", () => {
+    const store = freshStore();
+    expect(decidePermission("Read", { file_path: join(MEM, "topic.md") }, "default", store, CWD)).toBe("allow");
+    expect(decidePermission("Grep", { pattern: "x", path: MEM }, "default", store, CWD)).toBe("allow");
+    expect(decidePermission("Glob", { pattern: "*", path: MEM }, "default", store, CWD)).toBe("allow");
+  });
+
+  it("the user-level CLOUDCODE.md is writable without an outside-cwd ask", () => {
+    const store = freshStore();
+    expect(decidePermission("Edit", { file_path: USER_MD }, "acceptEdits", store, CWD)).toBe("allow");
+    expect(decidePermission("Read", { file_path: USER_MD }, "default", store, CWD)).toBe("allow");
+  });
+
+  it("another project's memory dir is not exempted", () => {
+    const other = join(configDir(), "projects", "F--some-other-project", "memory");
+    expect(decidePermission("Write", { file_path: join(other, "topic.md") }, "bypassPermissions", freshStore(), CWD)).toBe("ask");
+  });
+
+  it("a .. path that climbs out of the memory dir is not exempted", () => {
+    const escape = join(MEM, "..", "elsewhere", "f.md");
+    expect(decidePermission("Write", { file_path: escape }, "bypassPermissions", freshStore(), CWD)).toBe("ask");
+  });
+
+  it("a remembered deny rule for a memory path still wins", () => {
+    const store = freshStore();
+    store.remember("Write", join(MEM, "topic.md"), "deny");
+    expect(decidePermission("Write", { file_path: join(MEM, "topic.md") }, "acceptEdits", store, CWD)).toBe("deny");
+  });
+
+  it("unrelated files next to the memory install are not exempted", () => {
+    expect(decidePermission("Read", { file_path: userMemoryFile() + ".bak" }, "bypassPermissions", freshStore(), CWD)).toBe("ask");
   });
 });
 

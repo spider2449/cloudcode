@@ -365,6 +365,8 @@ The auto-memory system creates and maintains memory files under `~/.cloudcode/pr
 
 User-level instructions (`~/.cloudcode/CLOUDCODE.md`) are now loaded at startup in addition to the project-level `./CLAUDE.md`, giving you persistent settings and preferences across all projects.
 
+Memory locations (the auto-memory folder and `~/.cloudcode/CLOUDCODE.md`) count as cloudcode's own workspace rather than "outside the project": reads are always allowed there, and writes follow your permission mode exactly like project files instead of forcing an extra confirmation.
+
 ## Themes
 
 `/theme <name>` switches the color theme (no argument lists all available themes). Built in: `dark`, `light`, `mono`, `dracula`, `catppuccin`, `gruvbox`, `tokyonight`, `nord`, `one-dark`, `solarized`, `rosepine`, `github`, `monokai`. Drop your own theme JSON files into `~/.cloudcode/themes/*.json` — the filename (without `.json`) becomes the theme name, and a custom theme overrides a built-in of the same name.
@@ -419,3 +421,32 @@ for the file's directory and all subdirectories. Rules are stored per project in
 `.cloudcode/permissions.json` (add `.cloudcode/` to your `.gitignore` if you don't
 want them version-controlled). Deny rules beat allow rules. Manage them with
 `/permissions list` and `/permissions clear`.
+
+### Network storage permissions
+
+When a file or search tool (Read/Write/Edit/Glob/Grep) targets a UNC share
+(`\\server\share\...`) or a Windows mapped drive outside the project directory,
+cloudcode prompts as usual — but choosing "Always for this directory" or "Never
+for this directory" there remembers the decision **globally** instead of per
+project, since network paths have no meaningful per-project scope. The rule is
+stored at the deepest stable root: the share root (`//server/share`) for UNC
+paths, or the bare drive letter for mapped drives (whose UNC mapping, if any, is
+resolved once and remembered alongside).
+
+Rules live in the user-level `~/.cloudcode/settings.json`:
+
+    {
+      "networkStorage": [
+        { "target": "//fileserver/projects", "decision": "allow" },
+        { "target": "z:", "decision": "deny" }
+      ]
+    }
+
+Matching is case-insensitive and accepts either slash style; a rule covers the
+target and everything under it. A mapped-drive path matches both its letter form
+and its resolved UNC form independently, with deny winning across the two.
+Rules are consulted before every other permission check: a matching deny blocks
+even `bypassPermissions`, while a matching allow lets an outside-project network
+path behave like a project path (reads auto-allow, edits follow your permission
+mode). An unmatched network path still prompts as before. To add, change, or
+remove rules, edit the array in `settings.json` directly.

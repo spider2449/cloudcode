@@ -20,6 +20,12 @@ export function memoryEntrypoint(cwd: string, base: string = configDir()): strin
   return join(memoryDir(cwd, base), "MEMORY.md");
 }
 
+// Global user-level instructions file, loaded at startup alongside the
+// project's CLAUDE.md.
+export function userMemoryFile(base: string = configDir()): string {
+  return join(base, "CLOUDCODE.md");
+}
+
 // True only for paths strictly inside the memory directory (not the dir itself).
 // Resolves both sides first so ".." segments cannot escape.
 export function isInsideMemoryDir(candidate: string, dir: string): boolean {
