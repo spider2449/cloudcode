@@ -54,7 +54,9 @@ function writeServerFile(filePath: string, servers: Record<string, McpServerConf
   let raw: Record<string, unknown> = {};
   try {
     const parsed: unknown = JSON.parse(readFileSync(filePath, "utf8"));
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) raw = parsed;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      raw = parsed as Record<string, unknown>;
+    }
   } catch {
     // missing or invalid file: start from an empty object
   }

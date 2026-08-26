@@ -17,9 +17,29 @@ export interface SetupDeps {
   promptText?(label: string): Promise<string>;
 }
 
-function defaultPrompt(label: string): Promise<string> {
+// One shared interface for the whole wizard. On piped/closed stdin (EOF)
+// every prompt resolves "" so the walk-through completes like a series of
+// Enters instead of hanging. The interface is left open; the CLI process
+// exits right after the wizard returns.
+function makeDefaultPrompt(): PromptFn {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise(resolve => rl.question(label, answer => { rl.close(); resolve(answer); }));
+  let eof = false;
+  let pending: ((value: string) => void) | undefined;
+  rl.on("close", () => {
+    eof = true;
+    pending?.("");
+    pending = undefined;
+  });
+  return label => {
+    if (eof) return Promise.resolve("");
+    return new Promise(resolve => {
+      pending = resolve;
+      rl.question(label, answer => {
+        pending = undefined;
+        resolve(answer);
+      });
+    });
+  };
 }
 
 async function configureProviderModel(prompt: PromptFn, configBase: string): Promise<void> {
@@ -174,7 +194,7 @@ export async function runSetupCommand(
 ): Promise<{ exitCode: number; stdout?: string; stderr?: string }> {
   const configBase = deps.configBase ?? configDir();
   const cwd = deps.cwd ?? process.cwd();
-  const prompt = deps.promptText ?? defaultPrompt;
+  const prompt = deps.promptText ?? makeDefaultPrompt();
 
   await configureProviderModel(prompt, configBase);
   await configureNetworkMode(prompt, configBase);

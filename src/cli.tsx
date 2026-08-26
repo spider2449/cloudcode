@@ -27,6 +27,7 @@ import { runPackCommand } from "./commands/cli/pack.js";
 import { runMaintainCommand } from "./commands/cli/maintain.js";
 import { createMaintenanceExecutor } from "./commands/cli/maintenanceExecutor.js";
 import { runLoginCommand } from "./commands/cli/login.js";
+import { runSetupCommand } from "./commands/cli/setup.js";
 import { loadOwnCredentials, loadBorrowedCredentials, refreshTokens, isExpired } from "./agent/oauth.js";
 
 const parsed = parseCli(process.argv.slice(2));
@@ -107,6 +108,13 @@ if (parsed.kind === "subcommand") {
     }
     case "login": {
       const result = await runLoginCommand(parsed.args, { networkMode: subNetworkMode });
+      if (result.stdout) console.log(result.stdout);
+      if (result.stderr) console.error(result.stderr);
+      process.exit(result.exitCode);
+      break;
+    }
+    case "setup": {
+      const result = await runSetupCommand(parsed.args, {});
       if (result.stdout) console.log(result.stdout);
       if (result.stderr) console.error(result.stderr);
       process.exit(result.exitCode);

@@ -1,6 +1,6 @@
 {
   "name": "cloudcode",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Terminal AI coding agent with its own native agent engine talking directly to the Anthropic Messages API",
   "license": "MIT",
   "type": "module",
