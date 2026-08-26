@@ -109,6 +109,18 @@ creates: `typescript-eslint`'s peer range caps at TypeScript `<6.1.0`, so it
 can't be used here; `oxlint` is used instead (no TS-version dependency).
 Re-evaluate `typescript-eslint` once it supports TS 7.
 
+## Versioning
+
+Before every git commit, increment the **patch** version (e.g. `0.1.1` →
+`0.1.2`) and include the bump in that same commit. The version must be
+updated in all of these places together — `tests/packaging.test.ts` fails if
+they disagree:
+
+- `src/version.ts` (`VERSION`)
+- `package.json` (top-level `version`, plus the two matching fields in
+  `package-lock.json`)
+- `installer/cloudcode.iss` (`#define AppVersion`)
+
 ## Open gaps (tracked here until closed)
 
 None currently tracked. See "Closed" below for what's been addressed.
