@@ -30,6 +30,14 @@ describe("parseCli", () => {
     expect(parseCli(["mcp", "--x"])).toEqual({ kind: "subcommand", name: "mcp", args: ["--x"] });
   });
 
+  it("routes setup as a subcommand", () => {
+    expect(parseCli(["setup"])).toEqual({ kind: "subcommand", name: "setup", args: [] });
+  });
+
+  it("help text advertises setup", () => {
+    expect(HELP_TEXT).toMatch(/^ {2}setup {5}Interactive walkthrough/m);
+  });
+
   it("rejects an unknown bare word", () => {
     const r = parseCli(["frobnicate"]);
     expect(r.kind).toBe("error");
