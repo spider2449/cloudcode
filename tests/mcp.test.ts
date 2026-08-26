@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadMcpServers, formatMcpStatus } from "../src/agent/mcp.js";
+import { loadMcpServers, loadMcpServersByScope, saveMcpServer, removeMcpServer, formatMcpStatus } from "../src/agent/mcp.js";
 import { linkPack } from "../src/agent/packLinks.js";
 import { enablePack } from "../src/agent/packs.js";
 
@@ -63,6 +63,41 @@ describe("loadMcpServers", () => {
     expect(loadMcpServers(cwd, userFile)).toMatchObject({ pack__workflow__helper: { command: "node" } });
     writeFileSync(join(cwd, ".mcp.json"), JSON.stringify({ mcpServers: { pack__workflow__helper: { command: "other" } } }));
     expect(() => loadMcpServers(cwd, userFile)).toThrow(/collision/);
+  });
+});
+
+describe("saveMcpServer/removeMcpServer", () => {
+  it("saves an stdio server to project scope and preserves unknown top-level keys", () => {
+    const cwd = tempDir();
+    const userFile = join(tempDir(), "mcp.json");
+    writeFileSync(join(cwd, ".mcp.json"), JSON.stringify({ futureField: { kept: true }, mcpServers: {} }));
+    saveMcpServer("gh", { command: "npx", args: ["gh-mcp"] }, "project", cwd, userFile);
+    const raw = JSON.parse(readFileSync(join(cwd, ".mcp.json"), "utf8"));
+    expect(raw.futureField).toEqual({ kept: true });
+    expect(raw.mcpServers.gh).toEqual({ command: "npx", args: ["gh-mcp"] });
+  });
+
+  it("saves an http server to user scope and overwrites same-named entries", () => {
+    const cwd = tempDir();
+    const userFile = join(tempDir(), "mcp.json");
+    writeFileSync(userFile, JSON.stringify({ mcpServers: { docs: { command: "old" } } }));
+    saveMcpServer("docs", { type: "http", url: "https://u" }, "user", cwd, userFile);
+    expect(loadMcpServers(cwd, userFile)).toEqual({ docs: { type: "http", url: "https://u" } });
+  });
+
+  it("removes only the named server from the requested scope", () => {
+    const cwd = tempDir();
+    const userFile = join(tempDir(), "mcp.json");
+    writeFileSync(userFile, JSON.stringify({ mcpServers: { keep: { command: "k" }, drop: { command: "d" } } }));
+    removeMcpServer("drop", "user", cwd, userFile);
+    expect(loadMcpServersByScope(cwd, userFile).user).toEqual({ keep: { command: "k" } });
+  });
+
+  it("creates the file when missing", () => {
+    const cwd = tempDir();
+    const userFile = join(tempDir(), "nested", "mcp.json");
+    saveMcpServer("x", { command: "x" }, "user", cwd, userFile);
+    expect(loadMcpServers(cwd, userFile)).toEqual({ x: { command: "x" } });
   });
 });
 

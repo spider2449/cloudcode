@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { configDir } from "./providers.js";
 import { resolvePackContributions } from "./packs.js";
@@ -46,6 +46,46 @@ export function loadMcpServersByScope(
     user: readServerFile(userPath),
     project: readServerFile(join(cwd, ".mcp.json"))
   };
+}
+
+// Read-modify-write preserving unknown top-level keys, mirroring the
+// loadRaw/saveSetting convention in agent/settings.ts.
+function writeServerFile(filePath: string, servers: Record<string, McpServerConfig>): void {
+  let raw: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(filePath, "utf8"));
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) raw = parsed;
+  } catch {
+    // missing or invalid file: start from an empty object
+  }
+  raw.mcpServers = servers;
+  mkdirSync(dirname(filePath), { recursive: true });
+  writeFileSync(filePath, JSON.stringify(raw, null, 2));
+}
+
+export function saveMcpServer(
+  name: string,
+  config: McpServerConfig,
+  scope: "user" | "project",
+  cwd: string,
+  userPath: string = join(configDir(), "mcp.json")
+): void {
+  const filePath = scope === "user" ? userPath : join(cwd, ".mcp.json");
+  const servers = readServerFile(filePath);
+  servers[name] = config;
+  writeServerFile(filePath, servers);
+}
+
+export function removeMcpServer(
+  name: string,
+  scope: "user" | "project",
+  cwd: string,
+  userPath: string = join(configDir(), "mcp.json")
+): void {
+  const filePath = scope === "user" ? userPath : join(cwd, ".mcp.json");
+  const servers = readServerFile(filePath);
+  delete servers[name];
+  writeServerFile(filePath, servers);
 }
 
 export function loadMcpServers(
