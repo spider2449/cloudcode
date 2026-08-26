@@ -7,6 +7,17 @@ import { PermissionStore, commandPrefix, isCompoundCommand } from "../src/agent/
 const tempCwd = () => mkdtempSync(join(tmpdir(), "cc-perm-"));
 
 describe("PermissionStore", () => {
+  it("removeAt deletes exactly the indexed rule and persists", () => {
+    const dir = tempCwd();
+    const store = new PermissionStore(dir);
+    store.rememberCommand("git", "allow");
+    store.rememberHost("WebFetch", "example.com", "deny");
+    store.removeAt(0);
+    expect(store.list()).toEqual([{ tool: "WebFetch", decision: "deny", host: "example.com" }]);
+    const reloaded = new PermissionStore(dir);
+    expect(reloaded.list()).toEqual([{ tool: "WebFetch", decision: "deny", host: "example.com" }]);
+  });
+
   it("remembers and checks a directory rule, including subdirectories", () => {
     const cwd = tempCwd();
     const store = new PermissionStore(cwd);

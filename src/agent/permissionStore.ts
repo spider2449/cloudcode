@@ -157,6 +157,11 @@ export class PermissionStore {
     this.persist();
   }
 
+  removeAt(index: number): void {
+    this.rules.splice(index, 1);
+    this.persist();
+  }
+
   private persist(): void {
     mkdirSync(dirname(this.filePath), { recursive: true });
     writeFileSync(this.filePath, JSON.stringify(this.rules, null, 2));
