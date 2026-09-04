@@ -47,6 +47,7 @@ function mockCtx(): CommandContext {
     listPermissionRules: vi.fn().mockReturnValue("✓ Write /p/src"),
     clearPermissionRules: vi.fn(),
     mcpStatus: vi.fn().mockResolvedValue("github  connected  tools: get_repo"),
+    mcpSetEnabled: vi.fn().mockResolvedValue("Disabled gh (project). Use /clear to reconnect."),
     sendPrompt: vi.fn(),
     compact: vi.fn().mockResolvedValue(undefined),
     setCompactProgress: vi.fn(),
@@ -233,6 +234,20 @@ describe("/mcp", () => {
     const registry = buildRegistry();
     await registry.get("mcp")!.run(ctx, "");
     expect(ctx.notice).toHaveBeenCalledWith("github  connected  tools: get_repo");
+  });
+
+  it("disables a server by name", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("mcp")!.run(ctx, "disable gh");
+    expect(ctx.mcpSetEnabled).toHaveBeenCalledWith("gh", false);
+    expect(ctx.notice).toHaveBeenCalledWith("Disabled gh (project). Use /clear to reconnect.");
+  });
+
+  it("prints usage for bad args", async () => {
+    const ctx = mockCtx();
+    await buildRegistry().get("mcp")!.run(ctx, "disable");
+    expect(ctx.notice).toHaveBeenCalledWith("Usage: /mcp [disable|enable <name>]");
+    expect(ctx.mcpSetEnabled).not.toHaveBeenCalled();
   });
 });
 

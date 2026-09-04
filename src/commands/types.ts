@@ -25,6 +25,7 @@ export interface CommandContext {
   listPermissionRules(): string;
   clearPermissionRules(): void;
   mcpStatus(): Promise<string>;
+  mcpSetEnabled(name: string, enabled: boolean): Promise<string>;
   sendPrompt(text: string): void;
   compact(onProgress?: (pct: number) => void): Promise<number | undefined>;
   setCompactProgress(pct: number | undefined): void;

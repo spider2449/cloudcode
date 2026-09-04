@@ -432,8 +432,21 @@ const commands: Command[] = [
   },
   {
     name: "mcp",
-    description: "Show MCP server status and tools",
-    async run(ctx) { ctx.notice(await ctx.mcpStatus()); }
+    description: "Show MCP server status and tools; /mcp disable|enable <name>",
+    async run(ctx, args) {
+      const [action, name, ...rest] = args.split(/\s+/).filter(Boolean);
+      if (!action) { ctx.notice(await ctx.mcpStatus()); return; }
+      if ((action !== "disable" && action !== "enable") || !name || rest.length > 0) {
+        ctx.notice("Usage: /mcp [disable|enable <name>]");
+        return;
+      }
+      ctx.notice(await ctx.mcpSetEnabled(name, action === "enable"));
+    },
+    completeArgs(prefix) {
+      const trimmed = prefix.trimStart();
+      if (!trimmed.includes(" ")) return ["disable", "enable"].filter(s => s.startsWith(trimmed));
+      return [];
+    }
   },
   {
     name: "skills",

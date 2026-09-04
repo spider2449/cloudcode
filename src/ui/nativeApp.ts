@@ -12,7 +12,7 @@ import { liveCompletionContext, type CompletionContext } from "../commands/compl
 import { toDisplayItems, streamDelta, streamThinkingDelta, type DisplayItem } from "./transcript.js";
 import { fetchModels } from "../agent/models.js";
 import { applyContextWindow } from "../agent/contextProbe.js";
-import { loadMcpServers, formatMcpStatus } from "../agent/mcp.js";
+import { loadMcpServers, loadMcpServersByScope, isMcpServerDisabled, resolveMcpServerScope, setMcpServerDisabled, formatMcpStatus } from "../agent/mcp.js";
 import { loadRegistry } from "../engine/lsp/config.js";
 import { loadSkills, formatSkillList, type Skill } from "../agent/skills.js";
 import { mergeSkillCommands } from "../commands/skillCommands.js";
@@ -108,6 +108,7 @@ export class App {
   private fileIndex: FileIndex;
   private availableModels: string[] = [];
   private mcpServers: Record<string, Record<string, unknown>> = {};
+  private mcpDisabled = new Set<string>();
   private allowProjectConfig = false;
   private git: GitStatusPoller;
   private running = false;
@@ -238,6 +239,14 @@ export class App {
   private createSession(name: string, resume?: string, modeOverride?: PermissionMode): AgentSession {
     this.availableModels = [];
     this.mcpServers = this.props.task?.disableMcp ? {} : loadMcpServers(this.props.cwd, undefined, this.allowProjectConfig);
+    const scopes = loadMcpServersByScope(this.props.cwd);
+    const visible = this.allowProjectConfig ? scopes : { user: scopes.user, project: {} as typeof scopes.project };
+    this.mcpDisabled = new Set(
+      Object.keys({ ...visible.user, ...visible.project }).filter(name => {
+        const effective = visible.project[name] ?? visible.user[name];
+        return effective ? isMcpServerDisabled(effective) : false;
+      })
+    );
     this.refreshSkills();
     const session = new AgentSession({
       providerName: name,
@@ -371,7 +380,26 @@ export class App {
       },
       clearPermissionRules: () => this.permissionStore.clear(),
       mcpStatus: async () =>
-        formatMcpStatus(Object.keys(this.mcpServers), (await this.session?.mcpStatus()) ?? [], this.session?.tools ?? []),
+        formatMcpStatus(
+          [...Object.keys(this.mcpServers), ...this.mcpDisabled],
+          (await this.session?.mcpStatus()) ?? [],
+          this.session?.tools ?? [],
+          this.mcpDisabled
+        ),
+      mcpSetEnabled: async (name, enabled) => {
+        const scope = resolveMcpServerScope(name, this.props.cwd);
+        if (!scope) return `No MCP server named "${name}".`;
+        if (name.startsWith("pack__")) return `Pack servers cannot be disabled (${name}).`;
+        try {
+          setMcpServerDisabled(name, !enabled, scope, this.props.cwd);
+        } catch (err) {
+          return err instanceof Error ? err.message : String(err);
+        }
+        if (enabled) this.mcpDisabled.delete(name);
+        else this.mcpDisabled.add(name);
+        const verb = enabled ? "Enabled" : "Disabled";
+        return `${verb} ${name} (${scope}). Use /clear to reconnect.`;
+      },
       sendPrompt: text => this.sendUserMessage(text),
       listSkills: () => formatSkillList(this.skills),
       reloadSkills: () => this.refreshSkills(),
