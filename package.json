@@ -30,11 +30,25 @@
     "test": "vitest run",
     "desktop:build": "npm run build && vite build --config desktop/vite.config.ts",
     "desktop:start": "npm run desktop:build && electron desktop/main.mjs",
+    "desktop:dist": "node scripts/desktop-package.mjs --dist-only",
+    "desktop:package": "node scripts/desktop-package.mjs",
+    "package:all": "npm run package && npm run desktop:package",
     "prepack": "node -e \"require('fs').mkdirSync('release', { recursive: true })\"",
     "package:npm": "npm run build && npm pack --pack-destination release",
     "package:bin": "powershell -ExecutionPolicy Bypass -File scripts/build-binaries.ps1",
     "package:installer": "powershell -ExecutionPolicy Bypass -File scripts/build-installer.ps1",
     "package": "npm run package:npm && npm run package:bin"
+  },
+  "main": "desktop/main.mjs",
+  "build": {
+    "appId": "app.cloudcode",
+    "productName": "CloudCode",
+    "asar": true,
+    "directories": { "output": "release/desktop" },
+    "files": ["dist/**", "desktop/dist/**", "desktop/preload.cjs", "desktop/main.mjs", "package.json"],
+    "win": { "target": ["nsis"] },
+    "linux": { "target": ["AppImage", "deb"] },
+    "mac": { "target": ["dmg"] }
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
@@ -56,6 +70,7 @@
     "@types/turndown": "^5.0.6",
     "@vitejs/plugin-react": "^6.1.1",
     "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
     "oxlint": "^1.79.0",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2",
