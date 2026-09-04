@@ -125,6 +125,32 @@ describe("runSetupCommand mcp section", () => {
     await runSetupCommand([], deps);
     expect(readJson(join(cwd, ".mcp.json")).mcpServers).toEqual({});
   });
+
+  it("disables a server by number", async () => {
+    const { deps, cwd } = scriptDeps([
+      "", "",
+      "",
+      "disable", "1", "done",
+      "done",
+      "", "", ""
+    ]);
+    writeFileSync(join(cwd, ".mcp.json"), JSON.stringify({ mcpServers: { gh: { command: "npx" } } }));
+    await runSetupCommand([], deps);
+    expect(readJson(join(cwd, ".mcp.json")).mcpServers.gh).toEqual({ command: "npx", disabled: true });
+  });
+
+  it("re-enables a disabled server by number", async () => {
+    const { deps, cwd } = scriptDeps([
+      "", "",
+      "",
+      "enable", "1", "done",
+      "done",
+      "", "", ""
+    ]);
+    writeFileSync(join(cwd, ".mcp.json"), JSON.stringify({ mcpServers: { gh: { command: "npx", disabled: true } } }));
+    await runSetupCommand([], deps);
+    expect(readJson(join(cwd, ".mcp.json")).mcpServers.gh).toEqual({ command: "npx" });
+  });
 });
 
 describe("runSetupCommand permissions section", () => {

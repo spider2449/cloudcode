@@ -2,7 +2,7 @@ import { createInterface } from "node:readline";
 import { dirname, join } from "node:path";
 import { configDir, loadProviders } from "../../agent/providers.js";
 import { loadSettings, saveSetting } from "../../agent/settings.js";
-import { loadMcpServersByScope, saveMcpServer, removeMcpServer, type McpServerConfig } from "../../agent/mcp.js";
+import { loadMcpServersByScope, saveMcpServer, removeMcpServer, setMcpServerDisabled, isMcpServerDisabled, type McpServerConfig } from "../../agent/mcp.js";
 import { PermissionStore } from "../../agent/permissionStore.js";
 import { EFFORT_LEVELS } from "../../engine/effort.js";
 import { isPersistedNetworkMode } from "../../agent/networkPolicy.js";
@@ -122,7 +122,7 @@ async function configureMcp(prompt: PromptFn, cwd: string, userPath: string): Pr
     const scopes = loadMcpServersByScope(cwd, userPath);
     for (const name of Object.keys(scopes.user)) console.log(`  ${name}  [user]`);
     for (const name of Object.keys(scopes.project)) console.log(`  ${name}  [project]`);
-    const action = (await prompt("add/remove/done: ")).trim().toLowerCase();
+    const action = (await prompt("add/remove/disable/enable/done: ")).trim().toLowerCase();
     if (action === "" || action === "done") return;
     if (action === "add") {
       await addServer(prompt, cwd, userPath);
@@ -143,7 +143,29 @@ async function configureMcp(prompt: PromptFn, cwd: string, userPath: string): Pr
       const scope = name in scopes.project ? "project" : "user";
       removeMcpServer(name, scope, cwd, userPath);
       console.log(`Removed ${name} (${scope}).`);
-    } else console.log("Choose add, remove, or done.");
+    } else if (action === "disable" || action === "enable") {
+      // Project-scope entries first: they shadow same-named user entries.
+      const names = [
+        ...Object.keys(scopes.project),
+        ...Object.keys(scopes.user).filter(n => !(n in scopes.project))
+      ];
+      if (names.length === 0) { console.log("Nothing to change."); continue; }
+      names.forEach((n, i) => {
+        const effective = scopes.project[n] ?? scopes.user[n];
+        const marker = effective && isMcpServerDisabled(effective) ? " (disabled)" : "";
+        console.log(`  ${i + 1}. ${n}${marker}`);
+      });
+      const pick = Number((await prompt(`Number to ${action}: `)).trim());
+      if (!Number.isInteger(pick) || pick < 1 || pick > names.length) {
+        console.log("Invalid choice; skipped.");
+        continue;
+      }
+      const name = names[pick - 1];
+      const scope = name in scopes.project ? "project" : "user";
+      if (name.startsWith("pack__")) { console.log(`Pack servers cannot be disabled (${name}).`); continue; }
+      setMcpServerDisabled(name, action === "disable", scope, cwd, userPath);
+      console.log(`${action === "disable" ? "Disabled" : "Enabled"} ${name} (${scope}).`);
+    } else console.log("Choose add, remove, disable, enable, or done.");
   }
 }
 
