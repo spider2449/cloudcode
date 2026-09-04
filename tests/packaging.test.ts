@@ -110,3 +110,30 @@ describe("packaging entry points", () => {
     expect(existsSync(join(root, "docs/local-first-automation.md"))).toBe(true);
   });
 });
+
+describe("desktop packaging", () => {
+  it("declares electron-builder with bundled CLI file list", () => {
+    const pkg = JSON.parse(read("package.json")) as {
+      devDependencies: Record<string, string>;
+      build: {
+        appId: string;
+        directories: { output: string };
+        files: string[];
+      };
+      scripts: Record<string, string>;
+    };
+    expect(pkg.devDependencies["electron-builder"]).toBeDefined();
+    expect(pkg.build.appId).toBe("app.cloudcode");
+    expect(pkg.build.directories.output).toBe("release/desktop");
+    for (const pattern of ["dist/**", "desktop/dist/**", "desktop/preload.cjs"]) {
+      expect(pkg.build.files).toContain(pattern);
+    }
+    expect(pkg.scripts["desktop:dist"]).toContain("desktop-package.mjs");
+    expect(pkg.scripts["desktop:package"]).toContain("desktop-package.mjs");
+  });
+
+  it("the desktop orchestrator script exists and guards build output", () => {
+    expect(existsSync(join(root, "scripts/desktop-package.mjs"))).toBe(true);
+    expect(read("scripts/desktop-package.mjs")).toContain("desktop/dist");
+  });
+});
