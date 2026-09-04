@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadMcpServers, loadMcpServersByScope, saveMcpServer, removeMcpServer, formatMcpStatus } from "../src/agent/mcp.js";
+import { loadMcpServers, loadMcpServersByScope, saveMcpServer, removeMcpServer, formatMcpStatus, isMcpServerDisabled, resolveMcpServerScope, setMcpServerDisabled } from "../src/agent/mcp.js";
 import { linkPack } from "../src/agent/packLinks.js";
 import { enablePack } from "../src/agent/packs.js";
 
@@ -98,6 +98,51 @@ describe("saveMcpServer/removeMcpServer", () => {
     const userFile = join(tempDir(), "nested", "mcp.json");
     saveMcpServer("x", { command: "x" }, "user", cwd, userFile);
     expect(loadMcpServers(cwd, userFile)).toEqual({ x: { command: "x" } });
+  });
+});
+
+describe("mcp disable/enable flag", () => {
+  it("treats only disabled === true as disabled", () => {
+    expect(isMcpServerDisabled({ command: "n" })).toBe(false);
+    expect(isMcpServerDisabled({ command: "n", disabled: true })).toBe(true);
+    expect(isMcpServerDisabled({ command: "n", disabled: false })).toBe(false);
+  });
+
+  it("resolves project-first scope and undefined when absent", () => {
+    const cwd = tempDir();
+    const userFile = join(tempDir(), "mcp.json");
+    writeFileSync(userFile, JSON.stringify({ mcpServers: { onlyUser: { command: "u" }, both: { command: "u" } } }));
+    writeFileSync(join(cwd, ".mcp.json"), JSON.stringify({ mcpServers: { both: { command: "p" } } }));
+    expect(resolveMcpServerScope("both", cwd, userFile)).toBe("project");
+    expect(resolveMcpServerScope("onlyUser", cwd, userFile)).toBe("user");
+    expect(resolveMcpServerScope("missing", cwd, userFile)).toBeUndefined();
+  });
+
+  it("sets and clears the flag preserving sibling keys", () => {
+    const cwd = tempDir();
+    const userFile = join(tempDir(), "mcp.json");
+    writeFileSync(join(cwd, ".mcp.json"), JSON.stringify({ mcpServers: { gh: { command: "npx", args: ["a"] } } }));
+    setMcpServerDisabled("gh", true, "project", cwd, userFile);
+    expect(loadMcpServersByScope(cwd, userFile).project.gh).toEqual({ command: "npx", args: ["a"], disabled: true });
+    setMcpServerDisabled("gh", false, "project", cwd, userFile);
+    expect(loadMcpServersByScope(cwd, userFile).project.gh).toEqual({ command: "npx", args: ["a"] });
+  });
+
+  it("throws for unknown names", () => {
+    const cwd = tempDir();
+    const userFile = join(tempDir(), "mcp.json");
+    expect(() => setMcpServerDisabled("ghost", true, "project", cwd, userFile)).toThrow(/No MCP server named/);
+  });
+
+  it("excludes disabled servers from loadMcpServers and strips the flag", () => {
+    const cwd = tempDir();
+    const userFile = join(tempDir(), "mcp.json");
+    writeFileSync(userFile, JSON.stringify({ mcpServers: { docs: { command: "u" } } }));
+    writeFileSync(join(cwd, ".mcp.json"), JSON.stringify({ mcpServers: {
+      gh: { command: "p", disabled: true },
+      docs: { command: "p-override" }
+    } }));
+    expect(loadMcpServers(cwd, userFile)).toEqual({ docs: { command: "p-override" } });
   });
 });
 

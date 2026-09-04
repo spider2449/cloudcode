@@ -90,6 +90,42 @@ export function removeMcpServer(
   writeServerFile(filePath, servers);
 }
 
+export function isMcpServerDisabled(config: McpServerConfig): boolean {
+  return config.disabled === true;
+}
+
+export function resolveMcpServerScope(
+  name: string,
+  cwd: string,
+  userPath: string = join(configDir(), "mcp.json")
+): "user" | "project" | undefined {
+  const scopes = loadMcpServersByScope(cwd, userPath);
+  if (Object.hasOwn(scopes.project, name)) return "project";
+  if (Object.hasOwn(scopes.user, name)) return "user";
+  return undefined;
+}
+
+export function setMcpServerDisabled(
+  name: string,
+  disabled: boolean,
+  scope: "user" | "project",
+  cwd: string,
+  userPath: string = join(configDir(), "mcp.json")
+): void {
+  const filePath = scope === "user" ? userPath : join(cwd, ".mcp.json");
+  const servers = readServerFile(filePath);
+  const existing = servers[name];
+  if (!existing) throw new Error(`No MCP server named "${name}".`);
+  if (disabled) {
+    servers[name] = { ...existing, disabled: true };
+  } else {
+    const next = { ...existing };
+    delete next.disabled;
+    servers[name] = next;
+  }
+  writeServerFile(filePath, servers);
+}
+
 export function loadMcpServers(
   cwd: string,
   userPath: string = join(configDir(), "mcp.json"),
@@ -103,7 +139,14 @@ export function loadMcpServers(
       merged[name] = config;
     }
   }
-  return merged;
+  const enabled: Record<string, McpServerConfig> = {};
+  for (const [name, config] of Object.entries(merged)) {
+    if (isMcpServerDisabled(config)) continue;
+    const next = { ...config };
+    delete next.disabled;
+    enabled[name] = next;
+  }
+  return enabled;
 }
 
 export function formatMcpStatus(
