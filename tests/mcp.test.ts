@@ -165,4 +165,9 @@ describe("formatMcpStatus", () => {
   it("shows pending for configured servers missing from the status list", () => {
     expect(formatMcpStatus(["github"], [], [])).toBe("github  pending");
   });
+
+  it("renders disabled servers without status lookup", () => {
+    const out = formatMcpStatus(["gh", "docs"], [{ name: "gh", status: "connected" }], ["mcp__gh__t"], new Set(["docs"]));
+    expect(out).toBe("gh  connected  tools: t\ndocs  disabled");
+  });
 });

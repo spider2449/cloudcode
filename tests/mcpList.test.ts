@@ -42,4 +42,13 @@ describe("formatMcpList", () => {
     expect(out).toContain("beta  [project]");
     expect(out).toContain("shared  [project (overrides user)]");
   });
+
+  it("marks disabled servers", () => {
+    const out = formatMcpList({
+      user: { old: { command: "o", disabled: true } },
+      project: { gh: { command: "g" } }
+    });
+    expect(out).toContain("old  [user, disabled]");
+    expect(out).toContain("gh  [project]");
+  });
 });

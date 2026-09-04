@@ -152,7 +152,8 @@ export function loadMcpServers(
 export function formatMcpStatus(
   configured: string[],
   statuses: McpServerStatusEntry[],
-  tools: string[]
+  tools: string[],
+  disabled: Set<string> = new Set()
 ): string {
   if (configured.length === 0) {
     return "No MCP servers configured. Add them to .mcp.json or ~/.cloudcode/mcp.json.";
@@ -160,6 +161,7 @@ export function formatMcpStatus(
   const statusByName = new Map(statuses.map(s => [s.name, s.status]));
   return configured
     .map(name => {
+      if (disabled.has(name)) return `${name}  disabled`;
       const status = statusByName.get(name) ?? "pending";
       const prefix = `mcp__${name}__`;
       const serverTools = tools.filter(t => t.startsWith(prefix)).map(t => t.slice(prefix.length));
