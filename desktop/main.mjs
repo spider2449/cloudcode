@@ -41,10 +41,38 @@ function resolveNodeExecutable() {
   throw new Error("CloudCode Desktop requires node.exe. Set CLOUDCODE_NODE_EXECUTABLE to its absolute path.");
 }
 
+function resolveCliPath() {
+  // Packaged layout: electron-builder packs files into app.asar, which the
+  // Electron process can read but the child node.exe spawned below cannot.
+  // package.json declares dist/ under asarUnpack, so the CLI lives on disk at
+  // resources/app.asar.unpacked/dist/cli.js. Dev layout: repo/dist/cli.js.
+  const candidates = [];
+  if (process.resourcesPath && desktopDir.includes(".asar")) {
+    candidates.push(join(process.resourcesPath, "app.asar.unpacked", "dist", "cli.js"));
+    candidates.push(join(process.resourcesPath, "app", "dist", "cli.js"));
+  }
+  candidates.push(join(desktopDir, "..", "dist", "cli.js"));
+  candidates.push(join(projectRoot, "dist", "cli.js"));
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  throw new Error(`Cannot find dist/cli.js. Checked: ${candidates.join(", ")}`);
+}
+
 function startTerminal(workspaceId, sessionId, columns = 100, rows = 30) {
   if (sessionId) host.assertSession(workspaceId, sessionId);
   stopTerminal();
-  const args = [join(projectRoot, "dist", "cli.js")];
+  let cliPath;
+  try {
+    cliPath = resolveCliPath();
+  } catch (err) {
+    // Report inside the terminal pane (the renderer fires startTerminal
+    // without awaiting, so throwing here would be an invisible rejection).
+    send("cloudcode:terminal-data", `\r\n${err instanceof Error ? err.message : err}\r\n`);
+    send("cloudcode:terminal-exit", { exitCode: 1 });
+    return;
+  }
+  const args = [cliPath];
   if (sessionId) args.push("--session", sessionId);
   const executable = resolveNodeExecutable();
   const environment = {

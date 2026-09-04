@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createRoot } from "react-dom/client";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -27,6 +27,28 @@ declare global {
   }
 }
 
+const DEFAULT_SIDEBAR_WIDTH = 260;
+const DEFAULT_INSPECTOR_WIDTH = 300;
+const MIN_SIDEBAR_WIDTH = 180;
+const MAX_SIDEBAR_WIDTH = 480;
+const MIN_INSPECTOR_WIDTH = 220;
+const MAX_INSPECTOR_WIDTH = 560;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function readStoredWidth(key: string, fallback: number): number {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (raw === null) return fallback;
+    const parsed = Number.parseInt(raw, 10);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function App() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [active, setActive] = useState<string>();
@@ -37,6 +59,10 @@ function App() {
   const [terminalGeneration, setTerminalGeneration] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [sidebarWidth, setSidebarWidth] = useState(() => readStoredWidth("cloudcode.sidebarWidth", DEFAULT_SIDEBAR_WIDTH));
+  const [inspectorWidth, setInspectorWidth] = useState(() => readStoredWidth("cloudcode.inspectorWidth", DEFAULT_INSPECTOR_WIDTH));
+  const [dragging, setDragging] = useState<"left" | "right" | null>(null);
+  const dragState = useRef<{ side: "left" | "right"; startX: number; startSidebar: number; startInspector: number } | null>(null);
   const terminalElement = useRef<HTMLDivElement>(null);
   const terminal = useRef<Terminal>();
   const fitAddon = useRef<FitAddon>();
@@ -46,7 +72,10 @@ function App() {
     const element = terminalElement.current;
     if (!element) return;
     const instance = new Terminal({
-      cursorBlink: true,
+      // The embedded TUI draws its own solid block marker at the input
+      // position, so a blinking native cursor on the same cell renders as a
+      // second, redundant indicator. Keep the native cursor solid instead.
+      cursorBlink: false,
       cursorStyle: "block",
       fontFamily: '"Cascadia Mono", "Cascadia Code", Consolas, monospace',
       fontSize: 13,
@@ -121,6 +150,78 @@ function App() {
     return () => { disposed = true; window.clearInterval(timer); };
   }, [active]);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("cloudcode.sidebarWidth", String(sidebarWidth));
+    } catch {
+      // ignore
+    }
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("cloudcode.inspectorWidth", String(inspectorWidth));
+    } catch {
+      // ignore
+    }
+  }, [inspectorWidth]);
+
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (event: MouseEvent) => {
+      const state = dragState.current;
+      if (!state) return;
+      const delta = event.clientX - state.startX;
+      if (state.side === "left") {
+        setSidebarWidth(clamp(state.startSidebar + delta, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH));
+      } else {
+        setInspectorWidth(clamp(state.startInspector - delta, MIN_INSPECTOR_WIDTH, MAX_INSPECTOR_WIDTH));
+      }
+    };
+    const onUp = () => {
+      dragState.current = null;
+      setDragging(null);
+      fitAddon.current?.fit();
+      const instance = terminal.current;
+      if (instance) void window.cloudcode.resizeTerminal(instance.cols, instance.rows);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+  }, [dragging]);
+
+  function beginResize(side: "left" | "right", event: ReactMouseEvent) {
+    event.preventDefault();
+    dragState.current = { side, startX: event.clientX, startSidebar: sidebarWidth, startInspector: inspectorWidth };
+    setDragging(side);
+  }
+
+  function resetResize(side: "left" | "right") {
+    if (side === "left") setSidebarWidth(DEFAULT_SIDEBAR_WIDTH);
+    else setInspectorWidth(DEFAULT_INSPECTOR_WIDTH);
+    requestAnimationFrame(() => {
+      fitAddon.current?.fit();
+      const instance = terminal.current;
+      if (instance) void window.cloudcode.resizeTerminal(instance.cols, instance.rows);
+    });
+  }
+
+  const inspectorVisible = inspectorOpen && activeWorkspace !== undefined;
+  const gridTemplateColumns = !sidebarOpen && !inspectorVisible
+    ? "minmax(0, 1fr)"
+    : sidebarOpen && inspectorVisible
+      ? `${sidebarWidth}px 5px minmax(0, 1fr) 5px ${inspectorWidth}px`
+      : sidebarOpen
+        ? `${sidebarWidth}px 5px minmax(0, 1fr)`
+        : `minmax(0, 1fr) 5px ${inspectorWidth}px`;
+
   async function openProject() {
     const workspace = await window.cloudcode.openProject();
     if (!workspace) return;
@@ -134,18 +235,20 @@ function App() {
     setTerminalGeneration(value => value + 1);
   }
 
-  return <main className={`app-shell ${sidebarOpen ? "" : "sidebar-collapsed"} ${inspectorOpen ? "" : "inspector-collapsed"}`}>
-    <aside className="sidebar">
+  return <main className={`app-shell ${sidebarOpen ? "" : "sidebar-collapsed"} ${inspectorVisible ? "" : "inspector-collapsed"}${dragging ? " resizing" : ""}`} style={{ gridTemplateColumns }}>
+    {sidebarOpen && <aside className="sidebar">
       <div className="sidebar-top"><div className="brand"><span className="brand-mark">C</span><span>CloudCode</span></div><button className="icon-button" title="Collapse sidebar" onClick={() => setSidebarOpen(false)}>‹</button></div>
       <button className="new-session" disabled={!active} onClick={() => active && selectSession(active, undefined)}><span>＋</span> New session <kbd>Ctrl N</kbd></button>
       <div className="project-switcher"><span>⌘</span><select aria-label="Active project" value={active ?? ""} onChange={event => setActive(event.target.value)}>{workspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select><button className="bare-button" title="Open project" onClick={openProject}>＋</button></div>
       <div className="section-heading"><span>SESSIONS</span><span>{activeWorkspace?.sessions.length ?? 0}</span></div>
       <nav className="workspace-list" aria-label="Sessions">{activeWorkspace?.sessions.map(session => <button key={session.id} className={activeSessions[activeWorkspace.id] === session.id ? "session-card active" : "session-card"} onClick={() => selectSession(activeWorkspace.id, session.id)}><span className="session-title">{session.firstMessage || "Untitled session"}</span><span className="session-meta">{formatSessionDate(session.timestamp)} · {session.provider}</span></button>)}{activeWorkspace && activeWorkspace.sessions.length === 0 && <p className="no-sessions">Your first message will name this session.</p>}</nav>
       <div className="sidebar-footer"><span className="status-dot" /> Embedded CloudCode TUI<br /><small>One engine, one interaction model</small></div>
-    </aside>
+    </aside>}
     {!sidebarOpen && <button className="sidebar-reveal icon-button" onClick={() => setSidebarOpen(true)}>☰</button>}
+    {sidebarOpen && <div className="resizer resizer-left" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" title="Drag to resize sidebar (double-click to reset)" onMouseDown={event => beginResize("left", event)} onDoubleClick={() => resetResize("left")} />}
     <section className="terminal-pane"><header className="titlebar"><div className="title-copy"><strong>{activeWorkspace?.sessions.find(session => session.id === activeSessions[activeWorkspace.id])?.firstMessage || "New session"}</strong><span><b>{activeWorkspace?.name ?? "No project"}</b><i /> TUI</span></div><div className="title-actions">{terminalExit !== undefined && <span className="terminal-exit">Exited ({terminalExit})</span>}<button className="icon-button" title="Toggle Git" onClick={() => setInspectorOpen(value => !value)}>◫</button></div></header><div className="terminal-host" ref={terminalElement} /></section>
-    {activeWorkspace && <GitInspector state={gitStates[activeWorkspace.id]} onClose={() => setInspectorOpen(false)} />}
+    {inspectorVisible && <div className="resizer resizer-right" role="separator" aria-orientation="vertical" aria-label="Resize git panel" title="Drag to resize git panel (double-click to reset)" onMouseDown={event => beginResize("right", event)} onDoubleClick={() => resetResize("right")} />}
+    {activeWorkspace && inspectorVisible && <GitInspector state={gitStates[activeWorkspace.id]} onClose={() => setInspectorOpen(false)} />}
   </main>;
 }
 

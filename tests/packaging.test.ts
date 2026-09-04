@@ -119,6 +119,7 @@ describe("desktop packaging", () => {
         appId: string;
         directories: { output: string };
         files: string[];
+        asarUnpack?: string[];
       };
       scripts: Record<string, string>;
     };
@@ -128,6 +129,16 @@ describe("desktop packaging", () => {
     for (const pattern of ["dist/**", "desktop/dist/**", "desktop/preload.cjs"]) {
       expect(pkg.build.files).toContain(pattern);
     }
+    // The desktop terminal spawns a plain node.exe child, which cannot read
+    // files inside app.asar — dist/ must be unpacked to disk (see the
+    // MODULE_NOT_FOUND for resources/app/dist/cli.js) and main.mjs must
+    // resolve the unpacked location.
+    expect(pkg.build.asarUnpack).toEqual(expect.arrayContaining(["dist/**/*"]));
+    // Bare imports (e.g. @anthropic-ai/sdk) inside the unpacked CLI resolve
+    // via node_modules on disk, so production dependencies must be unpacked
+    // too — otherwise the child exits with ERR_MODULE_NOT_FOUND.
+    expect(pkg.build.asarUnpack).toEqual(expect.arrayContaining(["node_modules/**/*"]));
+    expect(read("desktop/main.mjs")).toContain("app.asar.unpacked");
     expect(pkg.scripts["desktop:dist"]).toContain("desktop-package.mjs");
     expect(pkg.scripts["desktop:package"]).toContain("desktop-package.mjs");
   });
