@@ -110,3 +110,28 @@ jobs:
           $path = "release/cloudcode-setup-$version.exe"
           if (-not (Test-Path $path)) { throw "installer artifact not found: $path" }
           Write-Host "Installer built: $path"
+
+  desktop-package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            flag: --win
+            glob: "release/desktop/*.exe"
+          - os: ubuntu-latest
+            flag: --linux
+            glob: "release/desktop/*.AppImage"
+          - os: macos-latest
+            flag: --mac
+            glob: "release/desktop/*.dmg"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run desktop:package -- ${{ matrix.flag }}
+      - run: ls ${{ matrix.glob }}
