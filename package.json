@@ -1,6 +1,6 @@
 {
   "name": "cloudcode",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Terminal AI coding agent with its own native agent engine talking directly to the Anthropic Messages API",
   "license": "MIT",
   "type": "module",
@@ -28,6 +28,8 @@
     "lint": "oxlint src tests",
     "lint:size": "node scripts/check-file-size.mjs",
     "test": "vitest run",
+    "desktop:build": "npm run build && vite build --config desktop/vite.config.ts",
+    "desktop:start": "npm run desktop:build && electron desktop/main.mjs",
     "prepack": "node -e \"require('fs').mkdirSync('release', { recursive: true })\"",
     "package:npm": "npm run build && npm pack --pack-destination release",
     "package:bin": "powershell -ExecutionPolicy Bypass -File scripts/build-binaries.ps1",
@@ -37,17 +39,27 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "cli-highlight": "^2.1.11",
     "cli-table3": "^0.6.5",
     "marked": "^15.0.12",
+    "node-pty": "^1.1.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "turndown": "^7.2.4"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
     "@types/turndown": "^5.0.6",
+    "@vitejs/plugin-react": "^6.1.1",
+    "electron": "^44.0.0",
     "oxlint": "^1.79.0",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2",
+    "vite": "^8.2.2",
     "vitest": "^4.1.11"
   }
 }

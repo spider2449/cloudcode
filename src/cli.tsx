@@ -144,7 +144,7 @@ if (parsed.kind === "subcommand") {
 }
 
 const sessionParsed = taskLaunch ? {
-  kind: "interactive" as const, continue: false, resume: false,
+  kind: "interactive" as const, continue: false, resume: false, session: undefined,
   provider: undefined, networkMode: taskLaunch.networkMode
 } : parsed;
 if (sessionParsed.kind !== "interactive" && sessionParsed.kind !== "print") {
@@ -200,6 +200,7 @@ if (taskLaunch) process.chdir(taskLaunch.cwd);
 const initialCwd = taskLaunch?.cwd ?? process.cwd();
 let resume: string | undefined;
 if (taskLaunch?.resume) resume = taskLaunch.resume;
+else if (sessionParsed.kind === "interactive" && sessionParsed.session) resume = sessionParsed.session;
 else if (sessionParsed.continue) {
   resume = sessionIndex.latestForCwd(initialCwd)?.id;
   if (!resume) console.error("No previous session for this directory; starting fresh.");

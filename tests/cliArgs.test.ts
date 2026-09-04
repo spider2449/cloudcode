@@ -3,7 +3,7 @@ import { parseCli, HELP_TEXT } from "../src/cliArgs.js";
 
 describe("parseCli", () => {
   it("defaults to interactive", () => {
-    expect(parseCli([])).toEqual({ kind: "interactive", continue: false, resume: false, provider: undefined });
+    expect(parseCli([])).toEqual({ kind: "interactive", continue: false, resume: false, session: undefined, provider: undefined });
   });
 
   it("parses help and version, long and short", () => {
@@ -17,6 +17,8 @@ describe("parseCli", () => {
     expect(parseCli(["-c"])).toMatchObject({ kind: "interactive", continue: true });
     expect(parseCli(["-r"])).toMatchObject({ kind: "interactive", resume: true });
     expect(parseCli(["--provider", "local"])).toMatchObject({ kind: "interactive", provider: "local" });
+    expect(parseCli(["--session", "session-id"])).toMatchObject({ kind: "interactive", session: "session-id" });
+    expect(parseCli(["--session", "session-id", "--continue"]).kind).toBe("error");
   });
 
   it("parses and validates a per-invocation network mode", () => {

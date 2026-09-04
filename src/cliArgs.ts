@@ -13,7 +13,7 @@ export type CliResult =
   | { kind: "version" }
   | { kind: "error"; message: string }
   | { kind: "subcommand"; name: Subcommand; args: string[] }
-  | { kind: "interactive"; continue: boolean; resume: boolean; provider?: string; networkMode?: NetworkMode }
+  | { kind: "interactive"; continue: boolean; resume: boolean; session?: string; provider?: string; networkMode?: NetworkMode }
   | { kind: "print"; prompt?: string; continue: boolean; provider?: string; permissionMode: PermissionMode; trustProjectConfig: boolean; networkMode?: NetworkMode; outputFormat: OutputFormat; runLimits: RunLimits };
 
 const PERMISSION_MODES: PermissionMode[] = ["default", "acceptEdits", "bypassPermissions"];
@@ -39,6 +39,7 @@ Commands:
 Options:
   -c, --continue                Resume the most recent session for this directory
   -r, --resume                  Open the session picker on start
+      --session <id>            Resume a specific session
       --provider <name>         Use a provider from ~/.cloudcode/providers.json
       --network-mode <mode>     offlineStrict | providerOnly | unrestricted
   -p, --print [prompt]          Non-interactive mode; prompt as argument or on stdin
@@ -61,7 +62,7 @@ export function parseCli(argv: string[]): CliResult {
   }
   let values: {
     help: boolean; version: boolean; continue: boolean; resume: boolean; print: boolean;
-    provider?: string; "network-mode"?: string; "permission-mode"?: string; "trust-project-config": boolean;
+    provider?: string; session?: string; "network-mode"?: string; "permission-mode"?: string; "trust-project-config": boolean;
     "output-format"?: string; "max-turns"?: string; timeout?: string; "max-cost-usd"?: string;
   };
   let positionals: string[];
@@ -76,6 +77,7 @@ export function parseCli(argv: string[]): CliResult {
         resume: { type: "boolean", short: "r", default: false },
         print: { type: "boolean", short: "p", default: false },
         provider: { type: "string" },
+        session: { type: "string" },
         "network-mode": { type: "string" },
         "permission-mode": { type: "string" },
         "trust-project-config": { type: "boolean", default: false },
@@ -109,6 +111,9 @@ export function parseCli(argv: string[]): CliResult {
     if (values.resume) {
       return { kind: "error", message: "--resume is not supported with --print; use --continue." };
     }
+    if (values.session !== undefined) {
+      return { kind: "error", message: "--session is not supported with --print; use --continue." };
+    }
     if (positionals.length > 1) {
       return { kind: "error", message: "Too many arguments: expected at most one prompt. Run cloudcode --help for usage." };
     }
@@ -139,8 +144,11 @@ export function parseCli(argv: string[]): CliResult {
   if (positionals.length > 0) {
     return { kind: "error", message: `Unexpected argument "${positionals[0]}". Run cloudcode --help for usage.` };
   }
+  if (values.session !== undefined && (values.continue || values.resume)) {
+    return { kind: "error", message: "--session cannot be combined with --continue or --resume." };
+  }
   return {
-    kind: "interactive", continue: values.continue, resume: values.resume, provider: values.provider,
+    kind: "interactive", continue: values.continue, resume: values.resume, session: values.session, provider: values.provider,
     ...(networkMode ? { networkMode: networkMode as NetworkMode } : {})
   };
 }

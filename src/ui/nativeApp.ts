@@ -5,7 +5,7 @@ import type { ProviderConfig } from "../agent/providers.js";
 import { SessionIndex } from "../agent/sessionIndex.js";
 import { PermissionStore } from "../agent/permissionStore.js";
 import { buildRegistry, applyConfigValue, configChoices, type ConfigKey } from "../commands/builtins.js";
-import { parseSlash } from "../commands/registry.js";
+import { runSlashCommand } from "../commands/runtime.js";
 import type { CommandContext } from "../commands/types.js";
 import { FileIndex } from "../commands/fileIndex.js";
 import { liveCompletionContext, type CompletionContext } from "../commands/completion.js";
@@ -426,37 +426,16 @@ export class App {
       this.recompute();
       return;
     }
-    const slash = parseSlash(text);
-    if (slash) {
-      const cmd = this.registry.get(slash.name);
-      if (!cmd) {
-        this.notice(`Unknown command: /${slash.name}`);
+    const command = runSlashCommand(text, this.registry, this.ctx, {
+      onUnknown: name => this.notice(`Unknown command: /${name}`),
+      onError: err => this.buffer.append({ kind: "error", text: err instanceof Error ? err.message : String(err) }),
+      onSettled: () => {
+        if (!this.running) return;
         this.recompute();
-        // Slash commands never start a model turn, so nothing else will
-        // drain the queue -- drain it here to avoid stalling behind an
-        // unknown command.
         this.drainQueueIfIdle();
-        return;
       }
-      cmd.run(this.ctx, slash.args)
-        .catch(err => {
-          this.buffer.append({ kind: "error", text: err instanceof Error ? err.message : String(err) });
-        })
-        // Async commands (e.g. /mcp) append output after the submit-time
-        // repaint, so repaint again once the command settles.
-        .finally(() => {
-          // /exit (and double-Ctrl+C's ctx.exit()) call stop() synchronously
-          // inside run(), which already finalized and cleared the terminal.
-          // Without this guard, this callback still fires on the next
-          // microtask and repaints a brand-new frame (fresh empty prompt,
-          // fresh elapsed timer) over what should be a torn-down screen.
-          if (!this.running) return;
-          this.recompute();
-          // Slash commands never start a model turn (no "result" message),
-          // so drain the queue here or a queued item after a slash command
-          // would stall indefinitely.
-          this.drainQueueIfIdle();
-        });
+    });
+    if (command) {
       return;
     }
     this.sendUserMessage(text);
