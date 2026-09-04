@@ -384,12 +384,36 @@ syntax-highlighted code blocks; Edit/Write tools show a colored diff preview.
 Input supports cursor movement (←/→), command history (↑/↓, persisted to
 ~/.cloudcode/history.json), and multi-line input (end a line with \ and press Enter).
 
+## Desktop app
+
+An optional Electron shell that embeds the existing terminal UI: project and
+session navigation on the left, the TUI streamed over a PTY in the center,
+Git status on the right. All agent execution, permissions, and project-trust
+decisions stay in the existing Node codebase; the renderer has no Node, shell,
+or filesystem access outside a closed preload API.
+
+    npm run desktop:start   # build (tsc + vite) and launch Electron
+    npm run desktop:build   # build only, no launch
+
+The shell spawns `dist/cli.js` in a PTY via `node` on PATH (or set
+`CLOUDCODE_NODE_EXECUTABLE` to its absolute path). Selecting a session
+restarts the PTY with that session ID.
+
 ## Release
 
     npm run package         # npm tarball + binaries + Windows installer
     npm run package:npm     # build + `npm pack` into release/
     npm run package:bin     # bun-compiled standalone binary for the host OS into release/
     npm run package:installer  # Windows installer via Inno Setup (installer/cloudcode.iss)
+    npm run desktop:dist    # tsc + vite build only, no installer
+    npm run desktop:package # self-contained desktop installer for the host OS into release/desktop/
+    npm run package:all     # CLI package + desktop package
+
+`desktop:package` uses electron-builder: NSIS on Windows, AppImage + deb on
+Linux, DMG on macOS. Pass `-- --win` / `-- --linux` / `-- --mac` to target a
+specific OS. Native modules (node-pty) are rebuilt per OS automatically by the
+script. The desktop bundle embeds the compiled CLI (`dist/cli.js`), so no
+separate cloudcode install is needed.
 
 `package:bin` requires `bun` on PATH (or `~/.bun/bin/bun.exe`) and only builds a
 binary for the OS it runs on: `cloudcode-win-x64.exe` on Windows, `cloudcode-linux-x64`
