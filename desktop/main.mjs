@@ -7,7 +7,11 @@ import * as pty from "node-pty";
 import { DesktopShellHost } from "../dist/desktop/shellHost.js";
 
 const desktopDir = fileURLToPath(new URL(".", import.meta.url));
-const projectRoot = join(desktopDir, "..");
+// Packaged layout: desktop/main.mjs lives inside app.asar, resources at process.resourcesPath.
+// Dev layout: repo root is one level above desktop/.
+const projectRoot = process.resourcesPath && desktopDir.includes(".asar")
+  ? join(process.resourcesPath, "app")
+  : join(desktopDir, "..");
 const host = new DesktopShellHost();
 let window;
 let terminal;
