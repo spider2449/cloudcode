@@ -5,13 +5,12 @@ import { Terminal } from "./ui/term/terminal.js";
 import { loadProviders } from "./agent/providers.js";
 import { applyContextWindow } from "./agent/contextProbe.js";
 import { loadSettings } from "./agent/settings.js";
-import { loadMcpServersByScope } from "./agent/mcp.js";
+import { runMcpCommand } from "./commands/cli/mcp.js";
 import { SessionIndex } from "./agent/sessionIndex.js";
 import { VERSION } from "./version.js";
 import { loadCustomThemes } from "./ui/theme.js";
 import { parseCli, HELP_TEXT, networkModeFromArgs } from "./cliArgs.js";
 import { configReport } from "./commands/cli/config.js";
-import { formatMcpList } from "./commands/cli/mcpList.js";
 import { runDoctor, formatDoctor } from "./commands/cli/doctor.js";
 import { runUpdate } from "./commands/cli/update.js";
 import { runPrint, readStdin } from "./printMode.js";
@@ -63,9 +62,12 @@ if (parsed.kind === "subcommand") {
     case "config":
       console.log(configReport(undefined, networkArg.mode));
       break;
-    case "mcp":
-      console.log(formatMcpList(loadMcpServersByScope(process.cwd())));
+    case "mcp": {
+      const result = runMcpCommand(parsed.args, process.cwd());
+      console.log(result.stdout ?? "");
+      if (result.exitCode !== 0) process.exitCode = 1;
       break;
+    }
     case "doctor": {
       const checks = runDoctor({ networkMode: subNetworkMode });
       console.log(formatDoctor(checks));

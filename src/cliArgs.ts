@@ -28,7 +28,7 @@ Usage:
 Commands:
   doctor    Check environment and configuration health
   config    Show config file paths and effective settings
-  mcp       List configured MCP servers
+  mcp       List configured MCP servers (mcp disable|enable <name> [--scope user|project])
   update    Update cloudcode to the latest version
    task      Run an isolated local engineering task
    pack      Manage local workflow packs
