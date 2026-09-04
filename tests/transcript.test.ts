@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toDisplayItems, toolLabel } from "../src/ui/transcript.js";
+import { toDisplayItems, toolLabel, transcriptToDisplayItems } from "../src/ui/transcript.js";
 import type { EngineMessage } from "../src/engine/messages.js";
 
 describe("toolLabel", () => {
@@ -52,6 +52,38 @@ describe("toDisplayItems", () => {
 
   it("ignores system messages", () => {
     expect(toDisplayItems({ type: "system", subtype: "init" } as unknown as EngineMessage)).toEqual([]);
+  });
+});
+
+describe("transcriptToDisplayItems", () => {
+  it("maps stored user text and assistant text to display items in order", () => {
+    expect(transcriptToDisplayItems([
+      { role: "user", content: "hello" },
+      { role: "assistant", content: [{ type: "text", text: "hi there" }] }
+    ])).toEqual([
+      { kind: "user", text: "hello" },
+      { kind: "assistant", text: "hi there" }
+    ]);
+  });
+
+  it("maps stored tool_use blocks and tool_result entries like the live transcript", () => {
+    expect(transcriptToDisplayItems([
+      { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "Read", input: { file_path: "/x.ts" } }] },
+      { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "file out", is_error: false }] }
+    ])).toEqual([
+      { kind: "tool", label: "Read /x.ts" },
+      { kind: "toolResult", text: "file out", extra: 0, isError: false }
+    ]);
+  });
+
+  it("skips todos records, which the session re-emits separately", () => {
+    expect(transcriptToDisplayItems([
+      { type: "todos", todos: [{ content: "done", status: "completed" }] }
+    ])).toEqual([]);
+  });
+
+  it("ignores unknown shapes instead of throwing", () => {
+    expect(transcriptToDisplayItems([undefined, 42, { role: "user", content: 7 }])).toEqual([]);
   });
 });
 

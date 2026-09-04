@@ -183,3 +183,49 @@ export function toDisplayItems(msg: EngineMessage): DisplayItem[] {
   }
   return [];
 }
+
+// Session transcripts persist loop history entries ({role, content} shapes)
+// plus todos records. Convert them back to display items so a resumed
+// session replays its visible transcript instead of starting blank.
+// Todos records are skipped: AgentSession re-emits the latest todos state
+// live on start, so replaying stored ones would duplicate it.
+export function transcriptToDisplayItems(entries: unknown[]): DisplayItem[] {
+  const items: DisplayItem[] = [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== "object") continue;
+    const record = entry as Record<string, unknown>;
+    if (record.type === "todos") continue;
+    if (record.role === "assistant" && Array.isArray(record.content)) {
+      for (const item of toDisplayItems({
+        type: "assistant",
+        message: { content: record.content }
+      } as unknown as EngineMessage)) items.push(item);
+      continue;
+    }
+    if (record.role === "user") {
+      if (typeof record.content === "string") {
+        if (record.content.trim()) items.push({ kind: "user", text: record.content });
+        continue;
+      }
+      if (Array.isArray(record.content)) {
+        let pendingText = "";
+        const flushText = () => {
+          if (pendingText.trim()) items.push({ kind: "user", text: pendingText });
+          pendingText = "";
+        };
+        for (const block of record.content) {
+          if (!block || typeof block !== "object") continue;
+          const candidate = block as Record<string, unknown>;
+          if (candidate.type === "tool_result") {
+            flushText();
+            for (const item of toDisplayItems(candidate as unknown as EngineMessage)) items.push(item);
+          } else if (candidate.type === "text" && typeof candidate.text === "string") {
+            pendingText += (pendingText ? "\n" : "") + candidate.text;
+          }
+        }
+        flushText();
+      }
+    }
+  }
+  return items;
+}

@@ -1,10 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { App } from "../src/ui/nativeApp.js";
 import { FakeTerminal } from "../src/ui/term/terminal.js";
 import { SessionIndex } from "../src/agent/sessionIndex.js";
+import { AgentSession } from "../src/agent/session.js";
+import { SessionFile } from "../src/engine/sessions.js";
 
 vi.mock("../src/agent/models.js", () => ({
   fetchModels: vi.fn().mockResolvedValue(["model-a", "model-b"])
@@ -403,5 +405,64 @@ describe("App key routing", () => {
     expect(app.isRunningForTest()).toBe(false);
     // finalize() writes exactly one reset sequence; nothing after it.
     expect(terminal.writes.length).toBe(1);
+  });
+});
+
+describe("App resume", () => {
+  // Session transcripts live under ~/.cloudcode; point HOME at a temp dir so
+  // this test never touches the developer's real sessions.
+  let tmpHome = "";
+  let originalHome: string | undefined;
+  let originalUserProfile: string | undefined;
+
+  beforeEach(() => {
+    tmpHome = mkdtempSync(join(tmpdir(), "cc-app-resume-"));
+    originalHome = process.env.HOME;
+    originalUserProfile = process.env.USERPROFILE;
+    process.env.HOME = tmpHome;
+    process.env.USERPROFILE = tmpHome;
+  });
+
+  afterEach(() => {
+    if (originalHome === undefined) delete process.env.HOME;
+    else process.env.HOME = originalHome;
+    if (originalUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = originalUserProfile;
+    rmSync(tmpHome, { recursive: true, force: true });
+  });
+
+  it("replays the resumed session's messages into the buffer on start", async () => {
+    vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("first reply")]) as never);
+    let sessionId = "";
+    const first = new AgentSession({
+      providerName: "anthropic",
+      provider: {},
+      permissionMode: "default",
+      cwd: "/repo",
+      onMessage: () => {},
+      onPermissionRequest: () => {},
+      onSessionId: id => { sessionId = id; }
+    });
+    first.start();
+    first.send("first message");
+    await vi.waitFor(() => expect(SessionFile.load(sessionId).length).toBeGreaterThanOrEqual(2));
+    await first.dispose();
+
+    vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("ok")]) as never);
+    const terminal = new FakeTerminal({ rows: 24, columns: 80 });
+    const app = new App({
+      cwd: "/repo",
+      providers: { anthropic: {} },
+      initialProvider: "anthropic",
+      resume: sessionId,
+      sessionIndex: new SessionIndex()
+    }, terminal);
+    const running = app.run();
+    await wait(50);
+    const all = terminal.writes.join("");
+    expect(all).toContain("first message");
+    expect(all).toContain("first reply");
+    app.submitForTest("/exit");
+    await running;
   });
 });

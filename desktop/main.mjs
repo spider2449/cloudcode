@@ -5,6 +5,7 @@ import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import * as pty from "node-pty";
 import { DesktopShellHost } from "../dist/desktop/shellHost.js";
+import { VERSION } from "../dist/version.js";
 
 const desktopDir = fileURLToPath(new URL(".", import.meta.url));
 // Packaged layout: desktop/main.mjs lives inside app.asar, resources at process.resourcesPath.
@@ -101,6 +102,7 @@ function startTerminal(workspaceId, sessionId, columns = 100, rows = 30) {
 function createWindow() {
   window = new BrowserWindow({
     width: 1440, height: 880, minWidth: 900, minHeight: 600, backgroundColor: "#101216",
+    title: `CloudCode v${VERSION}`,
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: join(desktopDir, "preload.cjs") }
   });
   const devServer = process.env.CLOUDCODE_DESKTOP_DEV_SERVER;

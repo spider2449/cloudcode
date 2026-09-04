@@ -5,6 +5,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import "./style.css";
 import { terminalKeySequence } from "./terminalKeys.js";
+import { VERSION } from "../../src/version.js";
 
 type Session = { id: string; firstMessage: string; timestamp: string; provider: string };
 type Workspace = { id: string; name: string; sessions: Session[] };
@@ -151,6 +152,10 @@ function App() {
   }, [active]);
 
   useEffect(() => {
+    document.title = `CloudCode v${VERSION} — ${activeWorkspace?.name ?? "No project"}`;
+  }, [activeWorkspace?.name]);
+
+  useEffect(() => {
     try {
       window.localStorage.setItem("cloudcode.sidebarWidth", String(sidebarWidth));
     } catch {
@@ -222,6 +227,24 @@ function App() {
         ? `${sidebarWidth}px 5px minmax(0, 1fr)`
         : `minmax(0, 1fr) 5px ${inspectorWidth}px`;
 
+  function switchWorkspace(nextId: string) {
+    const leaving = workspaces.find(workspace => workspace.id === active);
+    const target = workspaces.find(workspace => workspace.id === nextId);
+    setActiveSessions(current => {
+      const next = { ...current };
+      if (leaving && next[leaving.id] === undefined && leaving.sessions[0]?.id !== undefined) {
+        next[leaving.id] = leaving.sessions[0]?.id;
+      }
+      const stored = next[nextId];
+      const known = target?.sessions.some(session => session.id === stored);
+      if ((stored === undefined || !known) && target?.sessions[0]?.id !== undefined) {
+        next[nextId] = target.sessions[0]?.id;
+      }
+      return next;
+    });
+    setActive(nextId);
+  }
+
   async function openProject() {
     const workspace = await window.cloudcode.openProject();
     if (!workspace) return;
@@ -237,16 +260,16 @@ function App() {
 
   return <main className={`app-shell ${sidebarOpen ? "" : "sidebar-collapsed"} ${inspectorVisible ? "" : "inspector-collapsed"}${dragging ? " resizing" : ""}`} style={{ gridTemplateColumns }}>
     {sidebarOpen && <aside className="sidebar">
-      <div className="sidebar-top"><div className="brand"><span className="brand-mark">C</span><span>CloudCode</span></div><button className="icon-button" title="Collapse sidebar" onClick={() => setSidebarOpen(false)}>‹</button></div>
+      <div className="sidebar-top"><div className="brand"><span className="brand-mark">C</span><span>CloudCode</span><span className="brand-version">v{VERSION}</span></div><button className="icon-button" title="Collapse sidebar" onClick={() => setSidebarOpen(false)}>‹</button></div>
       <button className="new-session" disabled={!active} onClick={() => active && selectSession(active, undefined)}><span>＋</span> New session <kbd>Ctrl N</kbd></button>
-      <div className="project-switcher"><span>⌘</span><select aria-label="Active project" value={active ?? ""} onChange={event => setActive(event.target.value)}>{workspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select><button className="bare-button" title="Open project" onClick={openProject}>＋</button></div>
+      <div className="project-switcher"><span>⌘</span><select aria-label="Active project" value={active ?? ""} onChange={event => switchWorkspace(event.target.value)}>{workspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select><button className="bare-button" title="Open project" onClick={openProject}>＋</button></div>
       <div className="section-heading"><span>SESSIONS</span><span>{activeWorkspace?.sessions.length ?? 0}</span></div>
       <nav className="workspace-list" aria-label="Sessions">{activeWorkspace?.sessions.map(session => <button key={session.id} className={activeSessions[activeWorkspace.id] === session.id ? "session-card active" : "session-card"} onClick={() => selectSession(activeWorkspace.id, session.id)}><span className="session-title">{session.firstMessage || "Untitled session"}</span><span className="session-meta">{formatSessionDate(session.timestamp)} · {session.provider}</span></button>)}{activeWorkspace && activeWorkspace.sessions.length === 0 && <p className="no-sessions">Your first message will name this session.</p>}</nav>
       <div className="sidebar-footer"><span className="status-dot" /> Embedded CloudCode TUI<br /><small>One engine, one interaction model</small></div>
     </aside>}
     {!sidebarOpen && <button className="sidebar-reveal icon-button" onClick={() => setSidebarOpen(true)}>☰</button>}
     {sidebarOpen && <div className="resizer resizer-left" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" title="Drag to resize sidebar (double-click to reset)" onMouseDown={event => beginResize("left", event)} onDoubleClick={() => resetResize("left")} />}
-    <section className="terminal-pane"><header className="titlebar"><div className="title-copy"><strong>{activeWorkspace?.sessions.find(session => session.id === activeSessions[activeWorkspace.id])?.firstMessage || "New session"}</strong><span><b>{activeWorkspace?.name ?? "No project"}</b><i /> TUI</span></div><div className="title-actions">{terminalExit !== undefined && <span className="terminal-exit">Exited ({terminalExit})</span>}<button className="icon-button" title="Toggle Git" onClick={() => setInspectorOpen(value => !value)}>◫</button></div></header><div className="terminal-host" ref={terminalElement} /></section>
+    <section className="terminal-pane"><header className="titlebar"><div className="title-copy"><strong>{activeWorkspace?.sessions.find(session => session.id === activeSessions[activeWorkspace.id])?.firstMessage || "New session"}</strong><span><b>{activeWorkspace?.name ?? "No project"}</b><i /> TUI v{VERSION}</span></div><div className="title-actions">{terminalExit !== undefined && <span className="terminal-exit">Exited ({terminalExit})</span>}<button className="icon-button" title="Toggle Git" onClick={() => setInspectorOpen(value => !value)}>◫</button></div></header><div className="terminal-host" ref={terminalElement} /></section>
     {inspectorVisible && <div className="resizer resizer-right" role="separator" aria-orientation="vertical" aria-label="Resize git panel" title="Drag to resize git panel (double-click to reset)" onMouseDown={event => beginResize("right", event)} onDoubleClick={() => resetResize("right")} />}
     {activeWorkspace && inspectorVisible && <GitInspector state={gitStates[activeWorkspace.id]} onClose={() => setInspectorOpen(false)} />}
   </main>;

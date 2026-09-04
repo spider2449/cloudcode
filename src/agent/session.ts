@@ -91,6 +91,7 @@ export class AgentSession {
   private lsp: LspManager;
   private mcpReady: Promise<void> | undefined;
   private extractCursor = 0;
+  private resumedTranscript: unknown[] = [];
   private disposed = false;
   private cancelPendingStart: (() => void) | undefined;
   private changes: ChangeJournal | undefined;
@@ -211,6 +212,7 @@ export class AgentSession {
     });
     if (resumedHistory.length > 0) this.loop.messages = resumedHistory;
     this.extractCursor = resumedHistory.length;
+    this.resumedTranscript = resumedMessages;
     this.sessionFile = new SessionFile(this.sessionId, sessionDir);
     this.tools = tools.map(t => t.name);
     this.opts.onSessionId(this.sessionId);
@@ -234,6 +236,11 @@ export class AgentSession {
         this.tools = [...this.tools, ...mcpTools.map(t => t.name)];
       }
     });
+  }
+
+  /** Raw persisted entries loaded for a resume, used to replay the visible transcript. */
+  getResumedTranscript(): unknown[] {
+    return this.resumedTranscript;
   }
 
   send(text: string, images?: Array<{ mediaType: string; base64: string }>): void {

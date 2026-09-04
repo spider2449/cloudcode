@@ -14,15 +14,21 @@ export class SessionIndex {
   private entries: SessionEntry[] = [];
 
   constructor(private filePath: string = join(configDir(), "sessions.json")) {
+    this.reload();
+  }
+
+  /** Re-read the index file so long-lived hosts see sessions recorded by other processes. */
+  reload(): void {
     try {
       const raw = JSON.parse(readFileSync(this.filePath, "utf8"));
       if (Array.isArray(raw)) this.entries = raw;
     } catch {
-      // missing or invalid file: start empty
+      // missing or invalid file: keep in-memory entries
     }
   }
 
   record(entry: SessionEntry): void {
+    this.reload();
     this.entries = this.entries.filter(e => e.id !== entry.id);
     this.entries.push(entry);
     mkdirSync(dirname(this.filePath), { recursive: true });
@@ -30,6 +36,7 @@ export class SessionIndex {
   }
 
   list(): SessionEntry[] {
+    this.reload();
     return [...this.entries].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   }
 

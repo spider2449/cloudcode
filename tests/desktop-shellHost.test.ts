@@ -54,6 +54,27 @@ describe("DesktopShellHost", () => {
     expect(observedCwd.toLowerCase()).toBe(project.toLowerCase());
   });
 
+  it("sees sessions recorded by another process after construction", () => {
+    const root = mkdtempSync(join(tmpdir(), "cloudcode-shell-"));
+    roots.push(root);
+    const project = join(root, "project");
+    mkdirSync(project);
+    const file = join(root, "sessions.json");
+    const host = new DesktopShellHost({
+      sessionIndex: new SessionIndex(file),
+      recentProjects: { load: () => [], save: () => {} }
+    });
+    const before = host.openProject(project);
+    expect(before.sessions).toHaveLength(0);
+
+    new SessionIndex(file).record({
+      id: "latest", cwd: project, firstMessage: "Latest work",
+      timestamp: "2026-09-02T00:00:00Z", provider: "local"
+    });
+
+    expect(host.refresh(before.id).sessions.map(session => session.id)).toEqual(["latest"]);
+  });
+
   it("rejects a session from another workspace", () => {
     const root = mkdtempSync(join(tmpdir(), "cloudcode-shell-"));
     roots.push(root);

@@ -9,7 +9,7 @@ import { runSlashCommand } from "../commands/runtime.js";
 import type { CommandContext } from "../commands/types.js";
 import { FileIndex } from "../commands/fileIndex.js";
 import { liveCompletionContext, type CompletionContext } from "../commands/completion.js";
-import { toDisplayItems, streamDelta, streamThinkingDelta, type DisplayItem } from "./transcript.js";
+import { toDisplayItems, streamDelta, streamThinkingDelta, transcriptToDisplayItems, type DisplayItem } from "./transcript.js";
 import { fetchModels } from "../agent/models.js";
 import { applyContextWindow } from "../agent/contextProbe.js";
 import { loadMcpServers, loadMcpServersByScope, isMcpServerDisabled, resolveMcpServerScope, setMcpServerDisabled, formatMcpStatus } from "../agent/mcp.js";
@@ -269,6 +269,11 @@ export class App {
       onSessionId: id => { this.task.sessionStarted(id); if (this.firstMessage) this.recordSession(id, name); }
     });
     session.start();
+    if (resume) {
+      for (const item of transcriptToDisplayItems(session.getResumedTranscript())) {
+        this.buffer.append(item);
+      }
+    }
     void fetchModels(this.props.providers[name] ?? {}).then(models => { this.availableModels = models; });
     return session;
   }
