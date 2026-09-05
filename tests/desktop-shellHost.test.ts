@@ -10,9 +10,13 @@ afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: 
 
 describe("DesktopShellHost", () => {
   it("parses branch and file states", () => {
-    expect(parseDesktopGitStatus("## main...origin/main\nM  src/a.ts\n M src/b.ts\n?? src/c.ts\n")).toEqual({
+    expect(parseDesktopGitStatus("## main...origin/main\0M  src/a.ts\0 M src/b.ts\0?? src/c.ts\0")).toEqual({
       isGitRepo: true,
       branch: "main",
+      upstream: "origin/main",
+      ahead: 0,
+      behind: 0,
+      truncated: false,
       files: [
         { index: "M", workingTree: " ", path: "src/a.ts" },
         { index: " ", workingTree: "M", path: "src/b.ts" },
@@ -45,7 +49,7 @@ describe("DesktopShellHost", () => {
       recentProjects: { load: () => [], save: () => {} },
       gitRunner: async (_args, cwd) => {
         observedCwd = cwd;
-        return { code: 0, stdout: "## main\n M src/a.ts\n", stderr: "", truncated: false };
+        return { code: 0, stdout: "## main\0 M src/a.ts\0", stderr: "", truncated: false };
       }
     });
     const workspace = host.openProject(project);

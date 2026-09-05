@@ -9,7 +9,9 @@ import { VERSION } from "../../src/version.js";
 
 type Session = { id: string; firstMessage: string; timestamp: string; provider: string };
 type Workspace = { id: string; name: string; sessions: Session[] };
-type GitState = { isGitRepo: boolean; branch?: string; files: Array<{ path: string; index: string; workingTree: string }>; error?: string };
+type GitFile = { path: string; originalPath?: string; index: string; workingTree: string };
+type GitState = { isGitRepo: boolean; branch?: string; upstream?: string; ahead: number; behind: number; files: GitFile[]; truncated: boolean; error?: string };
+type GitDiff = { text: string; truncated: boolean; error?: string };
 
 declare global {
   interface Window {
@@ -18,12 +20,21 @@ declare global {
       restoreProjects(): Promise<Workspace[]>;
       refreshWorkspace(workspaceId: string): Promise<Workspace>;
       gitState(workspaceId: string): Promise<GitState>;
-      startTerminal(workspaceId: string, sessionId: string | undefined, columns: number, rows: number): Promise<void>;
+      gitDiff(workspaceId: string, path: string, staged: boolean): Promise<GitDiff>;
+      gitStage(workspaceId: string, paths: string[]): Promise<void>;
+      gitStageAll(workspaceId: string): Promise<void>;
+      gitUnstage(workspaceId: string, paths: string[]): Promise<void>;
+      gitUnstageAll(workspaceId: string): Promise<void>;
+      gitCommit(workspaceId: string, message: string): Promise<void>;
+      gitBranches(workspaceId: string): Promise<string[]>;
+      gitCheckout(workspaceId: string, branch: string): Promise<void>;
+      gitCreateBranch(workspaceId: string, branch: string): Promise<void>;
+      startTerminal(workspaceId: string, sessionId: string | undefined, columns: number, rows: number, generation: string): Promise<void>;
       writeTerminal(data: string): Promise<void>;
       resizeTerminal(columns: number, rows: number): Promise<void>;
       closeApplication(): Promise<void>;
-      onTerminalData(listener: (data: string) => void): () => void;
-      onTerminalExit(listener: (payload: { exitCode: number }) => void): () => void;
+      onTerminalData(listener: (payload: { generation: string; data: string }) => void): () => void;
+      onTerminalExit(listener: (payload: { generation: string; exitCode: number }) => void): () => void;
     };
   }
 }
@@ -67,6 +78,7 @@ function App() {
   const terminalElement = useRef<HTMLDivElement>(null);
   const terminal = useRef<Terminal>();
   const fitAddon = useRef<FitAddon>();
+  const currentTerminalGeneration = useRef("");
   const activeWorkspace = workspaces.find(workspace => workspace.id === active);
 
   useEffect(() => {
@@ -98,8 +110,12 @@ function App() {
     terminal.current = instance;
     fitAddon.current = fit;
     const input = instance.onData(data => { void window.cloudcode.writeTerminal(data); });
-    const removeData = window.cloudcode.onTerminalData(data => instance.write(data));
-    const removeExit = window.cloudcode.onTerminalExit(({ exitCode }) => setTerminalExit(exitCode));
+    const removeData = window.cloudcode.onTerminalData(payload => {
+      if (payload.generation === currentTerminalGeneration.current) instance.write(payload.data);
+    });
+    const removeExit = window.cloudcode.onTerminalExit(({ generation, exitCode }) => {
+      if (generation === currentTerminalGeneration.current) setTerminalExit(exitCode);
+    });
     const observer = new ResizeObserver(() => {
       fit.fit();
       void window.cloudcode.resizeTerminal(instance.cols, instance.rows);
@@ -133,22 +149,31 @@ function App() {
     instance.clear();
     setTerminalExit(undefined);
     fitAddon.current?.fit();
-    void window.cloudcode.startTerminal(active, sessionId, instance.cols, instance.rows);
+    const generation = `${active}:${terminalGeneration}:${Date.now()}`;
+    currentTerminalGeneration.current = generation;
+    void window.cloudcode.startTerminal(active, sessionId, instance.cols, instance.rows, generation).catch(error => {
+      if (currentTerminalGeneration.current === generation) instance.writeln(`\r\n${error instanceof Error ? error.message : String(error)}`);
+    });
   }, [active, activeSessions, terminalReady, terminalGeneration]);
 
   useEffect(() => {
     if (!active) return;
     let disposed = false;
-    const refresh = () => {
-      void Promise.all([window.cloudcode.refreshWorkspace(active), window.cloudcode.gitState(active)]).then(([workspace, git]) => {
+    let timer: number | undefined;
+    const refresh = async () => {
+      try {
+        const [workspace, git] = await Promise.all([window.cloudcode.refreshWorkspace(active), window.cloudcode.gitState(active)]);
         if (disposed) return;
         setWorkspaces(current => current.map(item => item.id === active ? workspace : item));
         setGitStates(current => ({ ...current, [active]: git }));
-      });
+      } catch (error) {
+        if (!disposed) setGitStates(current => ({ ...current, [active]: { isGitRepo: false, ahead: 0, behind: 0, files: [], truncated: false, error: error instanceof Error ? error.message : String(error) } }));
+      } finally {
+        if (!disposed) timer = window.setTimeout(refresh, document.hidden ? 10_000 : 3_000);
+      }
     };
-    refresh();
-    const timer = window.setInterval(refresh, 3000);
-    return () => { disposed = true; window.clearInterval(timer); };
+    void refresh();
+    return () => { disposed = true; if (timer !== undefined) window.clearTimeout(timer); };
   }, [active]);
 
   useEffect(() => {
@@ -268,25 +293,59 @@ function App() {
       <div className="sidebar-footer"><span className="status-dot" /> Embedded CloudCode TUI<br /><small>One engine, one interaction model</small></div>
     </aside>}
     {!sidebarOpen && <button className="sidebar-reveal icon-button" onClick={() => setSidebarOpen(true)}>☰</button>}
-    {sidebarOpen && <div className="resizer resizer-left" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" title="Drag to resize sidebar (double-click to reset)" onMouseDown={event => beginResize("left", event)} onDoubleClick={() => resetResize("left")} />}
+    {sidebarOpen && <div className="resizer resizer-left" role="separator" tabIndex={0} aria-orientation="vertical" aria-label="Resize sidebar" title="Drag to resize sidebar (double-click to reset)" onKeyDown={event => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") setSidebarWidth(value => clamp(value + (event.key === "ArrowLeft" ? -10 : 10), MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH)); }} onMouseDown={event => beginResize("left", event)} onDoubleClick={() => resetResize("left")} />}
     <section className="terminal-pane"><header className="titlebar"><div className="title-copy"><strong>{activeWorkspace?.sessions.find(session => session.id === activeSessions[activeWorkspace.id])?.firstMessage || "New session"}</strong><span><b>{activeWorkspace?.name ?? "No project"}</b><i /> TUI v{VERSION}</span></div><div className="title-actions">{terminalExit !== undefined && <span className="terminal-exit">Exited ({terminalExit})</span>}<button className="icon-button" title="Toggle Git" onClick={() => setInspectorOpen(value => !value)}>◫</button></div></header><div className="terminal-host" ref={terminalElement} /></section>
-    {inspectorVisible && <div className="resizer resizer-right" role="separator" aria-orientation="vertical" aria-label="Resize git panel" title="Drag to resize git panel (double-click to reset)" onMouseDown={event => beginResize("right", event)} onDoubleClick={() => resetResize("right")} />}
-    {activeWorkspace && inspectorVisible && <GitInspector state={gitStates[activeWorkspace.id]} onClose={() => setInspectorOpen(false)} />}
+    {inspectorVisible && <div className="resizer resizer-right" role="separator" tabIndex={0} aria-orientation="vertical" aria-label="Resize git panel" title="Drag to resize git panel (double-click to reset)" onKeyDown={event => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") setInspectorWidth(value => clamp(value + (event.key === "ArrowLeft" ? 10 : -10), MIN_INSPECTOR_WIDTH, MAX_INSPECTOR_WIDTH)); }} onMouseDown={event => beginResize("right", event)} onDoubleClick={() => resetResize("right")} />}
+    {activeWorkspace && inspectorVisible && <GitInspector workspaceId={activeWorkspace.id} state={gitStates[activeWorkspace.id]} onRefresh={async () => {
+      const git = await window.cloudcode.gitState(activeWorkspace.id);
+      setGitStates(current => ({ ...current, [activeWorkspace.id]: git }));
+    }} onClose={() => setInspectorOpen(false)} />}
   </main>;
 }
 
-function GitInspector({ state, onClose }: { state: GitState | undefined; onClose(): void }) {
+function GitInspector({ workspaceId, state, onRefresh, onClose }: { workspaceId: string; state: GitState | undefined; onRefresh(): Promise<void>; onClose(): void }) {
+  const [selected, setSelected] = useState<{ file: GitFile; staged: boolean }>();
+  const [diff, setDiff] = useState<GitDiff>();
+  const [message, setMessage] = useState("");
+  const [branches, setBranches] = useState<string[]>([]);
+  const [newBranch, setNewBranch] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
   const staged = state?.files.filter(file => file.index !== " " && file.index !== "?") ?? [];
   const changes = state?.files.filter(file => file.workingTree !== " " || file.index === "?") ?? [];
-  return <aside className="inspector"><div className="inspector-header"><div><span>GIT</span><strong>{state?.branch ?? "Repository"}</strong></div><button className="icon-button" onClick={onClose}>×</button></div>{!state ? <p className="git-empty">Reading repository status…</p> : !state.isGitRepo ? <p className="git-empty">{state.error ?? "Not a Git repository."}</p> : <><GitFileGroup title="STAGED CHANGES" files={staged} status="index" /><GitFileGroup title="CHANGES" files={changes} status="workingTree" />{state.files.length === 0 && <p className="git-empty"><span className="status-dot" />Working tree is clean.</p>}</>}</aside>;
+  useEffect(() => { void window.cloudcode.gitBranches(workspaceId).then(setBranches).catch(() => setBranches([])); }, [workspaceId, state?.branch]);
+  useEffect(() => {
+    if (!selected) { setDiff(undefined); return; }
+    let disposed = false;
+    setDiff(undefined);
+    void window.cloudcode.gitDiff(workspaceId, selected.file.path, selected.staged).then(value => { if (!disposed) setDiff(value); });
+    return () => { disposed = true; };
+  }, [workspaceId, selected]);
+  async function mutate(operation: () => Promise<void>) {
+    setBusy(true); setError(undefined);
+    try { await operation(); await onRefresh(); setSelected(undefined); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    finally { setBusy(false); }
+  }
+  return <aside className="inspector"><div className="inspector-header"><div><span>GIT</span><strong>{state?.branch ?? "Repository"}{state && (state.ahead || state.behind) ? ` ↑${state.ahead} ↓${state.behind}` : ""}</strong></div><button aria-label="Close Git panel" className="icon-button" onClick={onClose}>×</button></div>{!state ? <p className="git-empty">Reading repository status…</p> : !state.isGitRepo ? <p className="git-empty">{state.error ?? "Not a Git repository."}</p> : <>
+    {state.truncated && <p className="git-error">Status is truncated; some files may be missing.</p>}
+    <div className="git-branch"><select aria-label="Current branch" value={state.branch ?? ""} disabled={busy} onChange={event => void mutate(() => window.cloudcode.gitCheckout(workspaceId, event.target.value))}>{branches.map(branch => <option key={branch}>{branch}</option>)}</select><input aria-label="New branch" placeholder="New branch" value={newBranch} onChange={event => setNewBranch(event.target.value)} /><button disabled={busy || !newBranch.trim()} onClick={() => void mutate(async () => { await window.cloudcode.gitCreateBranch(workspaceId, newBranch.trim()); setNewBranch(""); })}>Create</button></div>
+    <GitFileGroup title="STAGED CHANGES" files={staged} status="index" action="Unstage" disabled={busy} onSelect={file => setSelected({ file, staged: true })} onAction={file => void mutate(() => window.cloudcode.gitUnstage(workspaceId, gitFilePaths(file)))} onAll={() => void mutate(() => window.cloudcode.gitUnstageAll(workspaceId))} />
+    <GitFileGroup title="CHANGES" files={changes} status="workingTree" action="Stage" disabled={busy} onSelect={file => setSelected({ file, staged: false })} onAction={file => void mutate(() => window.cloudcode.gitStage(workspaceId, gitFilePaths(file)))} onAll={() => void mutate(() => window.cloudcode.gitStageAll(workspaceId))} />
+    {state.files.length === 0 && <p className="git-empty"><span className="status-dot" />Working tree is clean.</p>}
+    {selected && <section className="git-diff"><div className="section-heading"><span>{selected.file.path}</span><button onClick={() => setSelected(undefined)}>Close</button></div>{!diff ? <p>Loading diff…</p> : diff.error ? <p className="git-error">{diff.error}</p> : <><pre>{diff.text || "No textual diff available."}</pre>{diff.truncated && <p className="git-error">Diff truncated.</p>}</>}</section>}
+    <section className="git-commit"><textarea aria-label="Commit message" placeholder="Commit message" value={message} onChange={event => setMessage(event.target.value)} /><button disabled={busy || staged.length === 0 || !message.trim()} onClick={() => void mutate(async () => { await window.cloudcode.gitCommit(workspaceId, message.trim()); setMessage(""); })}>Commit {staged.length || ""}</button></section>
+    {error && <p className="git-error">{error}</p>}
+  </>}</aside>;
 }
 
-function GitFileGroup({ title, files, status }: { title: string; files: GitState["files"]; status: "index" | "workingTree" }) {
+function GitFileGroup({ title, files, status, action, disabled, onSelect, onAction, onAll }: { title: string; files: GitState["files"]; status: "index" | "workingTree"; action: string; disabled: boolean; onSelect(file: GitFile): void; onAction(file: GitFile): void; onAll(): void }) {
   if (files.length === 0) return null;
-  return <section className="git-group"><div className="section-heading"><span>{title}</span><span>{files.length}</span></div>{files.map((file, index) => <div className="git-file" key={`${file.path}-${index}`}><span className="git-badge">{gitStatusLabel(file[status])}</span><span title={file.path}>{file.path}</span></div>)}</section>;
+  return <section className="git-group"><div className="section-heading"><span>{title} · {files.length}</span><button disabled={disabled} onClick={onAll}>{action} all</button></div>{files.map((file, index) => <div className="git-file" key={`${file.path}-${index}`}><button className="git-file-name" title={file.path} onClick={() => onSelect(file)}><span className="git-badge">{gitStatusLabel(file[status])}</span><span>{file.path}</span></button><button disabled={disabled} onClick={() => onAction(file)}>{action}</button></div>)}</section>;
 }
 
 function gitStatusLabel(status: string): string { return status === "?" || status === "A" ? "A" : status === "D" ? "D" : status === "R" ? "R" : status === "U" ? "U" : "M"; }
+function gitFilePaths(file: GitFile): string[] { return file.originalPath ? [file.path, file.originalPath] : [file.path]; }
 function formatSessionDate(timestamp: string): string { const value = new Date(timestamp); return Number.isNaN(value.getTime()) ? "Saved" : new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(value); }
 
 createRoot(document.getElementById("root")!).render(<App />);

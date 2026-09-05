@@ -3,20 +3,15 @@ import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { SessionIndex } from "../agent/sessionIndex.js";
 import { loadRecentProjects, saveRecentProject } from "../agent/recentProjects.js";
-import { defaultGitRunner, type GitRunner } from "../agent/gitReview.js";
+import type { GitRunner } from "../agent/gitReview.js";
+import { DesktopGitService, type DesktopGitState } from "./gitService.js";
+export { parseDesktopGitStatus } from "./gitService.js";
 
 export interface DesktopSessionEntry {
   id: string;
   firstMessage: string;
   timestamp: string;
   provider: string;
-}
-
-export interface DesktopGitState {
-  isGitRepo: boolean;
-  branch?: string;
-  files: Array<{ path: string; index: string; workingTree: string }>;
-  error?: string;
 }
 
 export interface DesktopShellWorkspace {
@@ -35,9 +30,11 @@ export interface DesktopShellHostOptions {
 export class DesktopShellHost {
   private readonly sessionIndex: SessionIndex;
   private readonly roots = new Map<string, string>();
+  private readonly git: DesktopGitService;
 
   constructor(private readonly options: DesktopShellHostOptions = {}) {
     this.sessionIndex = options.sessionIndex ?? new SessionIndex();
+    this.git = new DesktopGitService(options.gitRunner);
   }
 
   openProject(selectedPath: string): DesktopShellWorkspace {
@@ -76,14 +73,10 @@ export class DesktopShellHost {
   }
 
   async gitState(workspaceId: string): Promise<DesktopGitState> {
-    const result = await (this.options.gitRunner ?? defaultGitRunner)(
-      ["status", "--short", "--branch", "--untracked-files=all"], this.cwd(workspaceId)
-    );
-    if (result.code !== 0) {
-      return { isGitRepo: false, files: [], error: result.stderr.trim() || "Not a Git worktree." };
-    }
-    return parseDesktopGitStatus(result.stdout);
+    return this.git.status(this.cwd(workspaceId));
   }
+
+  gitService(): DesktopGitService { return this.git; }
 
   private describe(id: string): DesktopShellWorkspace {
     const cwd = this.cwd(id);
@@ -103,18 +96,6 @@ function sameProjectPath(left: string, right: string): boolean {
   return process.platform === "win32"
     ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
     : normalizedLeft === normalizedRight;
-}
-
-export function parseDesktopGitStatus(output: string): DesktopGitState {
-  const lines = output.replaceAll("\r", "").split("\n").filter(Boolean);
-  const branchLine = lines[0]?.startsWith("## ") ? lines.shift()?.slice(3) : undefined;
-  const branch = branchLine?.split("...")[0]?.trim() || undefined;
-  const files = lines.map(line => ({
-    index: line[0] ?? " ",
-    workingTree: line[1] ?? " ",
-    path: line.slice(3).trim()
-  })).filter(file => file.path.length > 0);
-  return { isGitRepo: true, branch, files };
 }
 
 function canonicalProjectRoot(path: string): string {

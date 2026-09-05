@@ -388,16 +388,21 @@ Input supports cursor movement (←/→), command history (↑/↓, persisted to
 
 An optional Electron shell that embeds the existing terminal UI: project and
 session navigation on the left, the TUI streamed over a PTY in the center,
-Git status on the right. All agent execution, permissions, and project-trust
+Git status and local Git actions on the right. The panel previews staged and
+unstaged diffs, stages or unstages individual files or all changes, creates and
+switches local branches, and commits staged changes. Destructive discard/reset
+actions and remote fetch/pull/push operations are intentionally unavailable.
+All agent execution, permissions, and project-trust
 decisions stay in the existing Node codebase; the renderer has no Node, shell,
 or filesystem access outside a closed preload API.
 
     npm run desktop:start   # build (tsc + vite) and launch Electron
     npm run desktop:build   # build only, no launch
 
-The shell spawns `dist/cli.js` in a PTY via `node` on PATH (or set
-`CLOUDCODE_NODE_EXECUTABLE` to its absolute path). Selecting a session
-restarts the PTY with that session ID.
+The shell spawns `dist/cli.js` in a PTY using the packaged Electron runtime's
+Node mode. `CLOUDCODE_NODE_EXECUTABLE` may override that runtime with an
+absolute Node path. Selecting a session restarts the PTY with that session ID;
+generation-scoped events prevent output from the previous PTY leaking into it.
 
 ## Release
 
