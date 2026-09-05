@@ -5,6 +5,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import "./style.css";
 import { terminalKeySequence } from "./terminalKeys.js";
+import { installImeCursorSync } from "./imePosition.js";
 import { VERSION } from "../../src/version.js";
 
 type Session = { id: string; firstMessage: string; timestamp: string; provider: string };
@@ -100,6 +101,7 @@ function App() {
     const fit = new FitAddon();
     instance.loadAddon(fit);
     instance.open(element);
+    const removeImeCursorSync = installImeCursorSync(instance, element);
     instance.attachCustomKeyEventHandler(event => {
       const sequence = terminalKeySequence(event);
       if (sequence === undefined) return true;
@@ -124,6 +126,7 @@ function App() {
     setTerminalReady(true);
     return () => {
       observer.disconnect();
+      removeImeCursorSync();
       input.dispose();
       removeData();
       removeExit();

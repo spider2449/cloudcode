@@ -14,6 +14,7 @@ const read = (path: string) => readFileSync(join(root, path), "utf8");
 
 const packageJson = JSON.parse(read("package.json")) as {
   version: string;
+  author: { name: string; email: string };
   bin: Record<string, string>;
   files: string[];
   scripts: Record<string, string>;
@@ -112,6 +113,11 @@ describe("packaging entry points", () => {
 });
 
 describe("desktop packaging", () => {
+  it("declares a maintainer email required by the Linux deb target", () => {
+    expect(packageJson.author.name).not.toBe("");
+    expect(packageJson.author.email).toMatch(/^[^@\s]+@[^@\s]+\.[^@\s]+$/);
+  });
+
   it("declares electron-builder with bundled CLI file list", () => {
     const pkg = JSON.parse(read("package.json")) as {
       devDependencies: Record<string, string>;
