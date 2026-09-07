@@ -13,6 +13,7 @@ export interface CompletionContext {
   registry: Map<string, Command>;
   providerNames(): string[];
   availableModels(): string[];
+  mcpServerNames(): string[];
   listFiles(): string[];
   refreshFiles?(): void;
 }
@@ -21,6 +22,7 @@ export interface LiveCompletionDependencies {
   registry(): Map<string, Command>;
   providerNames(): string[];
   availableModels(): string[];
+  mcpServerNames(): string[];
   listFiles(): string[];
   refreshFiles(): void;
 }
@@ -30,6 +32,7 @@ export function liveCompletionContext(deps: LiveCompletionDependencies): Complet
     get registry() { return deps.registry(); },
     providerNames: deps.providerNames,
     availableModels: deps.availableModels,
+    mcpServerNames: deps.mcpServerNames,
     listFiles: deps.listFiles,
     refreshFiles: deps.refreshFiles
   };

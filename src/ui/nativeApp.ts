@@ -129,7 +129,9 @@ export class App {
     this.git = new GitStatusPoller(props.cwd);
     this.completionCtx = liveCompletionContext({
       registry: () => this.registry, providerNames: () => Object.keys(this.props.providers),
-      availableModels: () => this.availableModels, listFiles: () => this.fileIndex.list(),
+      availableModels: () => this.availableModels,
+      mcpServerNames: () => Array.from(new Set([...Object.keys(this.mcpServers), ...this.mcpDisabled])),
+      listFiles: () => this.fileIndex.list(),
       refreshFiles: () => this.fileIndex.refresh()
     });
     this.inputBox = new InputBox(this.completionCtx, this.history);

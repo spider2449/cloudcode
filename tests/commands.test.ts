@@ -249,6 +249,15 @@ describe("/mcp", () => {
     expect(ctx.notice).toHaveBeenCalledWith("Usage: /mcp [disable|enable <name>]");
     expect(ctx.mcpSetEnabled).not.toHaveBeenCalled();
   });
+
+  it("completes subcommands and server names", () => {
+    const command = buildRegistry().get("mcp")!;
+    const completion = { mcpServerNames: () => ["gh", "docs"] } as never;
+    expect(command.completeArgs!("", completion)).toEqual(["disable", "enable"]);
+    expect(command.completeArgs!("disable ", completion)).toEqual(["disable gh", "disable docs"]);
+    expect(command.completeArgs!("enable d", completion)).toEqual(["enable docs"]);
+    expect(command.completeArgs!("disable gh extra", completion)).toEqual([]);
+  });
 });
 
 describe("/permissions list and clear", () => {

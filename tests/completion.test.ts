@@ -6,6 +6,8 @@ function ctx(overrides: Partial<CompletionContext> = {}): CompletionContext {
   return {
     registry: buildRegistry(),
     providerNames: () => ["anthropic", "local"],
+    availableModels: () => [],
+    mcpServerNames: () => [],
     listFiles: () => [],
     ...overrides
   };
@@ -89,6 +91,12 @@ describe("argument provider", () => {
   it("suggests provider names for /provider", () => {
     const s = getSuggestions("/provider lo", 12, ctx());
     expect(s.map(x => x.value)).toEqual(["local"]);
+  });
+
+  it("suggests MCP server names after /mcp disable", () => {
+    const s = getSuggestions("/mcp disable ", 13, ctx({ mcpServerNames: () => ["gh", "docs"] }));
+    expect(s.map(x => x.value)).toEqual(["disable gh", "disable docs"]);
+    expect(s[0]).toMatchObject({ replaceStart: 5, replaceEnd: 13 });
   });
 
   it("returns nothing for commands without completeArgs", () => {

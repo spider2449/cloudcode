@@ -442,10 +442,12 @@ const commands: Command[] = [
       }
       ctx.notice(await ctx.mcpSetEnabled(name, action === "enable"));
     },
-    completeArgs(prefix) {
+    completeArgs(prefix, cctx) {
       const trimmed = prefix.trimStart();
       if (!trimmed.includes(" ")) return ["disable", "enable"].filter(s => s.startsWith(trimmed));
-      return [];
+      const [action, fragment = "", ...rest] = trimmed.split(/\s+/);
+      if ((action !== "disable" && action !== "enable") || rest.length > 0) return [];
+      return cctx.mcpServerNames().filter(name => name.startsWith(fragment)).map(name => `${action} ${name}`);
     }
   },
   {
