@@ -76,6 +76,18 @@ export class DesktopShellHost {
     return this.git.status(this.cwd(workspaceId));
   }
 
+  async gitPush(workspaceId: string, setUpstreamBranch?: string): Promise<void> {
+    await this.git.push(this.cwd(workspaceId), setUpstreamBranch);
+  }
+
+  async gitPull(workspaceId: string): Promise<void> {
+    await this.git.pull(this.cwd(workspaceId));
+  }
+
+  async gitFetch(workspaceId: string): Promise<void> {
+    await this.git.fetch(this.cwd(workspaceId));
+  }
+
   gitService(): DesktopGitService { return this.git; }
 
   private describe(id: string): DesktopShellWorkspace {

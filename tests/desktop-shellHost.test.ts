@@ -59,6 +59,27 @@ describe("DesktopShellHost", () => {
     expect(observedCwd.toLowerCase()).toBe(project.toLowerCase());
   });
 
+  it("delegates push pull fetch scoped to the workspace", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cloudcode-shell-"));
+    roots.push(root);
+    const project = join(root, "project");
+    mkdirSync(project);
+    const seen: string[][] = [];
+    const host = new DesktopShellHost({
+      recentProjects: { load: () => [], save: () => {} },
+      gitRunner: async (args) => {
+        seen.push(args);
+        if (args[0] === "log") return { code: 0, stdout: "", stderr: "", truncated: false };
+        return { code: 0, stdout: "## main\0", stderr: "", truncated: false };
+      }
+    });
+    const workspace = host.openProject(project);
+    await host.gitPush(workspace.id);
+    await host.gitFetch(workspace.id);
+    expect(seen).toContainEqual(["push"]);
+    expect(seen).toContainEqual(["fetch", "--prune"]);
+  });
+
   it("sees sessions recorded by another process after construction", () => {
     const root = mkdtempSync(join(tmpdir(), "cloudcode-shell-"));
     roots.push(root);
