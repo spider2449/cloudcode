@@ -1,6 +1,13 @@
 import { defaultGitRunner, type GitRunner } from "../agent/gitReview.js";
 
 export interface DesktopGitFile { path: string; originalPath?: string; index: string; workingTree: string }
+export interface DesktopGitCommit {
+  hash: string;
+  shortHash: string;
+  author: string;
+  date: string;
+  subject: string;
+}
 export interface DesktopGitState {
   isGitRepo: boolean;
   branch?: string;
@@ -9,7 +16,23 @@ export interface DesktopGitState {
   behind: number;
   files: DesktopGitFile[];
   truncated: boolean;
+  recent: DesktopGitCommit[];
+  lastCommit?: DesktopGitCommit;
+  lastFetchedAt?: number;
   error?: string;
+}
+
+export function parseDesktopGitLog(output: string): DesktopGitCommit[] {
+  const commits: DesktopGitCommit[] = [];
+  for (const line of output.split("\n")) {
+    if (!line) continue;
+    const parts = line.split("\0");
+    if (parts.length < 5) continue;
+    const [hash, shortHash, author, date, subject] = parts as [string, string, string, string, string];
+    if (!hash || !shortHash) continue;
+    commits.push({ hash, shortHash, author, date, subject });
+  }
+  return commits;
 }
 
 function splitZero(output: string): string[] {
@@ -44,16 +67,34 @@ export function parseDesktopGitStatus(output: string, truncated = false): Deskto
     }
     files.push(file);
   }
-  return { isGitRepo: true, branch, upstream, ahead, behind, files, truncated };
+  return { isGitRepo: true, branch, upstream, ahead, behind, files, truncated, recent: [] };
 }
 
 export class DesktopGitService {
+  private readonly lastFetchedAtByCwd = new Map<string, number>();
+
   constructor(private readonly runner: GitRunner = defaultGitRunner) {}
+
+  async log(cwd: string, limit = 5): Promise<DesktopGitCommit[]> {
+    const count = Number.isInteger(limit) && limit > 0 && limit <= 20 ? limit : 5;
+    const result = await this.runner(
+      ["log", `-${count}`, "--format=%H%x00%h%x00%an%x00%ad%x00%s", "--date=short"],
+      cwd
+    );
+    if (result.code !== 0) return [];
+    return parseDesktopGitLog(result.stdout);
+  }
 
   async status(cwd: string): Promise<DesktopGitState> {
     const result = await this.runner(["status", "--porcelain=v1", "-z", "--branch", "--untracked-files=all"], cwd);
-    if (result.code !== 0) return { isGitRepo: false, ahead: 0, behind: 0, files: [], truncated: result.truncated, error: result.stderr.trim() || "Not a Git worktree." };
-    return parseDesktopGitStatus(result.stdout, result.truncated);
+    if (result.code !== 0) return { isGitRepo: false, ahead: 0, behind: 0, files: [], truncated: result.truncated, recent: [], error: result.stderr.trim() || "Not a Git worktree." };
+    const state = parseDesktopGitStatus(result.stdout, result.truncated);
+    const recent = await this.log(cwd);
+    state.recent = recent;
+    state.lastCommit = recent[0];
+    const fetchedAt = this.lastFetchedAtByCwd.get(cwd);
+    if (fetchedAt !== undefined) state.lastFetchedAt = fetchedAt;
+    return state;
   }
 
   async diff(cwd: string, path: string, staged: boolean): Promise<{ text: string; truncated: boolean; error?: string }> {

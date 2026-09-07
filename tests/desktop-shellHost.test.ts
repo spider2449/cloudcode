@@ -17,6 +17,7 @@ describe("DesktopShellHost", () => {
       ahead: 0,
       behind: 0,
       truncated: false,
+      recent: [],
       files: [
         { index: "M", workingTree: " ", path: "src/a.ts" },
         { index: " ", workingTree: "M", path: "src/b.ts" },
