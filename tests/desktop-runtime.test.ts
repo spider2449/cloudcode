@@ -17,4 +17,10 @@ describe("desktop runtime", () => {
   it("prefers an explicitly configured executable", () => {
     expect(resolveNodeExecutable({ platform: process.platform, execPath: process.execPath, env: { CLOUDCODE_NODE_EXECUTABLE: process.execPath } })).toBe(process.execPath);
   });
+
+  it("prefers Node on PATH to the Electron executable", () => {
+    const root = mkdtempSync(join(tmpdir(), "cloudcode-runtime-")); roots.push(root);
+    const node = join(root, "node.exe"); writeFileSync(node, "");
+    expect(resolveNodeExecutable({ platform: "win32", execPath: process.execPath, env: { PATH: root } })).toBe(node);
+  });
 });

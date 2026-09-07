@@ -399,10 +399,10 @@ or filesystem access outside a closed preload API.
     npm run desktop:start   # build (tsc + vite) and launch Electron
     npm run desktop:build   # build only, no launch
 
-The shell spawns `dist/cli.js` in a PTY using the packaged Electron runtime's
-Node mode. `CLOUDCODE_NODE_EXECUTABLE` may override that runtime with an
-absolute Node path. Selecting a session restarts the PTY with that session ID;
-generation-scoped events prevent output from the previous PTY leaking into it.
+The shell spawns `dist/cli.js` in a PTY using `node.exe` from `PATH` (or the
+`CLOUDCODE_NODE_EXECUTABLE` absolute-path override). Selecting a session
+restarts the PTY with that session ID; generation-scoped events prevent output
+from the previous PTY leaking into it.
 
 ## Release
 
