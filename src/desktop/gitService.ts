@@ -116,6 +116,22 @@ export class DesktopGitService {
     await this.requireOk(probe.code === 0 ? ["reset", "--mixed", "HEAD"] : ["rm", "-r", "--cached", "."], cwd);
   }
   async commit(cwd: string, message: string): Promise<void> { await this.requireOk(["commit", "-m", message], cwd); }
+  async push(cwd: string, setUpstreamBranch?: string): Promise<void> {
+    if (setUpstreamBranch) {
+      await this.requireOk(["push", "-u", "origin", setUpstreamBranch], cwd);
+    } else {
+      await this.requireOk(["push"], cwd);
+    }
+    this.lastFetchedAtByCwd.set(cwd, Date.now());
+  }
+  async pull(cwd: string): Promise<void> {
+    await this.requireOk(["pull", "--ff-only"], cwd);
+    this.lastFetchedAtByCwd.set(cwd, Date.now());
+  }
+  async fetch(cwd: string): Promise<void> {
+    await this.requireOk(["fetch", "--prune"], cwd);
+    this.lastFetchedAtByCwd.set(cwd, Date.now());
+  }
   async branches(cwd: string): Promise<string[]> {
     const result = await this.requireOk(["for-each-ref", "--format=%(refname:short)", "refs/heads"], cwd);
     return result.stdout.split(/\r?\n/).filter(Boolean);

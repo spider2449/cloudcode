@@ -51,4 +51,29 @@ describe("desktop Git service", () => {
     expect(state.branch).toBe("main");
     expect(state.ahead).toBe(1);
   });
+
+  it("pushes, pulls ff-only, and fetches with prune", async () => {
+    const calls: string[][] = [];
+    const runner: GitRunner = vi.fn(async (args) => {
+      calls.push(args);
+      return { code: 0, stdout: "", stderr: "", truncated: false };
+    });
+    const svc = new DesktopGitService(runner);
+    await svc.push("/repo");
+    await svc.pull("/repo");
+    await svc.fetch("/repo");
+    expect(calls).toContainEqual(["push"]);
+    expect(calls).toContainEqual(["pull", "--ff-only"]);
+    expect(calls).toContainEqual(["fetch", "--prune"]);
+  });
+
+  it("pushes with -u origin on untracked branches", async () => {
+    const calls: string[][] = [];
+    const runner: GitRunner = vi.fn(async (args) => {
+      calls.push(args);
+      return { code: 0, stdout: "", stderr: "", truncated: false };
+    });
+    await new DesktopGitService(runner).push("/repo", "my-branch");
+    expect(calls).toContainEqual(["push", "-u", "origin", "my-branch"]);
+  });
 });
