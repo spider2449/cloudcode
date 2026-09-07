@@ -31,10 +31,10 @@ declare global {
       gitCheckout(workspaceId: string, branch: string): Promise<void>;
       gitCreateBranch(workspaceId: string, branch: string): Promise<void>;
       startTerminal(workspaceId: string, sessionId: string | undefined, columns: number, rows: number, generation: string): Promise<void>;
+      drainTerminal(generation: string): Promise<string>;
       writeTerminal(data: string): Promise<void>;
       resizeTerminal(columns: number, rows: number): Promise<void>;
       closeApplication(): Promise<void>;
-      onTerminalData(listener: (payload: { generation: string; data: string }) => void): () => void;
       onTerminalExit(listener: (payload: { generation: string; exitCode: number }) => void): () => void;
     };
   }
@@ -112,9 +112,6 @@ function App() {
     terminal.current = instance;
     fitAddon.current = fit;
     const input = instance.onData(data => { void window.cloudcode.writeTerminal(data); });
-    const removeData = window.cloudcode.onTerminalData(payload => {
-      if (payload.generation === currentTerminalGeneration.current) instance.write(payload.data);
-    });
     const removeExit = window.cloudcode.onTerminalExit(({ generation, exitCode }) => {
       if (generation === currentTerminalGeneration.current) setTerminalExit(exitCode);
     });
@@ -128,7 +125,6 @@ function App() {
       observer.disconnect();
       removeImeCursorSync();
       input.dispose();
-      removeData();
       removeExit();
       instance.dispose();
       terminal.current = undefined;
@@ -154,9 +150,22 @@ function App() {
     fitAddon.current?.fit();
     const generation = `${active}:${terminalGeneration}:${Date.now()}`;
     currentTerminalGeneration.current = generation;
-    void window.cloudcode.startTerminal(active, sessionId, instance.cols, instance.rows, generation).catch(error => {
-      if (currentTerminalGeneration.current === generation) instance.writeln(`\r\n${error instanceof Error ? error.message : String(error)}`);
-    });
+    let disposed = false;
+    const drain = async () => {
+      try {
+        const output = await window.cloudcode.drainTerminal(generation);
+        if (!disposed && currentTerminalGeneration.current === generation && output !== "") instance.write(output);
+      } catch {
+        // A session restart can invalidate an in-flight drain request.
+      }
+    };
+    void window.cloudcode.startTerminal(active, sessionId, instance.cols, instance.rows, generation)
+      .then(drain)
+      .catch(error => {
+        if (currentTerminalGeneration.current === generation) instance.writeln(`\r\n${error instanceof Error ? error.message : String(error)}`);
+      });
+    const poll = window.setInterval(() => { void drain(); }, 50);
+    return () => { disposed = true; window.clearInterval(poll); };
   }, [active, activeSessions, terminalReady, terminalGeneration]);
 
   useEffect(() => {

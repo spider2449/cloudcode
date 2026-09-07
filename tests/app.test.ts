@@ -18,7 +18,11 @@ vi.mock("../src/engine/api.js", () => ({ makeClient: vi.fn() }));
 vi.mock("../src/agent/mcp.js", async () => {
   const actual = await vi.importActual<typeof import("../src/agent/mcp.js")>("../src/agent/mcp.js");
   // Keep tests hermetic: never read the developer's real ~/.cloudcode/mcp.json.
-  return { ...actual, loadMcpServers: vi.fn().mockReturnValue({}) };
+  return {
+    ...actual,
+    loadMcpServers: vi.fn().mockReturnValue({}),
+    loadMcpServersByScope: vi.fn().mockReturnValue({ user: {}, project: {} })
+  };
 });
 vi.mock("../src/engine/loop.js", async () => {
   const actual = await vi.importActual<typeof import("../src/engine/loop.js")>("../src/engine/loop.js");

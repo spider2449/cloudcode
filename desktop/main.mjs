@@ -19,6 +19,9 @@ const host = new DesktopShellHost();
 let window;
 let terminal;
 let terminalGeneration;
+let terminalOutput = "";
+
+const MAX_PENDING_TERMINAL_OUTPUT = 4 * 1024 * 1024;
 
 function send(channel, payload) {
   if (!window || window.isDestroyed() || window.webContents.isDestroyed()) return;
@@ -29,6 +32,7 @@ function stopTerminal() {
   if (!terminal) return;
   const active = terminal;
   terminal = undefined;
+  terminalOutput = "";
   try { active.kill(); } catch { /* the PTY may already have exited */ }
   // Electron running with ELECTRON_RUN_AS_NODE can outlive node-pty's normal
   // Windows termination path. Kill its process tree so session switches do
@@ -65,11 +69,7 @@ function startTerminal(workspaceId, sessionId, columns, rows, generation) {
     cliPath = resolveCliPath();
     executable = resolveNodeExecutable();
   } catch (err) {
-    // Report inside the terminal pane (the renderer fires startTerminal
-    // without awaiting, so throwing here would be an invisible rejection).
-    send("cloudcode:terminal-data", { generation, data: `\r\n${err instanceof Error ? err.message : err}\r\n` });
-    send("cloudcode:terminal-exit", { generation, exitCode: 1 });
-    return;
+    throw err;
   }
   const args = [cliPath];
   if (sessionId) args.push("--session", sessionId);
@@ -88,9 +88,10 @@ function startTerminal(workspaceId, sessionId, columns, rows, generation) {
   });
   terminal = spawned;
   terminalGeneration = generation;
+  terminalOutput = "";
   spawned.onData(data => {
     if (terminal !== spawned || terminalGeneration !== generation) return;
-    send("cloudcode:terminal-data", { generation, data });
+    terminalOutput = (terminalOutput + data).slice(-MAX_PENDING_TERMINAL_OUTPUT);
   });
   spawned.onExit(({ exitCode }) => {
     if (terminal !== spawned) return;
@@ -128,6 +129,12 @@ ipcMain.handle("cloudcode:git-branches", (_event, workspaceId) => host.gitServic
 ipcMain.handle("cloudcode:git-checkout", async (_event, workspaceId, branch) => host.gitService().checkout(host.cwd(requireString(workspaceId, "workspace ID")), requireBranchName(branch)));
 ipcMain.handle("cloudcode:git-create-branch", async (_event, workspaceId, branch) => host.gitService().createBranch(host.cwd(requireString(workspaceId, "workspace ID")), requireBranchName(branch)));
 ipcMain.handle("cloudcode:terminal-start", (_event, workspaceId, sessionId, columns, rows, generation) => startTerminal(requireString(workspaceId, "workspace ID"), requireOptionalString(sessionId, "session ID"), requireDimension(columns, "terminal columns"), requireDimension(rows, "terminal rows"), requireString(generation, "terminal generation")));
+ipcMain.handle("cloudcode:terminal-drain", (_event, generation) => {
+  if (requireString(generation, "terminal generation") !== terminalGeneration) return "";
+  const output = terminalOutput;
+  terminalOutput = "";
+  return output;
+});
 ipcMain.handle("cloudcode:terminal-write", (_event, data) => terminal?.write(requireString(data, "terminal data", true)));
 ipcMain.handle("cloudcode:terminal-resize", (_event, columns, rows) => {
   if (terminal) terminal.resize(Math.max(20, requireDimension(columns, "terminal columns")), Math.max(10, requireDimension(rows, "terminal rows")));

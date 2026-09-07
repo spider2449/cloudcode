@@ -15,14 +15,10 @@ contextBridge.exposeInMainWorld("cloudcode", {
   gitCheckout: (workspaceId, branch) => ipcRenderer.invoke("cloudcode:git-checkout", workspaceId, branch),
   gitCreateBranch: (workspaceId, branch) => ipcRenderer.invoke("cloudcode:git-create-branch", workspaceId, branch),
   startTerminal: (workspaceId, sessionId, columns, rows, generation) => ipcRenderer.invoke("cloudcode:terminal-start", workspaceId, sessionId, columns, rows, generation),
+  drainTerminal: generation => ipcRenderer.invoke("cloudcode:terminal-drain", generation),
   writeTerminal: data => ipcRenderer.invoke("cloudcode:terminal-write", data),
   resizeTerminal: (columns, rows) => ipcRenderer.invoke("cloudcode:terminal-resize", columns, rows),
   closeApplication: () => ipcRenderer.invoke("cloudcode:close-application"),
-  onTerminalData: listener => {
-    const callback = (_event, data) => listener(data);
-    ipcRenderer.on("cloudcode:terminal-data", callback);
-    return () => ipcRenderer.removeListener("cloudcode:terminal-data", callback);
-  },
   onTerminalExit: listener => {
     const callback = (_event, payload) => listener(payload);
     ipcRenderer.on("cloudcode:terminal-exit", callback);
