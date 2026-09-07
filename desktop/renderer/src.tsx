@@ -11,7 +11,8 @@ import { VERSION } from "../../src/version.js";
 type Session = { id: string; firstMessage: string; timestamp: string; provider: string };
 type Workspace = { id: string; name: string; sessions: Session[] };
 type GitFile = { path: string; originalPath?: string; index: string; workingTree: string };
-type GitState = { isGitRepo: boolean; branch?: string; upstream?: string; ahead: number; behind: number; files: GitFile[]; truncated: boolean; error?: string };
+type GitCommit = { hash: string; shortHash: string; author: string; date: string; subject: string };
+type GitState = { isGitRepo: boolean; branch?: string; upstream?: string; ahead: number; behind: number; files: GitFile[]; truncated: boolean; error?: string; lastCommit?: GitCommit; recent: GitCommit[]; lastFetchedAt?: number };
 type GitDiff = { text: string; truncated: boolean; error?: string };
 
 declare global {
@@ -30,6 +31,9 @@ declare global {
       gitBranches(workspaceId: string): Promise<string[]>;
       gitCheckout(workspaceId: string, branch: string): Promise<void>;
       gitCreateBranch(workspaceId: string, branch: string): Promise<void>;
+      gitPush(workspaceId: string, branch?: string): Promise<void>;
+      gitPull(workspaceId: string): Promise<void>;
+      gitFetch(workspaceId: string): Promise<void>;
       startTerminal(workspaceId: string, sessionId: string | undefined, columns: number, rows: number, generation: string): Promise<void>;
       drainTerminal(generation: string): Promise<string>;
       writeTerminal(data: string): Promise<void>;
@@ -179,7 +183,7 @@ function App() {
         setWorkspaces(current => current.map(item => item.id === active ? workspace : item));
         setGitStates(current => ({ ...current, [active]: git }));
       } catch (error) {
-        if (!disposed) setGitStates(current => ({ ...current, [active]: { isGitRepo: false, ahead: 0, behind: 0, files: [], truncated: false, error: error instanceof Error ? error.message : String(error) } }));
+        if (!disposed) setGitStates(current => ({ ...current, [active]: { isGitRepo: false, ahead: 0, behind: 0, files: [], truncated: false, recent: [], error: error instanceof Error ? error.message : String(error) } }));
       } finally {
         if (!disposed) timer = window.setTimeout(refresh, document.hidden ? 10_000 : 3_000);
       }
@@ -342,6 +346,9 @@ function GitInspector({ workspaceId, state, onRefresh, onClose }: { workspaceId:
   return <aside className="inspector"><div className="inspector-header"><div><span>GIT</span><strong>{state?.branch ?? "Repository"}{state && (state.ahead || state.behind) ? ` ↑${state.ahead} ↓${state.behind}` : ""}</strong></div><button aria-label="Close Git panel" className="icon-button" onClick={onClose}>×</button></div>{!state ? <p className="git-empty">Reading repository status…</p> : !state.isGitRepo ? <p className="git-empty">{state.error ?? "Not a Git repository."}</p> : <>
     {state.truncated && <p className="git-error">Status is truncated; some files may be missing.</p>}
     <div className="git-branch"><select aria-label="Current branch" value={state.branch ?? ""} disabled={busy} onChange={event => void mutate(() => window.cloudcode.gitCheckout(workspaceId, event.target.value))}>{branches.map(branch => <option key={branch}>{branch}</option>)}</select><input aria-label="New branch" placeholder="New branch" value={newBranch} onChange={event => setNewBranch(event.target.value)} /><button disabled={busy || !newBranch.trim()} onClick={() => void mutate(async () => { await window.cloudcode.gitCreateBranch(workspaceId, newBranch.trim()); setNewBranch(""); })}>Create</button></div>
+    <section className="git-sync"><div className="section-heading"><span>SYNC · {state.upstream ?? "untracked"}</span><button disabled={busy || !state.upstream} onClick={() => void mutate(() => window.cloudcode.gitFetch(workspaceId))}>Fetch</button></div><div className="git-sync-line"><span>↑{state.ahead} ahead · ↓{state.behind} behind · {formatRelativeTime(state.lastFetchedAt)}</span></div><div className="git-sync-actions"><button disabled={busy || (!state.upstream && !state.branch) || (state.ahead === 0 && !!state.upstream)} onClick={() => void mutate(() => state.upstream ? window.cloudcode.gitPush(workspaceId) : window.cloudcode.gitPush(workspaceId, state.branch))}>Push{state.ahead ? ` ↑${state.ahead}` : ""}</button><button disabled={busy || !state.upstream || state.behind === 0} onClick={() => void mutate(async () => { await window.cloudcode.gitFetch(workspaceId); await window.cloudcode.gitPull(workspaceId); })}>Pull{state.behind ? ` ↓${state.behind}` : ""}</button></div>{!state.upstream && <p className="git-hint">Untracked branch — Push sets upstream to origin/{state.branch}.</p>}</section>
+    {state.lastCommit ? <section className="git-current"><div className="section-heading"><span>CURRENT</span></div><div className="git-commit-line" title={`${state.lastCommit.hash} · ${state.lastCommit.author} · ${state.lastCommit.date}`}><span className="git-hash">{state.lastCommit.shortHash}</span><span>{state.lastCommit.subject}</span></div><div className="git-meta">{state.lastCommit.author} · {state.lastCommit.date}</div></section> : <p className="git-empty">No commits yet.</p>}
+    {state.recent.length > 1 && <section className="git-recent"><div className="section-heading"><span>RECENT · {state.recent.length}</span></div>{state.recent.slice(1).map(commit => <div className="git-commit-line" key={commit.hash} title={`${commit.hash} · ${commit.author} · ${commit.date}`}><span className="git-hash">{commit.shortHash}</span><span>{commit.subject}</span></div>)}</section>}
     <GitFileGroup title="STAGED CHANGES" files={staged} status="index" action="Unstage" disabled={busy} onSelect={file => setSelected({ file, staged: true })} onAction={file => void mutate(() => window.cloudcode.gitUnstage(workspaceId, gitFilePaths(file)))} onAll={() => void mutate(() => window.cloudcode.gitUnstageAll(workspaceId))} />
     <GitFileGroup title="CHANGES" files={changes} status="workingTree" action="Stage" disabled={busy} onSelect={file => setSelected({ file, staged: false })} onAction={file => void mutate(() => window.cloudcode.gitStage(workspaceId, gitFilePaths(file)))} onAll={() => void mutate(() => window.cloudcode.gitStageAll(workspaceId))} />
     {state.files.length === 0 && <p className="git-empty"><span className="status-dot" />Working tree is clean.</p>}
@@ -359,5 +366,13 @@ function GitFileGroup({ title, files, status, action, disabled, onSelect, onActi
 function gitStatusLabel(status: string): string { return status === "?" || status === "A" ? "A" : status === "D" ? "D" : status === "R" ? "R" : status === "U" ? "U" : "M"; }
 function gitFilePaths(file: GitFile): string[] { return file.originalPath ? [file.path, file.originalPath] : [file.path]; }
 function formatSessionDate(timestamp: string): string { const value = new Date(timestamp); return Number.isNaN(value.getTime()) ? "Saved" : new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(value); }
+function formatRelativeTime(epochMs: number | undefined): string {
+  if (!epochMs) return "never fetched yet";
+  const diff = Date.now() - epochMs;
+  if (diff < 60_000) return "just now";
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 60) return `${mins} min ago`;
+  return `${Math.floor(mins / 60)} h ago`;
+}
 
 createRoot(document.getElementById("root")!).render(<App />);
