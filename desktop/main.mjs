@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
+import { execFile } from "node:child_process";
 import * as pty from "node-pty";
 import { DesktopShellHost } from "../dist/desktop/shellHost.js";
 import { requireBranchName, requireDimension, requireOptionalString, requirePaths, requireString } from "../dist/desktop/ipcContract.js";
@@ -29,6 +30,12 @@ function stopTerminal() {
   const active = terminal;
   terminal = undefined;
   try { active.kill(); } catch { /* the PTY may already have exited */ }
+  // Electron running with ELECTRON_RUN_AS_NODE can outlive node-pty's normal
+  // Windows termination path. Kill its process tree so session switches do
+  // not leave stale CLI agents competing for the same persisted session.
+  if (process.platform === "win32" && active.pid) {
+    execFile("taskkill", ["/PID", String(active.pid), "/T", "/F"], { windowsHide: true }, () => {});
+  }
 }
 
 function resolveCliPath() {
