@@ -128,6 +128,9 @@ ipcMain.handle("cloudcode:git-commit", async (_event, workspaceId, message) => h
 ipcMain.handle("cloudcode:git-branches", (_event, workspaceId) => host.gitService().branches(host.cwd(requireString(workspaceId, "workspace ID"))));
 ipcMain.handle("cloudcode:git-checkout", async (_event, workspaceId, branch) => host.gitService().checkout(host.cwd(requireString(workspaceId, "workspace ID")), requireBranchName(branch)));
 ipcMain.handle("cloudcode:git-create-branch", async (_event, workspaceId, branch) => host.gitService().createBranch(host.cwd(requireString(workspaceId, "workspace ID")), requireBranchName(branch)));
+ipcMain.handle("cloudcode:git-push", async (_event, workspaceId, branch) => host.gitPush(requireString(workspaceId, "workspace ID"), branch === undefined ? undefined : requireBranchName(branch)));
+ipcMain.handle("cloudcode:git-pull", async (_event, workspaceId) => host.gitPull(requireString(workspaceId, "workspace ID")));
+ipcMain.handle("cloudcode:git-fetch", async (_event, workspaceId) => host.gitFetch(requireString(workspaceId, "workspace ID")));
 ipcMain.handle("cloudcode:terminal-start", (_event, workspaceId, sessionId, columns, rows, generation) => startTerminal(requireString(workspaceId, "workspace ID"), requireOptionalString(sessionId, "session ID"), requireDimension(columns, "terminal columns"), requireDimension(rows, "terminal rows"), requireString(generation, "terminal generation")));
 ipcMain.handle("cloudcode:terminal-drain", (_event, generation) => {
   if (requireString(generation, "terminal generation") !== terminalGeneration) return "";
