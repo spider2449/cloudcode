@@ -18,6 +18,14 @@ import { RunLimitError, validateRunLimits, type RunLimitKind, type RunLimits } f
 const MAX_TOKENS = 8192;
 const MAX_LOOP_TURNS = 100;
 
+// Fallback auto-compact threshold, mirroring the UI-owned
+// AUTO_COMPACT_THRESHOLD_PCT in ui/usageTracker.ts. The UI path compacts from
+// provider-reported usage after each result; this fallback covers providers
+// that never report usage (e.g. some OpenAI-compatible servers), where the UI
+// path can never fire and history would otherwise grow without bound. Lives
+// here rather than importing the UI constant: engine must not depend on ui.
+const FALLBACK_COMPACT_THRESHOLD_PCT = 80;
+
 export interface EngineOptions {
   client: MessagesClient;
   model: string;
@@ -187,6 +195,16 @@ export class EngineLoop {
           hitTurnLimit = false;
           break;
         }
+        // Usage-less providers never trigger the UI auto-compact, so bound
+        // history here before sending: a failed fallback must stop rather
+        // than keep firing oversized requests into a full context.
+        if (!signal.aborted) {
+          const fallback = await this.maybeFallbackCompact(usage !== undefined);
+          if (fallback === "failed") {
+            hitTurnLimit = false;
+            break;
+          }
+        }
         providerRequests++;
         const turn = await this.streamOnce(signal);
         addUsage(turn.usage);
@@ -261,6 +279,10 @@ export class EngineLoop {
           break;
         }
       }
+      // The final push above (either exit path) can itself cross the window:
+      // enforce the bound before reporting the result so the next turn
+      // starts small even when this one ended on a single huge turn.
+      if (!signal.aborted) await this.maybeFallbackCompact(usage !== undefined);
       if (hitTurnLimit) {
         // UI-only notice, like the max_tokens one above: the history stays
         // exactly what the model produced, but the user is told why the turn
@@ -314,6 +336,39 @@ export class EngineLoop {
     this.lastSnapshot = undefined;
     const snap = this.contextSnapshot();
     return snap.systemTokens + snap.toolsTokens + snap.messagesTokens;
+  }
+
+  /**
+   * Compact history when it approaches the context window but no provider
+   * usage has been observed (so the UI usage-driven auto-compact can never
+   * fire). Returns whether history was compacted; "failed" means the
+   * summarization request itself errored and the caller should stop rather
+   * than keep sending oversized requests.
+   */
+  private async maybeFallbackCompact(usageSeen: boolean): Promise<"compacted" | "skipped" | "failed"> {
+    if (usageSeen) return "skipped";
+    // The cached snapshot describes the last request sent, not the pushes
+    // since: measure live messages instead, or a just-finished huge turn
+    // would look small until the next request is built.
+    this.lastSnapshot = undefined;
+    const snap = this.contextSnapshot();
+    const total = snap.systemTokens + snap.toolsTokens + snap.messagesTokens;
+    const window = this.opts.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
+    if (total * 100 < FALLBACK_COMPACT_THRESHOLD_PCT * window) return "skipped";
+    try {
+      await this.compact(this.opts.client, this.model);
+      // UI-only notice, like the max_tokens one in runTurn: history already
+      // holds the compacted summary, nothing is pushed here.
+      this.opts.onMessage(assistantMessage([
+        { type: "text", text: "\n[Context was getting full — compacted automatically.]" }
+      ]));
+      return "compacted";
+    } catch (err) {
+      this.opts.onMessage(assistantMessage([
+        { type: "text", text: `\n[Auto-compact failed: ${err instanceof Error ? err.message : String(err)}]` }
+      ]));
+      return "failed";
+    }
   }
 
   private async streamOnce(signal: AbortSignal): Promise<StreamedTurn> {
