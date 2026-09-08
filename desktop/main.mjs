@@ -77,6 +77,7 @@ function startTerminal(workspaceId, sessionId, columns, rows, generation) {
     ...process.env,
     TERM: "xterm-256color",
     COLORTERM: "truecolor",
+    CLOUDCODE_DESKTOP: "1",
     ...(executable === process.execPath ? { ELECTRON_RUN_AS_NODE: "1" } : {})
   };
   const spawned = pty.spawn(executable, args, {

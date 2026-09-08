@@ -92,8 +92,10 @@ describe("InlineRenderer", () => {
     const r = new InlineRenderer(true);
     const out = r.frame(new Buffer(), baseBottom(), theme, size);
     // Footer starts at row 21; two border rows put the input on row 23.
-    // Its zero-based display column 2 maps to terminal column 3.
-    expect(out.endsWith("\x1b[23;3H")).toBe(true);
+    // Its zero-based display column 2 maps to terminal column 3. The input
+    // cell OSC trails the park sequence with matching zero-based coords.
+    expect(out).toContain("\x1b[23;3H");
+    expect(out).toContain("\x1b]6973;input;22;2\x07");
   });
 
   it("repaints the footer every frame (status bar redrawn even with no new transcript rows)", () => {
@@ -542,8 +544,71 @@ describe("InlineRenderer (simple mode, no scroll region)", () => {
     const r = new InlineRenderer(false);
     const buf = new Buffer();
     buf.append({ kind: "user", text: "hi" });
-    r.frame(buf, baseBottom(), theme, size);
+    r.frame(buf, baseBottom(), theme, { rows: size.rows, columns: 100 });
     const out = r.frame(buf, baseBottom(), theme, { rows: size.rows, columns: 100 });
     expect(out).not.toContain("\x1b[2J\x1b[3J\x1b[H");
+  });
+
+  it("parks the cursor with absolute addressing once the footer is bottom-anchored", () => {
+    // After enough transcript rows have scrolled, the footer is pinned to
+    // the bottom edge, so the input cursor cell is known absolutely: with
+    // the 4-row test footer on a 24-row screen and the cursor on footer row
+    // index 2, that is row 23 (1-based), column 3. Absolute placement makes
+    // the cursor self-healing: it no longer depends on where the cursor
+    // happened to be parked (relative moves inherit any out-of-band drift,
+    // which strands IME/composition anchors — e.g. CJK input appearing in
+    // the wrong corner of the embedded desktop terminal).
+    const r = new InlineRenderer(false);
+    const buf = new Buffer();
+    for (let i = 0; i < 30; i++) buf.append({ kind: "notice", text: `row ${i}` });
+    const out = r.frame(buf, baseBottom(), theme, size);
+    expect(out).toContain("\x1b[23;3H");
+    expect(out.endsWith("\x1b]6973;input;22;2\x07")).toBe(true);
+  });
+
+  it("erases the previous footer with absolute addressing while still anchored", () => {
+    const r = new InlineRenderer(false);
+    const buf = new Buffer();
+    for (let i = 0; i < 30; i++) buf.append({ kind: "notice", text: `row ${i}` });
+    r.frame(buf, baseBottom(), theme, size);
+    const out = r.frame(buf, baseBottom(), theme, size);
+    // Previous 4-row block occupied rows 21..24: jump straight there instead
+    // of walking up from a possibly-drifted cursor.
+    expect(out).toContain("\x1b[21;1H\x1b[0J");
+    expect(out).toContain("\x1b[23;3H");
+    expect(out.endsWith("\x1b]6973;input;22;2\x07")).toBe(true);
+  });
+
+  it("keeps relative cursor moves while the footer is not bottom-anchored", () => {
+    // Fresh screen, almost no content: the footer floats mid-screen, so its
+    // absolute position is unknowable and relative moves must stay.
+    const r = new InlineRenderer(false);
+    const buf = new Buffer();
+    buf.append({ kind: "user", text: "hi" });
+    r.frame(buf, baseBottom(), theme, size);
+    const out = r.frame(buf, baseBottom(), theme, size);
+    expect(out).toContain("\x1b[2A\r\x1b[0J");
+    expect(out.endsWith("\x1b[1A\r\x1b[2C")).toBe(true);
+  });
+
+  it("publishes the authoritative input cell once bottom-anchored", () => {
+    const r = new InlineRenderer(false);
+    const buf = new Buffer();
+    for (let i = 0; i < 30; i++) buf.append({ kind: "notice", text: `row ${i}` });
+    const out = r.frame(buf, baseBottom(), theme, size);
+    expect(out).toContain("\x1b]6973;input;22;2\x07");
+  });
+
+  it("publishes no input cell while the input is hidden", () => {
+    const hidden = baseBottom({
+      overlay: "none",
+      inputRender: {
+        borderRows: [], contentRows: [], menuRows: [], hintRow: null,
+        totalRows: 0, cursorRow: 0, cursorColumn: 0
+      }
+    });
+    const r = new InlineRenderer(false);
+    const out = r.frame(new Buffer(), hidden, theme, size);
+    expect(out).not.toContain("6973");
   });
 });

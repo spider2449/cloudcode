@@ -48,6 +48,17 @@ interface FooterRender {
 }
 
 /**
+ * OSC carrying the authoritative input cell (zero-based screen row/column)
+ * for the desktop renderer to anchor IME UI deterministically. The renderer
+ * sniffs it from the stream ConPTY passes through verbatim; xterm.js ignores
+ * unknown OSCs, so emitting it is harmless everywhere else. Emitted only
+ * when the frame actually parks the cursor (hidden input has no cell).
+ */
+function inputCellOsc(row: number, col: number): string {
+  return `\x1b]6973;input;${row};${col}\x07`;
+}
+
+/**
  * Claude Code-style inline renderer with a pinned-bottom footer. The
  * transcript lives in a terminal scroll region (rows 1..scrollBottom) that
  * the terminal itself scrolls, pushing lines that leave the top into native
@@ -73,7 +84,17 @@ export class InlineRenderer {
   // Simple-mode (non-scroll-region) state: how many rows the previously
   // printed footer occupied, so the next frame can erase exactly that much
   // before reprinting, and whether a frame has been printed yet.
+  //
+  // simplePrintedRows/simpleAnchored track whether cumulative content has
+  // filled the screen: once it has, the footer is pinned to the bottom edge
+  // and its rows (including the input cursor cell) are known absolutely.
+  // Absolute placement makes the cursor self-healing -- relative moves walk
+  // from wherever the cursor happens to be parked, so any out-of-band drift
+  // (e.g. terminal resize reflow between frames) is inherited forever and
+  // strands cursor-anchored UI such as IME/composition in the wrong corner.
   private footerHeight = 0;
+  private simplePrintedRows = 0;
+  private simpleAnchored = false;
   // Row where the real cursor was parked within the previous simple-mode
   // block. It normally points at the input marker rather than the last row.
   private simpleCursorRow = 0;
@@ -280,6 +301,7 @@ export class InlineRenderer {
     out += cursorTo(scrollBottom + 1, 1) + ERASE_DOWN + footer.rows.join("\r\n");
     if (footer.cursor) {
       out += cursorTo(scrollBottom + 1 + footer.cursor.row, footer.cursor.column + 1);
+      out += inputCellOsc(scrollBottom + footer.cursor.row, footer.cursor.column);
     }
     return out;
   }
@@ -299,7 +321,7 @@ export class InlineRenderer {
     size: { rows: number; columns: number },
     footer: FooterRender
   ): string {
-    const { columns } = size;
+    const { columns, rows } = size;
     let out = "";
 
     // Column-width changes are corrected by nativeApp.ts's debounced
@@ -307,19 +329,28 @@ export class InlineRenderer {
     // as the scroll-region path); an immediate clear here on every in-storm
     // frame would multiply that into one clear per resize event.
     this.lastColumnsSimple = columns;
+    const anchoredBefore = this.simpleAnchored;
     if (!this.simpleFirstFrame) {
-      // The previous frame's footer was printed via join("\r\n") with no
-      // trailing newline, so the cursor is parked on the footer's LAST row
-      // (at whatever column that line's text ended on) -- only
-      // footerHeight-1 rows separate it from the footer's first row, and
-      // it's not at column 1. Moving up the full footerHeight overshoots by
-      // one row, and erasing without returning to column 1 first only wipes
-      // part of a line: either bug leaves stale content behind or wipes the
-      // last transcript line too, creeping the footer up by one row/frame.
-      out += cursorUp(this.simpleCursorRow) + "\r" + ERASE_DOWN;
+      if (anchoredBefore) {
+        // The previous block provably occupied the bottom footerHeight rows:
+        // jump straight to its first row instead of walking up from wherever
+        // the cursor happens to be parked.
+        out += cursorTo(rows - this.footerHeight + 1, 1) + ERASE_DOWN;
+      } else {
+        // The previous frame's footer was printed via join("\r\n") with no
+        // trailing newline, so the cursor is parked on the footer's LAST row
+        // (at whatever column that line's text ended on) -- only
+        // footerHeight-1 rows separate it from the footer's first row, and
+        // it's not at column 1. Moving up the full footerHeight overshoots by
+        // one row, and erasing without returning to column 1 first only wipes
+        // part of a line: either bug leaves stale content behind or wipes the
+        // last transcript line too, creeping the footer up by one row/frame.
+        out += cursorUp(this.simpleCursorRow) + "\r" + ERASE_DOWN;
+      }
     }
 
     const staticRows = buffer.takeCommitRows(columns, theme);
+    this.simplePrintedRows += staticRows.length;
     out += staticRows.map(r => r + "\r\n").join("");
 
     // thinkingText/streamingText live in the footer, not the committed
@@ -338,13 +369,23 @@ export class InlineRenderer {
     if (pad > 0) out += "\r\n".repeat(pad);
     out += footer.rows.join("\r\n");
     this.footerHeight = pad + footer.rows.length;
+    // Bottom-anchored once cumulative content fills the screen: the block
+    // ends at the last screen row, so the input cell is known absolutely
+    // (pad cancels out: block top + pad + cursor row == rows - F + cursor).
+    const anchoredNow = this.simplePrintedRows + this.footerHeight >= rows;
     if (footer.cursor) {
-      const rowsBelowCursor = footer.rows.length - 1 - footer.cursor.row;
-      out += cursorUp(rowsBelowCursor) + "\r" + cursorForward(footer.cursor.column);
+      if (anchoredNow) {
+        out += cursorTo(rows - footer.rows.length + 1 + footer.cursor.row, footer.cursor.column + 1);
+        out += inputCellOsc(rows - footer.rows.length + footer.cursor.row, footer.cursor.column);
+      } else {
+        const rowsBelowCursor = footer.rows.length - 1 - footer.cursor.row;
+        out += cursorUp(rowsBelowCursor) + "\r" + cursorForward(footer.cursor.column);
+      }
       this.simpleCursorRow = pad + footer.cursor.row;
     } else {
       this.simpleCursorRow = this.footerHeight - 1;
     }
+    this.simpleAnchored = anchoredNow;
     this.simpleFirstFrame = false;
     return out;
   }
@@ -360,6 +401,8 @@ export class InlineRenderer {
     this.footerHeight = 0;
     this.simpleCursorRow = 0;
     this.lastColumnsSimple = -1;
+    this.simplePrintedRows = 0;
+    this.simpleAnchored = false;
   }
 
   finalize(): string {
@@ -380,6 +423,8 @@ export class InlineRenderer {
     this.footerHeight = 0;
     this.simpleCursorRow = 0;
     this.lastColumnsSimple = -1;
+    this.simplePrintedRows = 0;
+    this.simpleAnchored = false;
     return (this.useScrollRegion ? RESET_SCROLL_REGION : eraseFooter) + "\r\n";
   }
 }

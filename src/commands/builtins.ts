@@ -173,12 +173,16 @@ export async function applyConfigValue(ctx: CommandContext, key: ConfigKey, valu
   ctx.notice(`${key} = ${value} (saved)`);
 }
 
+export function isDesktopGui(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.CLOUDCODE_DESKTOP === "1";
+}
+
 const commands: Command[] = [
   {
     name: "help",
     description: "Show available commands",
     async run(ctx) {
-      const lines = commands.map(c => `/${c.name} — ${c.description}`).join("\n");
+      const lines = visibleCommands().map(c => `/${c.name} — ${c.description}`).join("\n");
       ctx.notice(lines);
     }
   },
@@ -538,6 +542,11 @@ const commands: Command[] = [
   }
 ];
 
-export function buildRegistry(): Map<string, Command> {
-  return new Map(commands.map(c => [c.name, c]));
+function visibleCommands(env: NodeJS.ProcessEnv = process.env): Command[] {
+  if (isDesktopGui(env)) return commands.filter(c => c.name !== "exit");
+  return commands;
+}
+
+export function buildRegistry(env: NodeJS.ProcessEnv = process.env): Map<string, Command> {
+  return new Map(visibleCommands(env).map(c => [c.name, c]));
 }
