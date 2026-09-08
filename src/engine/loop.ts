@@ -1,7 +1,8 @@
 import type { EngineMessage, ContentBlock, Usage } from "./messages.js";
 import { textDelta, thinkingDelta, assistantMessage, errorResult, limitMessage, toolResultMessage } from "./messages.js";
 import type { FileMutationObserver, ToolDef } from "./tools/types.js";
-import type { MessagesClient } from "./api.js";
+import type { MessagesClient, ContextManagementConfig } from "./api.js";
+import { CONTEXT_MANAGEMENT_BETA } from "./api.js";
 import type { PermissionMode } from "../agent/session.js";
 import type { PermissionStore } from "../agent/permissionStore.js";
 import type { NetworkPolicy } from "../agent/networkPolicy.js";
@@ -25,6 +26,16 @@ const MAX_LOOP_TURNS = 100;
 // path can never fire and history would otherwise grow without bound. Lives
 // here rather than importing the UI constant: engine must not depend on ui.
 const FALLBACK_COMPACT_THRESHOLD_PCT = 80;
+
+export const DEFAULT_CONTEXT_MANAGEMENT: ContextManagementConfig = {
+  edits: [{
+    type: "clear_tool_uses_20250919",
+    trigger: { type: "input_tokens", value: 100_000 },
+    keep: { type: "tool_uses", value: 3 },
+    clear_at_least: { type: "input_tokens", value: 5_000 },
+    clear_tool_inputs: false,
+  }],
+};
 
 export interface EngineOptions {
   client: MessagesClient;
@@ -55,6 +66,8 @@ export interface EngineOptions {
   effort?: EffortLevel;
   contextWindow?: number;
   runLimits?: RunLimits;
+  /** Server-side clear_tool_uses config; false opts out. Defaults to DEFAULT_CONTEXT_MANAGEMENT. */
+  contextManagement?: ContextManagementConfig | false;
   onMessage(msg: EngineMessage): void;
   requestPermission(toolName: string, input: Record<string, unknown>): Promise<boolean>;
 }
@@ -415,7 +428,13 @@ export class EngineLoop {
       max_tokens: MAX_TOKENS + headroom,
       ...(effectiveEffort === undefined
         ? { thinking: { type: "disabled" as const } }
-        : { thinking: { type: "adaptive" as const }, output_config: { effort: effectiveEffort } })
+        : { thinking: { type: "adaptive" as const }, output_config: { effort: effectiveEffort } }),
+      ...(this.opts.contextManagement === false
+        ? {}
+        : {
+            betas: [CONTEXT_MANAGEMENT_BETA],
+            context_management: this.opts.contextManagement ?? DEFAULT_CONTEXT_MANAGEMENT,
+          })
     };
     this.lastSnapshot = {
       systemTokens: estimate(this.systemPrompt),
