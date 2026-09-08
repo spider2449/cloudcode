@@ -3,7 +3,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-vi.mock("../src/engine/api.js", () => ({ makeClient: vi.fn() }));
+vi.mock("../src/engine/api.js", async () => {
+  const actual = await vi.importActual<typeof import("../src/engine/api.js")>("../src/engine/api.js");
+  return { ...actual, makeClient: vi.fn() };
+});
 
 import { makeClient } from "../src/engine/api.js";
 import { AgentSession } from "../src/agent/session.js";

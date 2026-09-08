@@ -171,6 +171,21 @@ describe("makeOpenAIClient", () => {
     expect(body.tools).toBeUndefined();
   });
 
+  it("drops betas and context_management before sending to OpenAI", async () => {
+    const fetchMock = mockFetch([{ choices: [{ delta: {}, finish_reason: "stop" }] }]);
+    vi.stubGlobal("fetch", fetchMock);
+    const client = makeOpenAIClient({ baseUrl: "https://api.example.com/v1", apiKey: "k" });
+    await collect(client, {
+      ...baseReq,
+      betas: ["context-management-2025-06-27"],
+      context_management: { edits: [{ type: "clear_tool_uses_20250919", trigger: { type: "input_tokens", value: 100_000 }, keep: { type: "tool_uses", value: 3 } }] },
+    });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(body).not.toHaveProperty("betas");
+    expect(body).not.toHaveProperty("context_management");
+  });
+
   it("throws on a non-ok response", async () => {
     const fetchMock = vi.fn(async () => ({ ok: false, status: 404, body: null, text: async () => "not found" }));
     vi.stubGlobal("fetch", fetchMock);

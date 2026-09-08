@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
 
-vi.mock("../src/engine/api.js", () => ({ makeClient: vi.fn() }));
+vi.mock("../src/engine/api.js", async () => {
+  const actual = await vi.importActual<typeof import("../src/engine/api.js")>("../src/engine/api.js");
+  return { ...actual, makeClient: vi.fn() };
+});
 
 import { makeClient } from "../src/engine/api.js";
 import { runPrint } from "../src/printMode.js";

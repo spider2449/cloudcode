@@ -6,7 +6,10 @@ import { SessionIndex } from "../src/agent/sessionIndex.js";
 vi.mock("../src/agent/models.js", () => ({
   fetchModels: vi.fn().mockResolvedValue(["model-a", "model-b"])
 }));
-vi.mock("../src/engine/api.js", () => ({ makeClient: vi.fn() }));
+vi.mock("../src/engine/api.js", async () => {
+  const actual = await vi.importActual<typeof import("../src/engine/api.js")>("../src/engine/api.js");
+  return { ...actual, makeClient: vi.fn() };
+});
 vi.mock("../src/agent/mcp.js", async () => {
   const actual = await vi.importActual<typeof import("../src/agent/mcp.js")>("../src/agent/mcp.js");
   // Keep tests hermetic: never read the developer's real ~/.cloudcode/mcp.json.
