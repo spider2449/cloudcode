@@ -3,6 +3,7 @@ import type { PermissionMode } from "../agent/session.js";
 import { type PermissionStore, isCompoundCommand } from "../agent/permissionStore.js";
 import { matchNetworkStorage, networkRememberTargetForPath, type NetworkStorageRule } from "../agent/networkStorage.js";
 import { memoryDir, userMemoryFile } from "./memoryPaths.js";
+import { configDir } from "../agent/providers.js";
 
 const READ_ONLY = new Set(["Read", "Glob", "Grep"]);
 const EDIT_TOOLS = new Set(["Write", "Edit"]);
@@ -78,17 +79,27 @@ function isInsideCwd(filePath: string, cwd: string): boolean {
 }
 
 /**
- * True for cloudcode-owned memory locations: the current project's auto-memory
- * directory and the global user-instructions file. Both live outside cwd by
- * construction, so without this exemption every memory write would force an
- * "ask" even under acceptEdits/bypassPermissions — yet memory is cloudcode's
- * own workspace, not the rest of the filesystem the confinement exists to
- * protect. Scoped to *this project's* memory dir (not every project's) and
- * resolved on both sides so ".." cannot masquerade. Memory paths otherwise
- * follow normal mode logic exactly like inside-cwd paths.
+ * True for cloudcode-owned locations under the user config dir (~/.cloudcode):
+ * the current project's auto-memory directory, the global user-instructions
+ * file, and every other program workspace path (sessions, skills, tasks,
+ * maintenance, audit, etc.). All live outside cwd by construction, so without
+ * this exemption every program file access would force an "ask" even under
+ * acceptEdits/bypassPermissions — yet this dir is cloudcode's own workspace,
+ * not the rest of the filesystem the confinement exists to protect. Resolved
+ * on both sides so ".." cannot masquerade. Owned paths otherwise follow
+ * normal mode logic exactly like inside-cwd paths.
+ *
+ * Sensitive credential files (credentials.json, providers.json) are excluded
+ * and keep the normal outside-cwd confinement, since auto-allowing reads of
+ * API keys and OAuth tokens would widen the data-exfiltration path the cwd
+ * guard exists to close.
  */
 function isMemoryLocation(rawPath: string, cwd: string): boolean {
   const target = resolve(cwd, rawPath);
+  const base = resolve(configDir());
+  if (target === resolve(base, "credentials.json")) return false;
+  if (target === resolve(base, "providers.json")) return false;
+  if (target === base || target.startsWith(base + sep)) return true;
   if (target === resolve(userMemoryFile())) return true;
   const root = resolve(memoryDir(cwd));
   return target === root || target.startsWith(root + sep);
@@ -114,9 +125,9 @@ export function decidePermission(
     if (ruling === "deny") return "deny";
     networkAllows = ruling === "allow";
   }
-  // cloudcode-owned memory paths (auto-memory dir, user CLOUDCODE.md) are
-  // treated as inside-cwd for every confinement check below; see
-  // isMemoryLocation. A store deny rule for them still wins later.
+  // cloudcode-owned paths (everything under ~/.cloudcode except sensitive
+  // credential files) are treated as inside-cwd for every confinement check
+  // below; see isMemoryLocation. A store deny rule for them still wins later.
   const memoryAllows = scope !== undefined && isMemoryLocation(scope.path, cwd);
   // acceptEdits/bypassPermissions auto-allow edits, but only inside cwd — a
   // write outside cwd always needs an explicit human "ask" (or a remembered

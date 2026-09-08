@@ -365,7 +365,7 @@ The auto-memory system creates and maintains memory files under `~/.cloudcode/pr
 
 User-level instructions (`~/.cloudcode/CLOUDCODE.md`) are now loaded at startup in addition to the project-level `./CLAUDE.md`, giving you persistent settings and preferences across all projects.
 
-Memory locations (the auto-memory folder and `~/.cloudcode/CLOUDCODE.md`) count as cloudcode's own workspace rather than "outside the project": reads are always allowed there, and writes follow your permission mode exactly like project files instead of forcing an extra confirmation.
+Everything under `~/.cloudcode/` (sessions, skills, memory, tasks, etc.) counts as cloudcode's own workspace rather than "outside the project": reads are always allowed there, and writes follow your permission mode exactly like project files instead of forcing an extra confirmation. The only exceptions are sensitive credential files (`~/.cloudcode/credentials.json`, `~/.cloudcode/providers.json`), which keep the normal outside-project confirmation.
 
 ## Themes
 

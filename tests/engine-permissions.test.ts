@@ -242,13 +242,13 @@ describe("memory file permissions", () => {
     expect(decidePermission("Read", { file_path: USER_MD }, "default", store, CWD)).toBe("allow");
   });
 
-  it("another project's memory dir is not exempted", () => {
+  it("another project's memory dir is also exempted (whole config dir is owned)", () => {
     const other = join(configDir(), "projects", "F--some-other-project", "memory");
-    expect(decidePermission("Write", { file_path: join(other, "topic.md") }, "bypassPermissions", freshStore(), CWD)).toBe("ask");
+    expect(decidePermission("Write", { file_path: join(other, "topic.md") }, "bypassPermissions", freshStore(), CWD)).toBe("allow");
   });
 
-  it("a .. path that climbs out of the memory dir is not exempted", () => {
-    const escape = join(MEM, "..", "elsewhere", "f.md");
+  it("a .. path that climbs out of the config dir is not exempted", () => {
+    const escape = join(configDir(), "..", "elsewhere", "f.md");
     expect(decidePermission("Write", { file_path: escape }, "bypassPermissions", freshStore(), CWD)).toBe("ask");
   });
 
@@ -258,8 +258,42 @@ describe("memory file permissions", () => {
     expect(decidePermission("Write", { file_path: join(MEM, "topic.md") }, "acceptEdits", store, CWD)).toBe("deny");
   });
 
-  it("unrelated files next to the memory install are not exempted", () => {
-    expect(decidePermission("Read", { file_path: userMemoryFile() + ".bak" }, "bypassPermissions", freshStore(), CWD)).toBe("ask");
+  it("a sibling path that only shares a string prefix is not exempted", () => {
+    expect(decidePermission("Read", { file_path: configDir() + "-evil" + "/f.md" }, "bypassPermissions", freshStore(), CWD)).toBe("ask");
+  });
+});
+
+describe("cloudcode-owned config dir permissions", () => {
+  const SESS = join(configDir(), "sessions", "s.jsonl");
+  const SKILL = join(configDir(), "skills", "my-skill", "SKILL.md");
+  const CRED = join(configDir(), "credentials.json");
+  const PROV = join(configDir(), "providers.json");
+
+  it("reads and searches inside ~/.cloudcode are allowed in default mode", () => {
+    const store = freshStore();
+    expect(decidePermission("Read", { file_path: SESS }, "default", store, CWD)).toBe("allow");
+    expect(decidePermission("Grep", { pattern: "x", path: join(configDir(), "sessions") }, "default", store, CWD)).toBe("allow");
+    expect(decidePermission("Glob", { pattern: "*", path: join(configDir(), "skills") }, "default", store, CWD)).toBe("allow");
+  });
+
+  it("writes inside ~/.cloudcode follow mode like inside-cwd", () => {
+    expect(decidePermission("Write", { file_path: SESS }, "acceptEdits", freshStore(), CWD)).toBe("allow");
+    expect(decidePermission("Write", { file_path: SESS }, "bypassPermissions", freshStore(), CWD)).toBe("allow");
+    expect(decidePermission("Write", { file_path: SESS }, "default", freshStore(), CWD)).toBe("ask");
+    expect(decidePermission("Write", { file_path: SKILL }, "acceptEdits", freshStore(), CWD)).toBe("allow");
+  });
+
+  it("sensitive files inside ~/.cloudcode are still confined", () => {
+    expect(decidePermission("Read", { file_path: CRED }, "default", freshStore(), CWD)).toBe("ask");
+    expect(decidePermission("Read", { file_path: CRED }, "bypassPermissions", freshStore(), CWD)).toBe("ask");
+    expect(decidePermission("Read", { file_path: PROV }, "bypassPermissions", freshStore(), CWD)).toBe("ask");
+    expect(decidePermission("Write", { file_path: CRED }, "acceptEdits", freshStore(), CWD)).toBe("ask");
+  });
+
+  it("a remembered deny rule for a ~/.cloudcode path still wins", () => {
+    const store = freshStore();
+    store.remember("Write", SESS, "deny");
+    expect(decidePermission("Write", { file_path: SESS }, "acceptEdits", store, CWD)).toBe("deny");
   });
 });
 
