@@ -2,6 +2,21 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { ProviderConfig } from "../agent/providers.js";
 import { makeOpenAIClient } from "./openaiApi.js";
 
+export interface ContextManagementEdit {
+  type: "clear_tool_uses_20250919";
+  trigger: { type: "input_tokens"; value: number };
+  keep: { type: "tool_uses"; value: number };
+  clear_at_least?: { type: "input_tokens"; value: number };
+  exclude_tools?: string[];
+  clear_tool_inputs?: false;
+}
+
+export interface ContextManagementConfig {
+  edits: ContextManagementEdit[];
+}
+
+export const CONTEXT_MANAGEMENT_BETA = "context-management-2025-06-27";
+
 export interface StreamRequest {
   model: string;
   system: string | Array<{ type: "text"; text: string; cache_control?: { type: "ephemeral" } }>;
@@ -10,6 +25,8 @@ export interface StreamRequest {
   max_tokens: number;
   thinking?: { type: "adaptive" } | { type: "disabled" };
   output_config?: { effort: "low" | "medium" | "high" };
+  betas?: string[];
+  context_management?: ContextManagementConfig;
 }
 
 export interface MessagesClient {
@@ -39,7 +56,11 @@ export function makeClient(cfg: ProviderConfig, auth?: ClientAuth): MessagesClie
   });
   return {
     async *create(req, signal) {
-      const stream = await anthropic.messages.create(
+      // Per-request betas (e.g. context-management) ride in the request body;
+      // the SDK merges them with defaultHeaders (OAuth) automatically.
+      const hasBetas = req.betas !== undefined && req.betas.length > 0;
+      const api = hasBetas ? anthropic.beta.messages : anthropic.messages;
+      const stream = await api.create(
         { ...req, stream: true } as never,
         { signal }
       );
