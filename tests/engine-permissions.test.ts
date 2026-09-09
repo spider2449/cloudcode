@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { decidePermission, hostScope, classifyPath } from "../src/engine/permissions.js";
+import { decidePermission, hostScope, classifyPath, extractBashPaths } from "../src/engine/permissions.js";
 import { PermissionStore } from "../src/agent/permissionStore.js";
 import { configDir } from "../src/agent/providers.js";
 import { memoryDir, userMemoryFile } from "../src/engine/memoryPaths.js";
@@ -19,8 +19,8 @@ function freshStore(): PermissionStore {
 }
 
 describe("decidePermission", () => {
-  it("bypassPermissions allows everything", () => {
-    expect(decidePermission("Bash", { command: "rm -rf /" }, "bypassPermissions", freshStore(), CWD)).toBe("allow");
+  it("bypassPermissions asks for Bash touching an outside path", () => {
+    expect(decidePermission("Bash", { command: "rm -rf /" }, "bypassPermissions", freshStore(), CWD)).toBe("ask");
   });
   it("acceptEdits auto-allows file edit tools but asks for Bash", () => {
     const store = freshStore();
@@ -84,10 +84,10 @@ describe("Bash command rules", () => {
     expect(decidePermission("Bash", { command: "git status" }, "default", freshStore(), CWD)).toBe("ask");
   });
 
-  it("bypassPermissions still allows everything", () => {
+  it("bypassPermissions defers to a remembered deny prefix when the command also leaves cwd", () => {
     const store = freshStore();
     store.rememberCommand("rm", "deny");
-    expect(decidePermission("Bash", { command: "rm -rf /" }, "bypassPermissions", store, CWD)).toBe("allow");
+    expect(decidePermission("Bash", { command: "rm -rf /" }, "bypassPermissions", store, CWD)).toBe("deny");
   });
 
   it("does not auto-allow a compound command even with a matching allow prefix rule", () => {
@@ -374,5 +374,45 @@ describe("classifyPath", () => {
     const rs = netRules(["//server/share", "allow"]);
     expect(classifyPath("//server/share/f.txt", CWD, rs)).toBe("networkAllow");
     expect(classifyPath("//server/share/f.txt", CWD)).toBe("outside");
+  });
+});
+
+describe("Bash path confinement", () => {
+  const OUT = join(tmpdir(), "cc-perm-outside", "loot.txt");
+
+  it("bypassPermissions still allows a pathless command", () => {
+    expect(decidePermission("Bash", { command: "ls" }, "bypassPermissions", freshStore(), CWD)).toBe("allow");
+  });
+
+  it("asks for absolute outside paths in every mode", () => {
+    const store = freshStore();
+    expect(decidePermission("Bash", { command: `cat ${OUT}` }, "default", store, CWD)).toBe("ask");
+    expect(decidePermission("Bash", { command: `Get-Content ${OUT}` }, "acceptEdits", store, CWD)).toBe("ask");
+    expect(decidePermission("Bash", { command: `cat ${OUT}` }, "bypassPermissions", store, CWD)).toBe("ask");
+  });
+
+  it("asks for redirect targets and directory escapes", () => {
+    const store = freshStore();
+    expect(decidePermission("Bash", { command: "echo hi > " + OUT }, "bypassPermissions", store, CWD)).toBe("ask");
+    expect(decidePermission("Bash", { command: "cd .." }, "bypassPermissions", store, CWD)).toBe("ask");
+  });
+
+  it("a remembered prefix allow does not cover a command that leaves cwd", () => {
+    const store = freshStore();
+    store.rememberCommand("git", "allow");
+    expect(decidePermission("Bash", { command: `git status > ${OUT}` }, "default", store, CWD)).toBe("ask");
+  });
+
+  it("a matching Bash dir-rule allow covers the outside path (store is the allow authority)", () => {
+    const store = freshStore();
+    store.rememberDir("Bash", join(tmpdir(), "cc-perm-outside"), "allow");
+    expect(decidePermission("Bash", { command: `cat ${OUT}` }, "bypassPermissions", store, CWD)).toBe("allow");
+  });
+
+  it("extractBashPaths finds absolute, cd, and redirect targets", () => {
+    expect(extractBashPaths("ls")).toEqual([]);
+    expect(extractBashPaths(`cat ${OUT}`)).toContain(OUT);
+    expect(extractBashPaths("cd ..")).toContain("..");
+    expect(extractBashPaths("echo hi > " + OUT)).toContain(OUT);
   });
 });

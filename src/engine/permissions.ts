@@ -132,6 +132,38 @@ export function classifyPath(
   return "outside";
 }
 
+const BASH_PATH_PATTERNS = [
+  /[A-Za-z]:[\\/][^\s"'|<>;&]*/g,
+  /\\\\[^\s"'|<>;&]+/g,
+  /(?:^|[\s"'=])(~(?:\/[^\s"'|<>;&]*)?|\/[^\s"'|<>;&]*)/gm,
+];
+const BASH_CD_RE =
+  /(?:^|[;&|\n])\s*(?:cd|chdir|pushd|Set-Location)\s+(?:"([^"]+)"|'([^']+)'|([^\s;|<>]+))/gim;
+const BASH_REDIRECT_RE = /[12]?\s*>>?\s*(?:"([^"]+)"|'([^']+)'|([^\s|<>;&]+))/g;
+
+/**
+ * Best-effort path candidates from a Bash/PowerShell command string.
+ * Deliberately not a shell parser (see spec non-goals): covers absolute
+ * paths, cd targets (including relative escapes like `..`), and redirect
+ * targets. Each candidate is classified by the caller; non-paths that slip
+ * through resolve inside cwd and are harmless.
+ */
+export function extractBashPaths(command: string): string[] {
+  const found = new Set<string>();
+  for (const re of BASH_PATH_PATTERNS) {
+    for (const m of command.matchAll(re)) {
+      found.add((m[1] ?? m[0]).trim().replace(/[,;:]+$/, ""));
+    }
+  }
+  for (const re of [BASH_CD_RE, BASH_REDIRECT_RE]) {
+    for (const m of command.matchAll(re)) {
+      const token = (m[1] ?? m[2] ?? m[3] ?? "").trim();
+      if (token !== "") found.add(token);
+    }
+  }
+  return [...found];
+}
+
 export function decidePermission(
   toolName: string,
   input: Record<string, unknown>,
@@ -173,8 +205,19 @@ export function decidePermission(
   // An omitted (or empty) `path` means cwd, which is inside by definition.
   const outsideCwdSearch =
     SEARCH_TOOLS.has(toolName) && typeof input.path === "string" && confined;
+  // Bash names no path input, so ruleScope is undefined for it: extract
+  // candidate paths from the command string and confine them like any
+  // other path. A matching Bash dir-rule allow exempts a path (the store
+  // stays the sole allow authority); prefix-deny already returned above.
+  const bashPaths =
+    toolName === "Bash" && typeof input.command === "string" ? extractBashPaths(input.command) : [];
+  const bashOutside = bashPaths.some(path => {
+    const c = classifyPath(path, cwd, networkStorage);
+    if (c !== "outside" && c !== "sensitive") return false;
+    return store.check("Bash", path) !== "allow";
+  });
 
-  if (mode === "bypassPermissions" && !outsideCwdEdit && !outsideCwdRead && !outsideCwdSearch) return "allow";
+  if (mode === "bypassPermissions" && !outsideCwdEdit && !outsideCwdRead && !outsideCwdSearch && !bashOutside) return "allow";
   // Per-directory rules (deny beats allow) apply to every tool that names a
   // path, keyed on the input that tool actually takes.
   if (scope) {
@@ -194,8 +237,13 @@ export function decidePermission(
     // command. bash.ts runs the whole string through a real shell, so a
     // prefix like "git" approved for "git status" must not silently widen
     // to approve "git status; rm -rf ~" — that's the whole bug this guards.
-    if (ruling === "allow" && !compound) return "allow";
+    if (ruling === "allow" && !compound && !bashOutside) return "allow";
   }
+  // A Bash command reaching an outside/sensitive path with no covering
+  // allow rule always asks — in default/acceptEdits this matches the
+  // existing fallthrough, in bypassPermissions it closes the escape hatch.
+  // A prefix deny already returned "deny" above and is never softened here.
+  if (toolName === "Bash" && bashOutside) return "ask";
   // Remembered host rules for WebFetch (deny beats allow), then always ask —
   // fetching is outbound network access, so it is never unconditionally allowed.
   if (toolName === "WebFetch") {
