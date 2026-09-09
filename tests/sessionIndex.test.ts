@@ -34,3 +34,23 @@ describe("SessionIndex", () => {
     expect(idx.latestForCwd("/c")).toBeUndefined();
   });
 });
+
+describe("SessionIndex.touch", () => {
+  it("refreshes the timestamp so the touched session sorts first", async () => {
+    const file = tempFile();
+    const index = new SessionIndex(file);
+    index.record({ id: "old", cwd: "/p", firstMessage: "old", timestamp: "2000-01-01T00:00:00.000Z", provider: "anthropic" });
+    index.record({ id: "new", cwd: "/p", firstMessage: "new", timestamp: "2000-01-02T00:00:00.000Z", provider: "anthropic" });
+    expect(index.list()[0].id).toBe("new");
+    // Ensure a later clock reading for the touch.
+    await new Promise(resolve => setTimeout(resolve, 5));
+    index.touch("old");
+    expect(index.list()[0].id).toBe("old");
+  });
+
+  it("ignores unknown ids instead of throwing", () => {
+    const index = new SessionIndex(tempFile());
+    expect(() => index.touch("missing")).not.toThrow();
+    expect(index.list()).toEqual([]);
+  });
+});

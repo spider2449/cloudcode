@@ -215,6 +215,8 @@ describe("App", () => {
     app.submitForTest("hello");
     await wait();
     for (const frame of terminal.writes) {
+      // Turn-state markers are out-of-band desktop signals, not frames.
+      if (frame.includes("cloudcode-turn=")) continue;
       const lines = frame.split("\r\n");
       // The default status bar shows provider/model and permission mode.
       expect(lines[lines.length - 1]).toContain("default");

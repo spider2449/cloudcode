@@ -37,6 +37,8 @@ declare global {
       startTerminal(workspaceId: string, sessionId: string | undefined, columns: number, rows: number, generation: string): Promise<void>;
       drainTerminal(generation: string): Promise<string>;
       writeTerminal(data: string): Promise<void>;
+      terminalBusy(): Promise<boolean>;
+      onTerminalBusy(listener: (payload: { busy: boolean }) => void): () => void;
       resizeTerminal(columns: number, rows: number): Promise<void>;
       closeApplication(): Promise<void>;
       onTerminalExit(listener: (payload: { generation: string; exitCode: number }) => void): () => void;
@@ -74,6 +76,12 @@ function App() {
   const [terminalReady, setTerminalReady] = useState(false);
   const [terminalExit, setTerminalExit] = useState<number>();
   const [terminalGeneration, setTerminalGeneration] = useState(0);
+  const [turnBusy, setTurnBusy] = useState(false);
+  const [pendingSwitch, setPendingSwitch] = useState<
+    | { kind: "session"; workspaceId: string; sessionId: string | undefined }
+    | { kind: "workspace"; nextId: string }
+    | undefined
+  >(undefined);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(() => readStoredWidth("cloudcode.sidebarWidth", DEFAULT_SIDEBAR_WIDTH));
@@ -134,6 +142,13 @@ function App() {
       terminal.current = undefined;
       fitAddon.current = undefined;
     };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    void window.cloudcode.terminalBusy().then(busy => { if (!disposed) setTurnBusy(busy); }).catch(() => {});
+    const remove = window.cloudcode.onTerminalBusy(({ busy }) => { if (!disposed) setTurnBusy(busy); });
+    return () => { disposed = true; remove(); };
   }, []);
 
   useEffect(() => {
@@ -268,7 +283,7 @@ function App() {
         ? `${sidebarWidth}px 5px minmax(0, 1fr)`
         : `minmax(0, 1fr) 5px ${inspectorWidth}px`;
 
-  function switchWorkspace(nextId: string) {
+  function applyWorkspaceSwitch(nextId: string) {
     const leaving = workspaces.find(workspace => workspace.id === active);
     const target = workspaces.find(workspace => workspace.id === nextId);
     setActiveSessions(current => {
@@ -286,6 +301,11 @@ function App() {
     setActive(nextId);
   }
 
+  function switchWorkspace(nextId: string) {
+    if (nextId === active) return;
+    void confirmUnlessBusy({ kind: "workspace", nextId }, () => applyWorkspaceSwitch(nextId));
+  }
+
   async function openProject() {
     const workspace = await window.cloudcode.openProject();
     if (!workspace) return;
@@ -294,9 +314,42 @@ function App() {
     setActive(workspace.id);
   }
 
-  function selectSession(workspaceId: string, sessionId: string | undefined) {
+  function applySessionSelect(workspaceId: string, sessionId: string | undefined) {
     setActiveSessions(current => ({ ...current, [workspaceId]: sessionId }));
     setTerminalGeneration(value => value + 1);
+  }
+
+  // Switching sessions kills the live PTY, interrupting any running turn.
+  // Warn first, but only when a turn is actually running.
+  async function confirmUnlessBusy(
+    pending: { kind: "session"; workspaceId: string; sessionId: string | undefined } | { kind: "workspace"; nextId: string },
+    apply: () => void
+  ): Promise<void> {
+    let busy = turnBusy;
+    try {
+      busy = await window.cloudcode.terminalBusy();
+    } catch {
+      // Fall back to the last pushed state when the query fails.
+    }
+    setTurnBusy(busy);
+    if (!busy) {
+      apply();
+      return;
+    }
+    setPendingSwitch(pending);
+  }
+
+  function selectSession(workspaceId: string, sessionId: string | undefined) {
+    if (activeSessions[workspaceId] === sessionId) return;
+    void confirmUnlessBusy({ kind: "session", workspaceId, sessionId }, () => applySessionSelect(workspaceId, sessionId));
+  }
+
+  function confirmPendingSwitch() {
+    const pending = pendingSwitch;
+    setPendingSwitch(undefined);
+    if (!pending) return;
+    if (pending.kind === "session") applySessionSelect(pending.workspaceId, pending.sessionId);
+    else applyWorkspaceSwitch(pending.nextId);
   }
 
   return <main className={`app-shell ${sidebarOpen ? "" : "sidebar-collapsed"} ${inspectorVisible ? "" : "inspector-collapsed"}${dragging ? " resizing" : ""}`} style={{ gridTemplateColumns }}>
@@ -316,6 +369,14 @@ function App() {
       const git = await window.cloudcode.gitState(activeWorkspace.id);
       setGitStates(current => ({ ...current, [activeWorkspace.id]: git }));
     }} onClose={() => setInspectorOpen(false)} />}
+    {pendingSwitch !== undefined && <div className="desktop-dialog" role="alertdialog" aria-modal="true" aria-label="Confirm session switch">
+      <strong>AI 正在回覆中，確定要切換嗎？</strong>
+      <pre>切換 session 會中斷目前的 terminal 連線，進行中的回覆會停下來。已完成的訊息已存檔並會在回來時重播，但這次尚未完成的回覆內容會遺失。</pre>
+      <div className="desktop-dialog-actions">
+        <button onClick={() => setPendingSwitch(undefined)}>留在這裡</button>
+        <button className="danger" onClick={confirmPendingSwitch}>仍要切換</button>
+      </div>
+    </div>}
   </main>;
 }
 

@@ -44,6 +44,7 @@ import type { NetworkDecisionRecorder, NetworkMode } from "../agent/networkPolic
 import { NetworkController } from "./networkController.js";
 import { SessionPresentation } from "./sessionPresentation.js";
 import { TaskUiController, type TaskUiOptions } from "./taskController.js";
+import { TURN_BUSY_MARKER, TURN_IDLE_MARKER } from "./turnSignal.js";
 
 export interface AppProps {
   cwd: string;
@@ -220,6 +221,10 @@ export class App {
       if (usage) this.usage.applyTurnUsage(usage);
       this.turnCount += 1;
       void this.git.refresh().then(() => this.recompute());
+      // The turn is over from the host's perspective: announce idle now so
+      // a session switch no longer warns, while the UI still delays its own
+      // idle until the session checkpoint closes (see below).
+      this.terminal.write(TURN_IDLE_MARKER);
       // Delay idle until the session's finally block closes the checkpoint;
       // otherwise a queued send races it as an overlapping turn.
       setTimeout(() => { if (this.running) { this.phase = "idle"; this.drainQueueIfIdle(); this.recompute(); } }, 0);
@@ -288,6 +293,9 @@ export class App {
 
   private async restartSession(name: string, resume?: string, modeOverride?: PermissionMode): Promise<void> {
     await this.session?.dispose();
+    // The old turn (if any) is gone with the session: never leave the
+    // desktop host believing a turn is still running.
+    this.terminal.write(TURN_IDLE_MARKER);
     await applyContextWindow(this.props.providers[name]);
     this.firstMessage = undefined;
     this.usage.resetForNewSession();
@@ -443,12 +451,18 @@ export class App {
     if (!this.firstMessage) {
       this.firstMessage = text;
       if (this.session?.sessionId) this.recordSession(this.session.sessionId, this.providerName);
+    } else if (this.session?.sessionId) {
+      // Keep the index ordered by recent use so a desktop reload resumes
+      // the session that just received a message.
+      this.props.sessionIndex.touch(this.session.sessionId);
     }
     for (const path of missingMentions(text, this.props.cwd)) this.notice(`Note: ${path} does not exist (yet)`);
     this.buffer.append({ kind: "user", text });
     const images = this.pendingImages.takeForSend();
     this.phase = "streaming";
     this.workStartedAt = Date.now();
+    // Announce the turn to the desktop host (stripped from display there).
+    this.terminal.write(TURN_BUSY_MARKER);
     this.session?.send(text, images);
     this.recompute();
   }

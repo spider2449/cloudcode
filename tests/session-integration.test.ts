@@ -89,6 +89,31 @@ describe("AgentSession integration", () => {
     expect(flat).toContain("hello there"); // the assistant reply text
   });
 
+  it("persists the user entry exactly once (immediate write + end-of-turn remainder)", async () => {
+    vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("hi back")]));
+    const messages: unknown[] = [];
+    let sessionId = "";
+    const session = new AgentSession({
+      providerName: "anthropic",
+      provider: {},
+      permissionMode: "default",
+      cwd: "/p",
+      onMessage: m => messages.push(m),
+      onPermissionRequest: () => {},
+      onSessionId: id => { sessionId = id; }
+    });
+    session.start();
+    session.send("once");
+    await vi.waitFor(() => expect(messages.some(m => (m as { type: string }).type === "result")).toBe(true));
+    await session.dispose();
+
+    const persisted = SessionFile.load(sessionId);
+    const userEntries = persisted.filter(e =>
+      (e as { role?: string }).role === "user" &&
+      JSON.stringify((e as { content?: unknown }).content).includes("once"));
+    expect(userEntries).toHaveLength(1);
+  });
+
   it("resumes a prior session: loaded history is fed into the new EngineLoop and onSessionId reports the resumed id", async () => {
     vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("first reply")]));
     let firstId = "";

@@ -20,6 +20,12 @@ contextBridge.exposeInMainWorld("cloudcode", {
   startTerminal: (workspaceId, sessionId, columns, rows, generation) => ipcRenderer.invoke("cloudcode:terminal-start", workspaceId, sessionId, columns, rows, generation),
   drainTerminal: generation => ipcRenderer.invoke("cloudcode:terminal-drain", generation),
   writeTerminal: data => ipcRenderer.invoke("cloudcode:terminal-write", data),
+  terminalBusy: () => ipcRenderer.invoke("cloudcode:terminal-busy"),
+  onTerminalBusy: listener => {
+    const callback = (_event, payload) => listener(payload);
+    ipcRenderer.on("cloudcode:terminal-busy", callback);
+    return () => ipcRenderer.removeListener("cloudcode:terminal-busy", callback);
+  },
   resizeTerminal: (columns, rows) => ipcRenderer.invoke("cloudcode:terminal-resize", columns, rows),
   closeApplication: () => ipcRenderer.invoke("cloudcode:close-application"),
   onTerminalExit: listener => {

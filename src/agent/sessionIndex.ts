@@ -40,6 +40,16 @@ export class SessionIndex {
     return [...this.entries].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   }
 
+  /** Refresh the timestamp so the most recently used session sorts first. */
+  touch(id: string): void {
+    this.reload();
+    const entry = this.entries.find(e => e.id === id);
+    if (!entry) return;
+    entry.timestamp = new Date().toISOString();
+    mkdirSync(dirname(this.filePath), { recursive: true });
+    writeFileSync(this.filePath, JSON.stringify(this.entries, null, 2));
+  }
+
   latestForCwd(cwd: string): SessionEntry | undefined {
     return this.list().find(e => e.cwd === cwd);
   }

@@ -5,6 +5,7 @@ import { existsSync } from "node:fs";
 import { execFile } from "node:child_process";
 import * as pty from "node-pty";
 import { DesktopShellHost } from "../dist/desktop/shellHost.js";
+import { TurnStream } from "../dist/desktop/turnStream.js";
 import { requireBranchName, requireDimension, requireOptionalString, requirePaths, requireString } from "../dist/desktop/ipcContract.js";
 import { resolveNodeExecutable } from "../dist/desktop/runtime.js";
 import { VERSION } from "../dist/version.js";
@@ -20,6 +21,18 @@ let window;
 let terminal;
 let terminalGeneration;
 let terminalOutput = "";
+let terminalBusy = false;
+// Turn-state markers emitted by the embedded TUI (see
+// src/ui/turnSignal.ts). TurnStream strips them from the PTY flow so they
+// never render, tolerates markers split across PTY chunks, and drives the
+// busy flag the renderer checks before switching sessions.
+const turnStream = new TurnStream();
+
+function setTerminalBusy(busy) {
+  if (terminalBusy === busy) return;
+  terminalBusy = busy;
+  send("cloudcode:terminal-busy", { busy });
+}
 
 const MAX_PENDING_TERMINAL_OUTPUT = 4 * 1024 * 1024;
 
@@ -30,6 +43,8 @@ function send(channel, payload) {
 
 function stopTerminal() {
   if (!terminal) return;
+  setTerminalBusy(false);
+  turnStream.reset();
   const active = terminal;
   terminal = undefined;
   terminalOutput = "";
@@ -92,6 +107,9 @@ function startTerminal(workspaceId, sessionId, columns, rows, generation) {
   terminalOutput = "";
   spawned.onData(data => {
     if (terminal !== spawned || terminalGeneration !== generation) return;
+    data = turnStream.push(data);
+    setTerminalBusy(turnStream.busy);
+    if (data === "") return;
     terminalOutput = (terminalOutput + data).slice(-MAX_PENDING_TERMINAL_OUTPUT);
   });
   spawned.onExit(({ exitCode }) => {
@@ -140,6 +158,7 @@ ipcMain.handle("cloudcode:terminal-drain", (_event, generation) => {
   return output;
 });
 ipcMain.handle("cloudcode:terminal-write", (_event, data) => terminal?.write(requireString(data, "terminal data", true)));
+ipcMain.handle("cloudcode:terminal-busy", () => terminalBusy);
 ipcMain.handle("cloudcode:terminal-resize", (_event, columns, rows) => {
   if (terminal) terminal.resize(Math.max(20, requireDimension(columns, "terminal columns")), Math.max(10, requireDimension(rows, "terminal rows")));
 });

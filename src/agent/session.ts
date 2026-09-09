@@ -281,8 +281,23 @@ export class AgentSession {
         await this.hooksRunner?.run("UserPromptSubmit", { promptLength: text.length });
         this.changes?.beginCheckpoint();
         try {
-          await this.loop?.runTurn(text, controller.signal, images);
-          const added = this.loop?.messages.slice(before) ?? [];
+          const turnPromise = this.loop?.runTurn(text, controller.signal, images);
+          // runTurn pushes the user entry synchronously before its first
+          // await, so persist it now: a kill or window close mid-turn still
+          // replays the prompt on resume instead of losing the whole turn.
+          const userEntry = this.loop?.messages[before];
+          let persisted = 0;
+          if (userEntry !== undefined) {
+            try {
+              this.sessionFile?.append(userEntry);
+              persisted = 1;
+            } catch {
+              // A persistence failure here is reported with the end-of-turn
+              // append below; keep persisted at 0 so nothing is skipped.
+            }
+          }
+          await turnPromise;
+          const added = this.loop?.messages.slice(before + persisted) ?? [];
           for (const entry of added) this.sessionFile?.append(entry);
           if (this.sessionFile && this.todos !== todosAtStart) {
             this.sessionFile.append({ type: "todos", todos: this.todos });
