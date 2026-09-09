@@ -38,11 +38,29 @@ const summaryTurn = (text: string) => [
 ];
 
 function makeLoop(client: ReturnType<typeof fakeClient>, received: unknown[], contextWindow: number) {
+  return makeLoopWithTools(client, received, contextWindow, []);
+}
+
+const echoTool = {
+  name: "EchoTool",
+  description: "echoes",
+  input_schema: { type: "object", properties: {}, required: [] },
+  async execute(input: unknown) {
+    return { content: `echo:${JSON.stringify(input)}` };
+  }
+};
+
+function makeLoopWithTools(
+  client: ReturnType<typeof fakeClient>,
+  received: unknown[],
+  contextWindow: number,
+  tools: Array<{ name: string; description: string; input_schema: unknown; execute: (input: never) => Promise<{ content: string }> }>
+) {
   return new EngineLoop({
     client,
     model: "test-model",
     systemPrompt: "sys",
-    tools: [],
+    tools: tools as never,
     cwd: process.cwd(),
     permissionMode: "bypassPermissions",
     store: new PermissionStore(mkdtempSync(join(tmpdir(), "cc-loop-ac-"))),
@@ -51,6 +69,22 @@ function makeLoop(client: ReturnType<typeof fakeClient>, received: unknown[], co
     requestPermission: async () => true
   });
 }
+
+const toolUseWithLargeUsage = () => [
+  { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "tu_1", name: "EchoTool", input: {} } },
+  { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: "{\"x\":1}" } },
+  { type: "content_block_stop", index: 0 },
+  { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { input_tokens: 10000, output_tokens: 5 } },
+  { type: "message_stop" }
+];
+
+const finalTextTurn = () => [
+  { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+  { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "done" } },
+  { type: "content_block_stop", index: 0 },
+  { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { input_tokens: 10, output_tokens: 5 } },
+  { type: "message_stop" }
+];
 
 describe("EngineLoop usage-less auto-compact fallback", () => {
   it("compacts history past the threshold when the provider reports no usage", async () => {
@@ -91,5 +125,17 @@ describe("EngineLoop usage-less auto-compact fallback", () => {
     await loop.runTurn("hi", new AbortController().signal);
     expect(client.calls).toBe(1);
     expect(loop.messages).toHaveLength(2);
+  });
+
+  it("compacts mid-turn when reported input_tokens exceed the threshold", async () => {
+    const received: unknown[] = [];
+    const client = fakeClient([
+      toolUseWithLargeUsage(),
+      summaryTurn("dense summary"),
+      finalTextTurn()
+    ]);
+    const loop = makeLoopWithTools(client, received, 200, [echoTool]);
+    await loop.runTurn("review the codebase", new AbortController().signal);
+    expect(JSON.stringify(loop.messages)).toContain("Summary of prior conversation");
   });
 });

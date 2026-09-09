@@ -10,6 +10,17 @@ export interface UsageTrackerDeps {
 
 const AUTO_COMPACT_THRESHOLD_PCT = 80;
 
+// Picks the usage figure that describes the current context size: the last
+// provider request already covers the whole resent history, while the
+// aggregate `usage` sums every request of the turn and would overstate it.
+// Falls back to the aggregate for messages predating `last_usage`.
+export function contextUsageForResult(msg: {
+  usage?: Record<string, number>;
+  last_usage?: Record<string, number>;
+}): Record<string, number> | undefined {
+  return msg.last_usage ?? msg.usage;
+}
+
 /**
  * Owns everything the status bar reports about the current session's context
  * budget — accumulated cost, the live token count, how full the context window

@@ -21,7 +21,7 @@ import { THEMES, loadThemeName, saveThemeName } from "./theme.js";
 import { GitStatusPoller } from "./useGitStatus.js";
 import { PermissionController } from "./permissionController.js";
 import { KeyRouter, type KeyRouterHost } from "./keyRouter.js";
-import { UsageTracker } from "./usageTracker.js";
+import { UsageTracker, contextUsageForResult } from "./usageTracker.js";
 import { openConfigPicker, openMemoryPicker, openProjectPicker, openResumePicker, openStatusLinePicker, type PickerDeps } from "./appPickers.js";
 import { DEFAULT_STATUS_LINE_ITEMS, type StatusLineItem } from "../statusLineItems.js";
 import { collectGitReview } from "../agent/gitReview.js";
@@ -217,7 +217,7 @@ export class App {
       this.activeTool = undefined;
       const cost = (msg as { total_cost_usd?: number }).total_cost_usd;
       if (typeof cost === "number") this.usage.addCost(cost);
-      const usage = (msg as { usage?: Record<string, number> }).usage;
+      const usage = contextUsageForResult(msg as { usage?: Record<string, number>; last_usage?: Record<string, number> });
       if (usage) this.usage.applyTurnUsage(usage);
       this.turnCount += 1;
       void this.git.refresh().then(() => this.recompute());

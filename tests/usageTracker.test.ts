@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { UsageTracker, type UsageTrackerDeps } from "../src/ui/usageTracker.js";
+import { UsageTracker, contextUsageForResult, type UsageTrackerDeps } from "../src/ui/usageTracker.js";
 
 function tracker(overrides: Partial<UsageTrackerDeps> = {}) {
   const notices: string[] = [];
@@ -81,5 +81,23 @@ describe("UsageTracker", () => {
     expect(usage.tokens).toBe(0);
     expect(usage.contextPct).toBeUndefined();
     expect(usage.cost).toBeCloseTo(0.05);
+  });
+});
+
+describe("contextUsageForResult", () => {
+  it("prefers last_usage over the aggregate usage for context sizing", () => {
+    expect(contextUsageForResult({
+      usage: { input_tokens: 20, output_tokens: 10 },
+      last_usage: { input_tokens: 10, output_tokens: 5 }
+    })).toEqual({ input_tokens: 10, output_tokens: 5 });
+  });
+
+  it("falls back to the aggregate usage when last_usage is absent", () => {
+    expect(contextUsageForResult({ usage: { input_tokens: 20, output_tokens: 10 } }))
+      .toEqual({ input_tokens: 20, output_tokens: 10 });
+  });
+
+  it("returns undefined when neither is present", () => {
+    expect(contextUsageForResult({})).toBeUndefined();
   });
 });

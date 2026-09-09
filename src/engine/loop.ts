@@ -192,14 +192,25 @@ export class EngineLoop {
       reached = limit;
       this.opts.onMessage(limitMessage(limit, value));
     };
+    let lastInputTokens: number | undefined;
+    let lastUsage: Usage | undefined;
     const addUsage = (next: Usage | undefined) => {
       if (!next) return;
+      lastUsage = next;
       usage = {
         input_tokens: (usage?.input_tokens ?? 0) + (next.input_tokens ?? 0),
         output_tokens: (usage?.output_tokens ?? 0) + (next.output_tokens ?? 0),
         cache_read_input_tokens: (usage?.cache_read_input_tokens ?? 0) + (next.cache_read_input_tokens ?? 0),
         cache_creation_input_tokens: (usage?.cache_creation_input_tokens ?? 0) + (next.cache_creation_input_tokens ?? 0)
       };
+      const input = (next.input_tokens ?? 0) +
+        (next.cache_read_input_tokens ?? 0) +
+        (next.cache_creation_input_tokens ?? 0);
+      // The summed accumulator above drives cost; the context guard needs the
+      // most recent request size, which already covers the whole resent
+      // history. Summing it would trigger after a few tool turns even when
+      // the real window is still small.
+      if (input > 0) lastInputTokens = input;
     };
     try {
       for (let i = 0; i < maxTurns; i++) {
@@ -208,14 +219,25 @@ export class EngineLoop {
           hitTurnLimit = false;
           break;
         }
-        // Usage-less providers never trigger the UI auto-compact, so bound
-        // history here before sending: a failed fallback must stop rather
-        // than keep firing oversized requests into a full context.
+        // Bound history before each provider request. The real input size
+        // (when reported) already covers the whole resent history, so it is
+        // checked first; the estimate catches usage-less providers and tool
+        // results pushed since the last request. A failed guard must stop
+        // rather than keep firing oversized requests into a full context.
         if (!signal.aborted) {
-          const fallback = await this.maybeFallbackCompact(usage !== undefined);
-          if (fallback === "failed") {
+          const guarded = await this.maybeMidTurnCompact(lastInputTokens);
+          if (guarded === "failed") {
             hitTurnLimit = false;
             break;
+          }
+          if (guarded === "compacted") {
+            // The summed accumulator and the stale last-request size both
+            // describe pre-compact history. Reset them so the final result
+            // usage reports the post-compact size (no spurious UI re-compact)
+            // while totalCost keeps the pre-compact spend for billing.
+            usage = undefined;
+            lastUsage = undefined;
+            lastInputTokens = undefined;
           }
         }
         providerRequests++;
@@ -319,6 +341,7 @@ export class EngineLoop {
         subtype: "success",
         duration_ms: Date.now() - started,
         usage,
+        last_usage: lastUsage,
         total_cost_usd: costKnown ? totalCost : undefined,
         finish_reason: reached ? "limit" : signal.aborted ? "interrupted" : "completed"
       });
@@ -331,6 +354,7 @@ export class EngineLoop {
           subtype: "success",
           duration_ms: Date.now() - started,
           usage,
+          last_usage: lastUsage,
           total_cost_usd: costKnown ? totalCost : undefined,
           finish_reason: reached ? "limit" : "interrupted"
         });
@@ -352,22 +376,30 @@ export class EngineLoop {
   }
 
   /**
-   * Compact history when it approaches the context window but no provider
-   * usage has been observed (so the UI usage-driven auto-compact can never
-   * fire). Returns whether history was compacted; "failed" means the
-   * summarization request itself errored and the caller should stop rather
-   * than keep sending oversized requests.
+   * Mid-turn guard: compact before the next provider request when the window
+   * is nearly full. The real input size (when reported) already covers the
+   * whole resent history, so it is checked first; the live estimate catches
+   * usage-less providers and tool results pushed since the last request.
+   * Returns whether history was compacted; "failed" means the summarization
+   * request itself errored and the caller should stop rather than keep
+   * sending oversized requests.
    */
-  private async maybeFallbackCompact(usageSeen: boolean): Promise<"compacted" | "skipped" | "failed"> {
-    if (usageSeen) return "skipped";
+  private async maybeMidTurnCompact(lastInputTokens: number | undefined): Promise<"compacted" | "skipped" | "failed"> {
+    const window = this.opts.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
+    if (lastInputTokens !== undefined && lastInputTokens * 100 >= FALLBACK_COMPACT_THRESHOLD_PCT * window) {
+      return this.runCompactNotice();
+    }
     // The cached snapshot describes the last request sent, not the pushes
     // since: measure live messages instead, or a just-finished huge turn
     // would look small until the next request is built.
     this.lastSnapshot = undefined;
     const snap = this.contextSnapshot();
     const total = snap.systemTokens + snap.toolsTokens + snap.messagesTokens;
-    const window = this.opts.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
     if (total * 100 < FALLBACK_COMPACT_THRESHOLD_PCT * window) return "skipped";
+    return this.runCompactNotice();
+  }
+
+  private async runCompactNotice(): Promise<"compacted" | "failed"> {
     try {
       await this.compact(this.opts.client, this.model);
       // UI-only notice, like the max_tokens one in runTurn: history already
@@ -382,6 +414,25 @@ export class EngineLoop {
       ]));
       return "failed";
     }
+  }
+
+  /**
+   * Post-turn bound for usage-less providers (which never trigger the UI
+   * usage-driven auto-compact). Providers that report usage leave the final
+   * shrink to the UI path after the result message, so a single huge turn is
+   * not compacted twice.
+   */
+  private async maybeFallbackCompact(usageSeen: boolean): Promise<"compacted" | "skipped" | "failed"> {
+    if (usageSeen) return "skipped";
+    // The cached snapshot describes the last request sent, not the pushes
+    // since: measure live messages instead, or a just-finished huge turn
+    // would look small until the next request is built.
+    this.lastSnapshot = undefined;
+    const snap = this.contextSnapshot();
+    const total = snap.systemTokens + snap.toolsTokens + snap.messagesTokens;
+    const window = this.opts.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
+    if (total * 100 < FALLBACK_COMPACT_THRESHOLD_PCT * window) return "skipped";
+    return this.runCompactNotice();
   }
 
   private async streamOnce(signal: AbortSignal): Promise<StreamedTurn> {

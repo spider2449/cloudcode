@@ -11,7 +11,10 @@ const BASE = `You are cloudcode, an interactive terminal coding agent.
 Use the provided tools to read, search, edit, and run code. Prefer tools over
 guessing. Keep answers concise; report file paths precisely. User messages may
 contain @path tokens referencing project-relative files. Read them with the
-Read tool before acting on claims about their contents. Working directory: `;
+Read tool before acting on claims about their contents. For broad codebase
+exploration or review, dispatch the Task subagent instead of reading dozens of
+files into the main context: it runs in its own context window and returns a
+concise report. Working directory: `;
 
 function readIfPresent(path: string): string {
   try { return readFileSync(path, "utf8").trim(); } catch { return ""; }

@@ -18,6 +18,11 @@ describe("buildSystemPrompt", () => {
     expect(p).toContain("coding agent");
     expect(p).toContain(dir);
   });
+  it("steers broad exploration through the Task subagent to protect main context", () => {
+    const prompt = buildSystemPrompt("/tmp");
+    expect(prompt).toContain("Task");
+    expect(prompt.toLowerCase()).toContain("broad");
+  });
   it("documents the @path mention convention", () => {
     const prompt = buildSystemPrompt("/tmp");
     expect(prompt).toContain(

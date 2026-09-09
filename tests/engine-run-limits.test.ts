@@ -59,6 +59,13 @@ describe("EngineLoop run limits", () => {
     expect(received.at(-1)).toMatchObject({ usage: { input_tokens: 20, output_tokens: 10 } });
   });
 
+  it("reports last_usage from the final provider request for context sizing", async () => {
+    const received: unknown[] = [];
+    await loop({ turns: [toolTurn(), textTurn()], received, limits: {} })
+      .runTurn("go", new AbortController().signal);
+    expect(received.at(-1)).toMatchObject({ last_usage: { input_tokens: 10, output_tokens: 5 } });
+  });
+
   it("stops before tool execution when a known-model cost cap is reached", async () => {
     const execute = vi.fn(async () => ({ content: "ran" }));
     const received: unknown[] = [];

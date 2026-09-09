@@ -211,6 +211,15 @@ describe("TodoWrite permissions", () => {
   });
 });
 
+describe("Task permissions", () => {
+  it("is always allowed: the subagent is read-only and its inner reads stay gated", () => {
+    const store = freshStore();
+    expect(decidePermission("Task", { description: "review", prompt: "review" }, "default", store, CWD)).toBe("allow");
+    expect(decidePermission("Task", { description: "review", prompt: "review" }, "acceptEdits", store, CWD)).toBe("allow");
+    expect(decidePermission("Task", { description: "review", prompt: "review" }, "bypassPermissions", store, CWD)).toBe("allow");
+  });
+});
+
 describe("memory file permissions", () => {
   const MEM = memoryDir(CWD);
   const USER_MD = userMemoryFile();

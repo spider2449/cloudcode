@@ -184,6 +184,11 @@ export function decidePermission(
     }
     return "ask";
   }
+  // Task dispatches a read-only exploration subagent in its own context
+  // window. The subagent's inner reads stay gated by this same decider, so
+  // prompting at dispatch only adds friction that pushes broad reviews back
+  // into the main context. Always allow, like TodoWrite.
+  if (toolName === "Task") return "allow";
   // TodoWrite only mutates the session's internal checklist — nothing on
   // disk, nothing outbound — so it never needs a prompt in any mode.
   if (toolName === "TodoWrite") return "allow";
