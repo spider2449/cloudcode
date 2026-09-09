@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { decidePermission, hostScope } from "../src/engine/permissions.js";
+import { decidePermission, hostScope, classifyPath } from "../src/engine/permissions.js";
 import { PermissionStore } from "../src/agent/permissionStore.js";
 import { configDir } from "../src/agent/providers.js";
 import { memoryDir, userMemoryFile } from "../src/engine/memoryPaths.js";
@@ -345,5 +345,34 @@ describe("network storage rules", () => {
 
   it("rules absent (undefined) preserves today's behavior", () => {
     expect(decidePermission("Read", { file_path: "//server/share/f.txt" }, "bypassPermissions", freshStore(), CWD)).toBe("ask");
+  });
+});
+
+describe("classifyPath", () => {
+  const OUT = join(tmpdir(), "cc-perm-outside", "f.txt");
+
+  it("classifies inside-cwd paths", () => {
+    expect(classifyPath(join(CWD, "src", "x.ts"), CWD)).toBe("inside");
+    expect(classifyPath("relative/file.txt", CWD)).toBe("inside");
+    expect(classifyPath("", CWD)).toBe("inside");
+  });
+
+  it("classifies cloudcode-owned paths", () => {
+    expect(classifyPath(join(configDir(), "sessions", "s.jsonl"), CWD)).toBe("owned");
+  });
+
+  it("classifies credential files as sensitive even though they sit under the owned dir", () => {
+    expect(classifyPath(join(configDir(), "credentials.json"), CWD)).toBe("sensitive");
+    expect(classifyPath(join(configDir(), "providers.json"), CWD)).toBe("sensitive");
+  });
+
+  it("classifies plain outside paths", () => {
+    expect(classifyPath(OUT, CWD)).toBe("outside");
+  });
+
+  it("classifies network-allowed paths", () => {
+    const rs = netRules(["//server/share", "allow"]);
+    expect(classifyPath("//server/share/f.txt", CWD, rs)).toBe("networkAllow");
+    expect(classifyPath("//server/share/f.txt", CWD)).toBe("outside");
   });
 });

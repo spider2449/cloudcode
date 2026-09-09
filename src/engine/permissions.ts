@@ -1,9 +1,10 @@
-import { isAbsolute, resolve, sep } from "node:path";
+import { isAbsolute, join, resolve, sep } from "node:path";
 import type { PermissionMode } from "../agent/session.js";
 import { type PermissionStore, isCompoundCommand } from "../agent/permissionStore.js";
 import { matchNetworkStorage, networkRememberTargetForPath, type NetworkStorageRule } from "../agent/networkStorage.js";
 import { memoryDir, userMemoryFile } from "./memoryPaths.js";
 import { configDir } from "../agent/providers.js";
+import { homedir } from "node:os";
 
 const READ_ONLY = new Set(["Read", "Glob", "Grep"]);
 const EDIT_TOOLS = new Set(["Write", "Edit"]);
@@ -103,6 +104,48 @@ function isMemoryLocation(rawPath: string, cwd: string): boolean {
   if (target === resolve(userMemoryFile())) return true;
   const root = resolve(memoryDir(cwd));
   return target === root || target.startsWith(root + sep);
+}
+
+export type PathClass = "inside" | "owned" | "networkAllow" | "sensitive" | "outside";
+
+/**
+ * Single policy gate for path confinement. Pure: resolves paths, reads no
+ * disk. Precedence mirrors the old inline checks exactly: inside-cwd wins
+ * first (a project-local file is never "sensitive"), then the two
+ * credential files, then an explicit network allow, then the
+ * cloudcode-owned config/memory dirs; anything else is outside.
+ */
+export function classifyPath(
+  rawPath: string,
+  cwd: string,
+  networkStorage?: readonly NetworkStorageRule[]
+): PathClass {
+  const expanded =
+    rawPath === "~" || rawPath.startsWith("~/") || rawPath.startsWith("~\\")
+      ? join(homedir(), rawPath.slice(1))
+      : rawPath;
+  const root = resolve(cwd);
+  const target = resolve(cwd, expanded);
+  if (target === root || target.startsWith(root + sep)) return "inside";
+  if (
+    target === resolve(configDir(), "credentials.json") ||
+    target === resolve(configDir(), "providers.json")
+  ) {
+    return "sensitive";
+  }
+  if (
+    networkStorage !== undefined &&
+    networkStorage.length > 0 &&
+    matchNetworkStorage(networkStorage, rawPath) === "allow"
+  ) {
+    return "networkAllow";
+  }
+  const base = resolve(configDir());
+  if (target === base || target.startsWith(base + sep)) return "owned";
+  if (target === resolve(userMemoryFile())) return "owned";
+  const mem = resolve(memoryDir(cwd));
+  if (target === mem || target.startsWith(mem + sep)) return "owned";
+  return "outside";
 }
 
 export function decidePermission(
