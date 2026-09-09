@@ -1,6 +1,6 @@
 {
   "name": "cloudcode",
-  "version": "0.1.50",
+  "version": "0.1.51",
   "description": "Terminal AI coding agent with its own native agent engine talking directly to the Anthropic Messages API",
   "author": {
     "name": "spider244",
@@ -48,12 +48,39 @@
     "appId": "app.cloudcode",
     "productName": "CloudCode",
     "asar": true,
-    "asarUnpack": ["dist/**/*", "package.json", "welcome.txt", "node_modules/**/*"],
-    "directories": { "output": "release/desktop" },
-    "files": ["dist/**", "desktop/dist/**", "desktop/preload.cjs", "desktop/main.mjs", "package.json", "welcome.txt"],
-    "win": { "target": ["nsis"] },
-    "linux": { "target": ["AppImage", "deb"] },
-    "mac": { "target": ["dmg"] }
+    "asarUnpack": [
+      "dist/**/*",
+      "package.json",
+      "welcome.txt",
+      "node_modules/**/*"
+    ],
+    "directories": {
+      "output": "release/desktop"
+    },
+    "files": [
+      "dist/**",
+      "desktop/dist/**",
+      "desktop/preload.cjs",
+      "desktop/main.mjs",
+      "package.json",
+      "welcome.txt"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ]
+    }
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",
