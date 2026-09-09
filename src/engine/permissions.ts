@@ -79,33 +79,6 @@ function isInsideCwd(filePath: string, cwd: string): boolean {
   return target === root || target.startsWith(root + sep);
 }
 
-/**
- * True for cloudcode-owned locations under the user config dir (~/.cloudcode):
- * the current project's auto-memory directory, the global user-instructions
- * file, and every other program workspace path (sessions, skills, tasks,
- * maintenance, audit, etc.). All live outside cwd by construction, so without
- * this exemption every program file access would force an "ask" even under
- * acceptEdits/bypassPermissions — yet this dir is cloudcode's own workspace,
- * not the rest of the filesystem the confinement exists to protect. Resolved
- * on both sides so ".." cannot masquerade. Owned paths otherwise follow
- * normal mode logic exactly like inside-cwd paths.
- *
- * Sensitive credential files (credentials.json, providers.json) are excluded
- * and keep the normal outside-cwd confinement, since auto-allowing reads of
- * API keys and OAuth tokens would widen the data-exfiltration path the cwd
- * guard exists to close.
- */
-function isMemoryLocation(rawPath: string, cwd: string): boolean {
-  const target = resolve(cwd, rawPath);
-  const base = resolve(configDir());
-  if (target === resolve(base, "credentials.json")) return false;
-  if (target === resolve(base, "providers.json")) return false;
-  if (target === base || target.startsWith(base + sep)) return true;
-  if (target === resolve(userMemoryFile())) return true;
-  const root = resolve(memoryDir(cwd));
-  return target === root || target.startsWith(root + sep);
-}
-
 export type PathClass = "inside" | "owned" | "networkAllow" | "sensitive" | "outside";
 
 /**
@@ -114,6 +87,17 @@ export type PathClass = "inside" | "owned" | "networkAllow" | "sensitive" | "out
  * first (a project-local file is never "sensitive"), then the two
  * credential files, then an explicit network allow, then the
  * cloudcode-owned config/memory dirs; anything else is outside.
+ *
+ * The "owned" branch covers cloudcode's own workspace under the user config
+ * dir (~/.cloudcode): sessions, skills, tasks, maintenance, audit, and the
+ * project/user memory files. All live outside cwd by construction, so
+ * without this exemption every program file access would force an "ask" —
+ * yet this dir is cloudcode's own workspace, not the rest of the
+ * filesystem the confinement exists to protect. Owned paths otherwise
+ * follow normal mode logic exactly like inside-cwd paths. Sensitive
+ * credential files (credentials.json, providers.json) are excluded and
+ * stay confined, since auto-allowing reads of API keys and OAuth tokens
+ * would widen the data-exfiltration path the cwd guard exists to close.
  */
 export function classifyPath(
   rawPath: string,
@@ -162,25 +146,21 @@ export function decidePermission(
   // (so reads auto-allow, edits follow acceptEdits, bypass allows). An
   // unmatched network path falls through to the normal forced-ask behavior.
   const scope = ruleScope(toolName, input);
-  let networkAllows = false;
   if (scope && networkStorage && networkStorage.length > 0) {
     const ruling = matchNetworkStorage(networkStorage, scope.path);
     if (ruling === "deny") return "deny";
-    networkAllows = ruling === "allow";
   }
-  // cloudcode-owned paths (everything under ~/.cloudcode except sensitive
-  // credential files) are treated as inside-cwd for every confinement check
-  // below; see isMemoryLocation. A store deny rule for them still wins later.
-  const memoryAllows = scope !== undefined && isMemoryLocation(scope.path, cwd);
+  // Single gate: inside and owned/networkAllow paths are unconfined,
+  // outside and sensitive paths are confined. A network allow surfaces as
+  // "networkAllow" (unconfined), so no separate networkAllows flag is
+  // needed; a network deny already returned above.
+  const cls = scope === undefined ? undefined : classifyPath(scope.path, cwd, networkStorage);
+  const confined = cls === "outside" || cls === "sensitive";
   // acceptEdits/bypassPermissions auto-allow edits, but only inside cwd — a
   // write outside cwd always needs an explicit human "ask" (or a remembered
   // store rule, checked below), since those modes otherwise remove the only
   // barrier between model output and the rest of the filesystem.
-  const outsideCwdFile =
-    typeof input.file_path === "string" &&
-    !isInsideCwd(input.file_path, cwd) &&
-    !networkAllows &&
-    !memoryAllows;
+  const outsideCwdFile = typeof input.file_path === "string" && confined;
   const outsideCwdEdit = EDIT_TOOLS.has(toolName) && outsideCwdFile;
   // Reads are otherwise unconditionally allowed (see READ_ONLY below), but a
   // read resolving outside cwd is the primary data-exfiltration path for a
@@ -192,8 +172,7 @@ export function decidePermission(
   // "secret" is the same exfiltration path as a targeted Read, only broader.
   // An omitted (or empty) `path` means cwd, which is inside by definition.
   const outsideCwdSearch =
-    SEARCH_TOOLS.has(toolName) && typeof input.path === "string" &&
-    !isInsideCwd(input.path, cwd) && !networkAllows && !memoryAllows;
+    SEARCH_TOOLS.has(toolName) && typeof input.path === "string" && confined;
 
   if (mode === "bypassPermissions" && !outsideCwdEdit && !outsideCwdRead && !outsideCwdSearch) return "allow";
   // Per-directory rules (deny beats allow) apply to every tool that names a
