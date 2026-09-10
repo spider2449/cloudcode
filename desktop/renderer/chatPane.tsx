@@ -15,10 +15,29 @@ let sendSeq = 0;
 
 type Completion = { label: string; value: string; replaceStart: number; replaceEnd: number };
 
+export type SlashInputKind =
+  | { kind: "plain" }
+  | { kind: "command"; token: string }
+  | { kind: "args"; prefix: string };
+
+// Pure decision of what the dropdown should show for an input value.
+// An exactly-typed command name ("/config") jumps straight to its argument
+// options so users discover arguments without knowing the full command;
+// anything else completes command names, and plain text shows nothing.
+export function describeSlashInput(value: string): SlashInputKind {
+  if (!value.startsWith("/")) return { kind: "plain" };
+  if (!value.includes(" ")) {
+    if ((SLASH_NAMES as string[]).includes(value)) return { kind: "args", prefix: `${value} ` };
+    return { kind: "command", token: value };
+  }
+  return { kind: "args", prefix: value };
+}
+
 export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: string | undefined; sessionId: string | undefined; onSend?: (request: { id: string; sessionId: string | undefined; text: string; workspaceId: string | undefined }) => void }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [completions, setCompletions] = useState<Completion[]>([]);
+  const [highlight, setHighlight] = useState(0);
   const [permission, setPermission] = useState<{ id: string; toolName: string; toolInput?: Record<string, unknown> } | undefined>(undefined);
   const [pendingIds, setPendingIds] = useState<string[]>([]);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -39,7 +58,7 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
         // input may populate the dropdown.
         const pending = completeReq.current;
         if (pending && event.id === pending.id && inputRef.current?.value === pending.prefix && event.items) {
-          setCompletions(event.items);
+          showCompletions(event.items);
         }
         return;
       }
@@ -66,18 +85,31 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
     });
   }, [sessionId]);
 
+  function showCompletions(items: Completion[]) {
+    setCompletions(items);
+    setHighlight(0);
+  }
+
+  function requestArgCompletions(prefix: string) {
+    // Backend-driven argument values (live provider/model data).
+    completeSeq.current += 1;
+    const id = `complete-${Date.now()}-${completeSeq.current}`;
+    completeReq.current = { id, prefix };
+    void window.cloudcode.chatComplete({ id, prefix, sessionId, workspaceId });
+  }
+
   function onChange(value: string) {
     setInput(value);
-    if (!value.startsWith("/")) {
+    const kind = describeSlashInput(value);
+    if (kind.kind === "plain") {
       completeReq.current = undefined;
-      setCompletions([]);
+      showCompletions([]);
       return;
     }
-    if (!value.includes(" ")) {
+    if (kind.kind === "command") {
       // Command names complete instantly from the local registry copy.
       completeReq.current = undefined;
-      const token = value;
-      setCompletions(SLASH_NAMES.filter(name => name.startsWith(token)).map(name => ({
+      showCompletions(SLASH_NAMES.filter(name => name.startsWith(kind.token)).map(name => ({
         label: name,
         value: `${name} `,
         replaceStart: 0,
@@ -85,11 +117,7 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
       })));
       return;
     }
-    // Argument values come from the backend (live provider/model data).
-    completeSeq.current += 1;
-    const id = `complete-${Date.now()}-${completeSeq.current}`;
-    completeReq.current = { id, prefix: value };
-    void window.cloudcode.chatComplete({ id, prefix: value, sessionId, workspaceId });
+    requestArgCompletions(kind.prefix);
   }
 
   // Same splice as applySuggestion in src/commands/completion.ts (duplicated
@@ -103,6 +131,35 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
     requestAnimationFrame(() => inputRef.current?.focus());
   }
 
+  function onInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "ArrowDown" && completions.length > 0) {
+      event.preventDefault();
+      setHighlight(current => (current + 1) % completions.length);
+      return;
+    }
+    if (event.key === "ArrowUp" && completions.length > 0) {
+      event.preventDefault();
+      setHighlight(current => (current - 1 + completions.length) % completions.length);
+      return;
+    }
+    if (event.key === "Tab" && completions.length > 0) {
+      event.preventDefault();
+      const option = completions[highlight] ?? completions[0];
+      if (option) applyCompletion(option);
+      return;
+    }
+    if (event.key === "Escape" && completions.length > 0) {
+      event.preventDefault();
+      completeReq.current = undefined;
+      showCompletions([]);
+      return;
+    }
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      send();
+    }
+  }
+
   function send() {
     const text = input.trim();
     if (!text) return;
@@ -110,7 +167,8 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
     setPendingIds(current => [...current, id]);
     setMessages(current => [...current, { id, role: "user", text }]);
     setInput("");
-    setCompletions([]);
+    completeReq.current = undefined;
+    showCompletions([]);
     onSend?.({ id, sessionId, text, workspaceId });
     void window.cloudcode.chatSend({ id, sessionId, text, workspaceId });
   }
@@ -146,11 +204,11 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
       </div>
       {completions.length > 0 && (
         <ul className="slash-complete" aria-label="Slash commands">
-          {completions.map(option => <li key={option.label}><button onClick={() => applyCompletion(option)}>{option.label}</button></li>)}
+          {completions.map((option, index) => <li key={option.label}><button className={index === highlight ? "active" : ""} onClick={() => applyCompletion(option)}>{option.label}</button></li>)}
         </ul>
       )}
       <div className="chat-input">
-        <input ref={inputRef} aria-label="Message input" value={input} onChange={event => onChange(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } }} placeholder="Message, or / for commands" />
+        <input ref={inputRef} aria-label="Message input" value={input} onChange={event => onChange(event.target.value)} onKeyDown={onInputKeyDown} placeholder="Message, or / for commands" />
         <button onClick={send}>Send</button>
         {pendingIds.length > 0 && <button aria-label="Abort turn" onClick={() => { const last = pendingIds[pendingIds.length - 1]; if (last) abort(last); }}>Stop</button>}
       </div>

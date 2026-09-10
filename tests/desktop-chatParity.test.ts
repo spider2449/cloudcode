@@ -34,8 +34,7 @@ describe("slash parity", () => {
     const main = readFileSync("desktop/main.mjs", "utf8");
     expect(main).toContain("host.cwd(");
   });
-  it("argument completion round-trips through the backend and preserves the prefix", () => {
-    const pane = readFileSync("desktop/renderer/chatPane.tsx", "utf8");
+  it("argument completion round-trips through the backend and preserves the prefix", () => {    const pane = readFileSync("desktop/renderer/chatPane.tsx", "utf8");
     expect(pane).toContain("chatComplete");
     expect(pane).toContain("replaceStart");
     const main = readFileSync("desktop/main.mjs", "utf8");
@@ -44,5 +43,16 @@ describe("slash parity", () => {
     expect(cli).toContain('kind === "complete"');
     const preload = readFileSync("desktop/preload.cjs", "utf8");
     expect(preload).toContain("chatComplete");
+  });
+  it("dropdown is scrollable and keyboard-operable", () => {
+    const css = readFileSync("desktop/renderer/style.css", "utf8");
+    expect(css).toContain(".slash-complete");
+    expect(css).toContain("overflow-y: auto");
+    expect(css).toContain("max-height");
+    const pane = readFileSync("desktop/renderer/chatPane.tsx", "utf8");
+    expect(pane).toContain("ArrowDown");
+    expect(pane).toContain("ArrowUp");
+    expect(pane).toContain('"Tab"');
+    expect(pane).toContain("Escape");
   });
 });
