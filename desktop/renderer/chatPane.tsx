@@ -267,8 +267,8 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
           onCompositionEnd={() => { composingRef.current = false; }}
           placeholder="Message, or / for commands (Shift+Enter for newline)"
         />
-        <button onClick={send}>Send</button>
-        {pendingIds.length > 0 && <button aria-label="Abort turn" onClick={() => { const last = pendingIds[pendingIds.length - 1]; if (last) abort(last); }}>Stop</button>}
+        <button className="chat-send" onClick={send}>Send</button>
+        {pendingIds.length > 0 && <button className="chat-stop" aria-label="Abort turn" onClick={() => { const last = pendingIds[pendingIds.length - 1]; if (last) abort(last); }}>Stop</button>}
       </div>
     </section>
   );

@@ -74,4 +74,12 @@ describe("slash parity", () => {
     const css = readFileSync("desktop/renderer/style.css", "utf8");
     expect(css).toContain(".chat-input textarea");
   });
+  it("composer buttons follow the theme", () => {
+    const pane = readFileSync("desktop/renderer/chatPane.tsx", "utf8");
+    expect(pane).toContain("chat-send");
+    expect(pane).toContain("chat-stop");
+    const css = readFileSync("desktop/renderer/style.css", "utf8");
+    expect(css).toContain(".chat-input .chat-send");
+    expect(css).toContain(".chat-input .chat-stop");
+  });
 });
