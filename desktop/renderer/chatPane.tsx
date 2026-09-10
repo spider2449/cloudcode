@@ -48,7 +48,10 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
   const [highlight, setHighlight] = useState(0);
   const [permission, setPermission] = useState<{ id: string; toolName: string; toolInput?: Record<string, unknown> } | undefined>(undefined);
   const [pendingIds, setPendingIds] = useState<string[]>([]);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // IME composition flag: Enter while composing confirms the candidate and
+  // must not send the message (critical for CJK input).
+  const composingRef = useRef(false);
   // Latest in-flight argument-completion request; stale responses are dropped.
   const completeReq = useRef<{ id: string; prefix: string } | undefined>(undefined);
   const completeSeq = useRef(0);
@@ -165,7 +168,15 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
     requestAnimationFrame(() => inputRef.current?.focus());
   }
 
-  function onInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+  // Auto-grow the composer up to a cap, then scroll internally.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+  }, [input]);
+
+  function onInputKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "ArrowDown" && completions.length > 0) {
       event.preventDefault();
       setHighlight(current => (current + 1) % completions.length);
@@ -189,6 +200,8 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
       return;
     }
     if (event.key === "Enter" && !event.shiftKey) {
+      // Let IME candidate confirmation through; only a clean Enter sends.
+      if (event.nativeEvent.isComposing || composingRef.current) return;
       event.preventDefault();
       send();
     }
@@ -243,7 +256,17 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
         </ul>
       )}
       <div className="chat-input">
-        <input ref={inputRef} aria-label="Message input" value={input} onChange={event => onChange(event.target.value)} onKeyDown={onInputKeyDown} placeholder="Message, or / for commands" />
+        <textarea
+          ref={inputRef}
+          rows={1}
+          aria-label="Message input"
+          value={input}
+          onChange={event => onChange(event.target.value)}
+          onKeyDown={onInputKeyDown}
+          onCompositionStart={() => { composingRef.current = true; }}
+          onCompositionEnd={() => { composingRef.current = false; }}
+          placeholder="Message, or / for commands (Shift+Enter for newline)"
+        />
         <button onClick={send}>Send</button>
         {pendingIds.length > 0 && <button aria-label="Abort turn" onClick={() => { const last = pendingIds[pendingIds.length - 1]; if (last) abort(last); }}>Stop</button>}
       </div>

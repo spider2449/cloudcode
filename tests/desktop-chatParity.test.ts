@@ -66,4 +66,12 @@ describe("slash parity", () => {
     expect(pane).toContain('"Tab"');
     expect(pane).toContain("Escape");
   });
+  it("composer is multiline with IME-safe submit", () => {
+    const pane = readFileSync("desktop/renderer/chatPane.tsx", "utf8");
+    expect(pane).toContain("<textarea");
+    expect(pane).toContain("onCompositionStart");
+    expect(pane).toContain("isComposing");
+    const css = readFileSync("desktop/renderer/style.css", "utf8");
+    expect(css).toContain(".chat-input textarea");
+  });
 });
