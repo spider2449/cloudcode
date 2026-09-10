@@ -172,7 +172,10 @@ ipcMain.handle("cloudcode:chat-complete", (_event, request) => {
     return;
   }
   const id = typeof rest.id === "string" ? rest.id : "unknown";
-  forwardChatLine(JSON.stringify(cwd === undefined ? rest : { ...rest, cwd }), id);
+  // Stamp the kind here (same pattern as chat-respond): the renderer sends a
+  // kind-less request and the backend routes on kind. Missing stamp previously
+  // sent completion keystrokes into the turn pipeline as text-less messages.
+  forwardChatLine(JSON.stringify({ kind: "complete", ...(cwd === undefined ? rest : { ...rest, cwd }) }), id);
 });
 ipcMain.handle("cloudcode:close-application", () => window?.close());
 

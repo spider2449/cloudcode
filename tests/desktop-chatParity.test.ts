@@ -45,6 +45,11 @@ describe("slash parity", () => {
     expect(pane).toContain("replaceStart");
     const main = readFileSync("desktop/main.mjs", "utf8");
     expect(main).toContain("chat-complete");
+    // The renderer sends kind-less completion requests; main must stamp the
+    // kind or the backend routes keystrokes into the turn pipeline as
+    // text-less messages ("Invalid chat text." per keystroke).
+    const completeBlock = main.slice(main.indexOf("chat-complete"));
+    expect(completeBlock).toContain('kind: "complete"');
     const cli = readFileSync("src/cli.tsx", "utf8");
     expect(cli).toContain('kind === "complete"');
     const preload = readFileSync("desktop/preload.cjs", "utf8");
