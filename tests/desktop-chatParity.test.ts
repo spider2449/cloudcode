@@ -28,4 +28,10 @@ describe("slash parity", () => {
       expect(source, `/${name} missing from chat autocomplete`).toContain(`/${name}`);
     }
   });
+  it("chat requests carry the workspace so the backend runs in the right directory", () => {
+    const pane = readFileSync("desktop/renderer/chatPane.tsx", "utf8");
+    expect(pane).toContain("workspaceId");
+    const main = readFileSync("desktop/main.mjs", "utf8");
+    expect(main).toContain("host.cwd(");
+  });
 });

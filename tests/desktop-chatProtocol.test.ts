@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { requireChatId, requireChatText, CHAT_EVENT_TYPES } from "../src/desktop/chatProtocol.js";
+import { requireChatId, requireChatText, requireChatCwd, requireChatSessionId, CHAT_EVENT_TYPES } from "../src/desktop/chatProtocol.js";
 
 describe("chat protocol", () => {
   it("accepts a bounded message id and text", () => {
@@ -23,5 +23,15 @@ describe("chat protocol", () => {
     expect(() => requireChatId("a\nb")).toThrow("Invalid chat id");
     expect(requireChatId("x".repeat(200))).toBe("x".repeat(200));
     expect(requireChatText("x".repeat(200_000))).toBe("x".repeat(200_000));
+  });
+  it("validates optional workspace and session routing fields", () => {
+    expect(requireChatCwd(undefined)).toBeUndefined();
+    expect(requireChatCwd("D:/work/proj")).toBe("D:/work/proj");
+    expect(() => requireChatCwd("")).toThrow("Invalid chat workspace");
+    expect(() => requireChatCwd("a\0b")).toThrow("Invalid chat workspace");
+    expect(() => requireChatCwd("x".repeat(4097))).toThrow("Invalid chat workspace");
+    expect(requireChatSessionId(undefined)).toBeUndefined();
+    expect(requireChatSessionId("sess-1")).toBe("sess-1");
+    expect(() => requireChatSessionId("")).toThrow("Invalid chat id");
   });
 });

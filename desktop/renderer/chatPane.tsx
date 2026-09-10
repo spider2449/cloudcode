@@ -13,7 +13,7 @@ type ChatMsg = { id: string; role: "user" | "assistant" | "notice" | "error"; te
 // Per-module counter suffix keeps ids unique across rapid sends within the same millisecond.
 let sendSeq = 0;
 
-export function ChatPane({ sessionId, onSend }: { sessionId: string | undefined; onSend?: (request: { id: string; sessionId: string | undefined; text: string }) => void }) {
+export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: string | undefined; sessionId: string | undefined; onSend?: (request: { id: string; sessionId: string | undefined; text: string; workspaceId: string | undefined }) => void }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [completions, setCompletions] = useState<string[]>([]);
@@ -68,8 +68,8 @@ export function ChatPane({ sessionId, onSend }: { sessionId: string | undefined;
     setMessages(current => [...current, { id, role: "user", text }]);
     setInput("");
     setCompletions([]);
-    onSend?.({ id, sessionId, text });
-    void window.cloudcode.chatSend({ id, sessionId, text });
+    onSend?.({ id, sessionId, text, workspaceId });
+    void window.cloudcode.chatSend({ id, sessionId, text, workspaceId });
   }
 
   function abort(id: string) {

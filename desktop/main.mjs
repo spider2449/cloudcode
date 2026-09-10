@@ -108,7 +108,24 @@ ipcMain.handle("cloudcode:git-pull", async (_event, workspaceId) => host.gitPull
 ipcMain.handle("cloudcode:git-fetch", async (_event, workspaceId) => host.gitFetch(requireString(workspaceId, "workspace ID")));
 ipcMain.handle("cloudcode:chat-send", (_event, request) => {
   if (!chatChild) startChatBackend();
-  chatChild?.stdin.write(`${JSON.stringify(request)}\n`);
+  if (typeof request !== "object" || request === null) {
+    send("cloudcode:chat-event", { id: "unknown", type: "error", text: "Invalid chat request." });
+    send("cloudcode:chat-event", { id: "unknown", type: "done" });
+    return;
+  }
+  const { workspaceId, ...rest } = request;
+  // Resolve the workspace to its filesystem root so turns and slash commands
+  // run in the project the user is looking at, not the backend's own cwd.
+  let cwd;
+  try {
+    cwd = workspaceId === undefined ? undefined : host.cwd(requireString(workspaceId, "workspace ID"));
+  } catch (error) {
+    const id = typeof rest.id === "string" ? rest.id : "unknown";
+    send("cloudcode:chat-event", { id, type: "error", text: error instanceof Error ? error.message : String(error) });
+    send("cloudcode:chat-event", { id, type: "done" });
+    return;
+  }
+  chatChild?.stdin.write(`${JSON.stringify(cwd === undefined ? rest : { ...rest, cwd })}\n`);
 });
 ipcMain.handle("cloudcode:chat-abort", (_event, id) => {
   chatChild?.stdin.write(`${JSON.stringify({ kind: "abort", id })}\n`);

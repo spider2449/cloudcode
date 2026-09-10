@@ -28,6 +28,10 @@ import { createMaintenanceExecutor } from "./commands/cli/maintenanceExecutor.js
 import { runLoginCommand } from "./commands/cli/login.js";
 import { runSetupCommand } from "./commands/cli/setup.js";
 import { loadOwnCredentials, loadBorrowedCredentials, refreshTokens, isExpired } from "./agent/oauth.js";
+import type { ProviderConfig } from "./agent/providers.js";
+import type { PermissionMode } from "./agent/session.js";
+import type { EffortLevel } from "./engine/effort.js";
+import type { NetworkMode } from "./agent/networkPolicy.js";
 
 const parsed = parseCli(process.argv.slice(2));
 
@@ -46,46 +50,95 @@ if (parsed.kind === "error") {
 if (parsed.kind === "guiserver") {
   const { GuiServer, splitInputLines } = await import("./desktop/guiServer.js");
   const { buildRegistry } = await import("./commands/builtins.js");
+  const { mergeSkillCommands } = await import("./commands/skillCommands.js");
+  const { loadSkills } = await import("./agent/skills.js");
   const { AgentSession } = await import("./agent/session.js");
   const { loadMcpServers } = await import("./agent/mcp.js");
   const { loadRegistry } = await import("./engine/lsp/config.js");
-  const { join } = await import("node:path");
+  const { fetchModels } = await import("./agent/models.js");
+  const { PermissionStore } = await import("./agent/permissionStore.js");
+  const { buildGuiCommandContext } = await import("./desktop/guiCommandContext.js");
   const { toChatEvents, fromApiMessages } = await import("./desktop/chatEvents.js");
   const { SessionFile } = await import("./engine/sessions.js");
-  const registry = buildRegistry({ ...process.env, CLOUDCODE_DESKTOP: "1" });
+  const { requireChatSessionId } = await import("./desktop/chatProtocol.js");
+  const { join } = await import("node:path");
+  const registryEnv = { ...process.env, CLOUDCODE_DESKTOP: "1" };
   const emit = (event: unknown) => { process.stdout.write(`${JSON.stringify(event)}\n`); };
-  const guiProviders = loadProviders();
+  const guiProviders: Record<string, ProviderConfig> = loadProviders();
   const guiSettings = loadSettings();
-  let guiProviderName = guiSettings.provider ?? "anthropic";
-  if (!guiProviders[guiProviderName]) guiProviderName = "anthropic";
+  const defaultProvider = guiSettings.provider && guiProviders[guiSettings.provider] ? guiSettings.provider : "anthropic";
+  // Per-conversation backend state, keyed by workspace + GUI session. The GUI
+  // is a thin shell: every turn and every slash command runs here against the
+  // same AgentSession/registry machinery as the terminal UI.
+  interface GuiKeyState {
+    cwd: string;
+    sessionId: string | undefined;
+    providerName: string;
+    model: string | undefined;
+    effort: EffortLevel;
+    mode: PermissionMode;
+    networkMode: NetworkMode;
+    costUsd: number;
+    turns: number;
+    models: string[];
+    mcpDisabled: Set<string>;
+  }
+  const keyStates = new Map<string, GuiKeyState>();
   const sessions = new Map<string, InstanceType<typeof AgentSession>>();
+  const permissionStores = new Map<string, InstanceType<typeof PermissionStore>>();
   const inFlight = new Map<string, string>();
   const turnDone = new Map<string, () => void>();
   const pendingPermission = new Map<string, (allow: boolean) => void>();
-  function getSession(cwd: string): InstanceType<typeof AgentSession> {
-    const existing = sessions.get(cwd);
+  const sessionKey = (cwd: string, sessionId: string | undefined): string => `${cwd}::${sessionId ?? ""}`;
+  function keyState(cwd: string, sessionId: string | undefined): GuiKeyState {
+    const key = sessionKey(cwd, sessionId);
+    const existing = keyStates.get(key);
+    if (existing) return existing;
+    const providerName = defaultProvider;
+    const state: GuiKeyState = {
+      cwd, sessionId, providerName,
+      model: guiSettings.model ?? guiProviders[providerName]?.model,
+      effort: guiSettings.effort ?? "off",
+      mode: guiSettings.permissionMode ?? "default",
+      networkMode: guiSettings.networkMode ?? "providerOnly",
+      costUsd: 0, turns: 0, models: [], mcpDisabled: new Set<string>()
+    };
+    keyStates.set(key, state);
+    return state;
+  }
+  function refreshModels(key: string, state: GuiKeyState): void {
+    void fetchModels(guiProviders[state.providerName] ?? {}).then(models => {
+      const live = keyStates.get(key);
+      if (live) live.models = models;
+    }).catch(() => {});
+  }
+  function getSession(key: string, state: GuiKeyState): InstanceType<typeof AgentSession> {
+    const existing = sessions.get(key);
     if (existing) return existing;
     const session = new AgentSession({
-      providerName: guiProviderName,
-      provider: guiProviders[guiProviderName],
-      model: guiSettings.model,
-      effort: guiSettings.effort,
-      permissionMode: guiSettings.permissionMode ?? "default",
-      cwd,
-      mcpServers: loadMcpServers(cwd),
-      lspRegistry: loadRegistry(undefined, join(cwd, ".cloudcode", "lsp.json"), false),
+      providerName: state.providerName,
+      provider: guiProviders[state.providerName],
+      model: state.model,
+      effort: state.effort,
+      permissionMode: state.mode,
+      resume: state.sessionId,
+      cwd: state.cwd,
+      networkMode: state.networkMode,
+      mcpServers: loadMcpServers(state.cwd),
+      lspRegistry: loadRegistry(undefined, join(state.cwd, ".cloudcode", "lsp.json"), false),
       onMessage: (msg) => {
-        const id = inFlight.get(cwd);
+        if (msg.type === "result" && msg.subtype === "success" && typeof msg.total_cost_usd === "number") state.costUsd += msg.total_cost_usd;
+        const id = inFlight.get(key);
         if (!id) return;
         for (const event of toChatEvents(id, msg)) emit(event);
         if (msg.type === "result" || msg.type === "limit") {
-          inFlight.delete(cwd);
-          turnDone.get(cwd)?.();
-          turnDone.delete(cwd);
+          inFlight.delete(key);
+          turnDone.get(key)?.();
+          turnDone.delete(key);
         }
       },
       onPermissionRequest: (req) => {
-        const id = inFlight.get(cwd);
+        const id = inFlight.get(key);
         if (!id) {
           req.resolve(false);
           return;
@@ -96,24 +149,79 @@ if (parsed.kind === "guiserver") {
       onSessionId: () => {},
     });
     session.start();
-    sessions.set(cwd, session);
+    sessions.set(key, session);
+    refreshModels(key, state);
     return session;
   }
-  let activeCwd = process.cwd();
+  async function disposeKey(key: string): Promise<void> {
+    // Settle a displaced turn waiter first: the session is being torn down by
+    // an explicit slash command (/new, /provider, /config), so from the GUI's
+    // perspective that turn is over. Late session messages then find no
+    // in-flight id and are dropped instead of hanging a waiter forever.
+    const finish = turnDone.get(key);
+    turnDone.delete(key);
+    inFlight.delete(key);
+    finish?.();
+    const session = sessions.get(key);
+    sessions.delete(key);
+    await session?.dispose().catch(() => {});
+  }
+  function permissionStoreFor(cwd: string): InstanceType<typeof PermissionStore> {
+    const existing = permissionStores.get(cwd);
+    if (existing) return existing;
+    const store = new PermissionStore(cwd);
+    permissionStores.set(cwd, store);
+    return store;
+  }
+  function buildContext(cwd: string, id: string, key: string, state: GuiKeyState): import("./commands/types.js").CommandContext {
+    return buildGuiCommandContext({
+      cwd,
+      notice: text => emit({ id, type: "notice", text }),
+      providers: guiProviders,
+      providerName: () => state.providerName,
+      availableModels: () => state.models,
+      currentModel: () => state.model,
+      setCurrentModel: model => { state.model = model; },
+      currentEffort: () => state.effort,
+      setCurrentEffort: level => { state.effort = level; },
+      currentNetworkMode: () => state.networkMode,
+      setCurrentNetworkMode: mode => { state.networkMode = mode; },
+      sessionCost: () => state.costUsd,
+      getSession: () => getSession(key, state),
+      restartSession: async provider => {
+        if (provider) state.providerName = provider;
+        await disposeKey(key);
+        return getSession(key, state);
+      },
+      mcpDisabled: () => state.mcpDisabled,
+      permissionStore: () => permissionStoreFor(cwd)
+    });
+  }
   const server = new GuiServer({
-    commands: registry as never,
-    runTurn: async (id, text, emitTurn) => {
-      const cwd = activeCwd;
-      // Reject overlapping turns on the same workspace before claiming the slot.
-      if (inFlight.has(cwd)) {
-        emitTurn({ id, type: "error", text: "A turn is already running for this workspace." });
+    commands: cwd => mergeSkillCommands(buildRegistry(registryEnv), loadSkills(cwd)),
+    buildContext: req => {
+      const key = sessionKey(req.cwd, req.sessionId);
+      return buildContext(req.cwd, req.id, key, keyState(req.cwd, req.sessionId));
+    },
+    runTurn: async (req, emitTurn) => {
+      const key = sessionKey(req.cwd, req.sessionId);
+      const state = keyState(req.cwd, req.sessionId);
+      // Reject overlapping turns on the same conversation before claiming the slot.
+      if (inFlight.has(key)) {
+        emitTurn({ id: req.id, type: "error", text: "A turn is already running for this session." });
         return;
       }
-      const session = getSession(cwd);
-      inFlight.set(cwd, id);
+      if (req.sessionId === undefined && state.turns > 0 && sessions.has(key)) {
+        // Anonymous "new session" that already ran: start genuinely fresh so
+        // the GUI's New Session button never appends to an old transcript.
+        await disposeKey(key);
+      }
+      const session = getSession(key, state);
+      state.turns += 1;
+      inFlight.set(key, req.id);
       await new Promise<void>((resolve) => {
-        turnDone.set(cwd, resolve);
-        session.send(text);
+        turnDone.set(key, resolve);
+        session.send(req.text);
       });
     },
     emit: (event) => { process.stdout.write(`${JSON.stringify(event)}\n`); },
@@ -136,10 +244,11 @@ if (parsed.kind === "guiserver") {
           historySeq += 1;
           const replyId = `history-${Date.now()}-${historySeq}`;
           try {
-            if (typeof request.sessionId !== "string" || request.sessionId === "") {
+            const historySession = requireChatSessionId(request.sessionId);
+            if (historySession === undefined) {
               throw new Error("Invalid history session id.");
             }
-            const entries = SessionFile.load(request.sessionId);
+            const entries = SessionFile.load(historySession);
             for (const event of fromApiMessages(replyId, entries as Array<{ role?: string; content?: unknown; type?: string }>)) emit(event);
             emit({ id: replyId, type: "done" });
           } catch (error) {
@@ -169,8 +278,7 @@ if (parsed.kind === "guiserver") {
           }
           continue;
         }
-        activeCwd = typeof request.cwd === "string" ? request.cwd : process.cwd();
-        void server.handle({ id: request.id, text: request.text });
+        void server.handle({ id: request.id, text: request.text, cwd: request.cwd, sessionId: request.sessionId });
       } catch (error) {
         process.stdout.write(`${JSON.stringify({ id: "unknown", type: "error", text: error instanceof Error ? error.message : String(error) })}\n`);
       }
