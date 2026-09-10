@@ -22,11 +22,16 @@ export interface GuiServerDeps {
 export class GuiServer {
   constructor(private readonly deps: GuiServerDeps) {}
 
-  async handle(raw: { id: unknown; text: unknown; cwd?: unknown; sessionId?: unknown }): Promise<void> {
-    const id = requireChatId(raw.id);
-    const text = requireChatText(raw.text);
+  // Total: never rejects. Request validation lives inside the try with an
+  // "unknown" fallback id, so malformed input yields error+done instead of an
+  // unhandled rejection — which would otherwise exit the headless backend
+  // (Node's default unhandled-rejection mode) and break the GUI's stdin pipe.
+  async handle(raw: { id?: unknown; text?: unknown; cwd?: unknown; sessionId?: unknown }): Promise<void> {
+    let id = "unknown";
     const emit = this.deps.emit;
     try {
+      id = requireChatId(raw.id);
+      const text = requireChatText(raw.text);
       const cwd = requireChatCwd(raw.cwd) ?? process.cwd();
       const sessionId = requireChatSessionId(raw.sessionId);
       const req: GuiTurnRequest = { id, cwd, sessionId, text };

@@ -101,3 +101,26 @@ describe("gui server framing", () => {
     expect(splitInputLines('{"id":"1"}\n{"id":"2"}\n{"id":"3"')).toEqual({ lines: ['{"id":"1"}', '{"id":"2"}'], rest: '{"id":"3"' });
   });
 });
+
+describe("gui server totality", () => {
+  it("never rejects: malformed requests yield error and done", async () => {
+    const events: ChatEvent[] = [];
+    const server = new GuiServer({
+      commands: () => new Map(),
+      buildContext: (req: { id: string; cwd: string }) => contextFor(events)(req),
+      runTurn: async () => { throw new Error("must not run"); },
+      emit: (event: ChatEvent) => { events.push(event); },
+    });
+    await server.handle({ id: 123, text: "hi" });
+    await server.handle({ id: "ok", text: undefined });
+    await server.handle({ id: "ok2", text: "hi", cwd: "a\0b" });
+    expect(events).toEqual([
+      { id: "unknown", type: "error", text: expect.any(String) },
+      { id: "unknown", type: "done" },
+      { id: "ok", type: "error", text: expect.any(String) },
+      { id: "ok", type: "done" },
+      { id: "ok2", type: "error", text: expect.any(String) },
+      { id: "ok2", type: "done" }
+    ]);
+  });
+});

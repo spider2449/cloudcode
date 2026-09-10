@@ -65,6 +65,13 @@ if (parsed.kind === "guiserver") {
   const { join } = await import("node:path");
   const registryEnv = { ...process.env, CLOUDCODE_DESKTOP: "1" };
   const emit = (event: unknown) => { process.stdout.write(`${JSON.stringify(event)}\n`); };
+  // Last resort: a GUI backend must stay alive for its stdin pipe. Unhandled
+  // rejections are logged loudly to stderr (inherited: visible in the
+  // terminal) instead of exiting the process and breaking the desktop app.
+  // Request paths above are all total, so reaching here is always a bug.
+  process.on("unhandledRejection", reason => {
+    console.error(`[gui-server] unhandled rejection: ${reason instanceof Error ? reason.stack ?? reason.message : String(reason)}`);
+  });
   const guiProviders: Record<string, ProviderConfig> = loadProviders();
   const guiSettings = loadSettings();
   const defaultProvider = guiSettings.provider && guiProviders[guiSettings.provider] ? guiSettings.provider : "anthropic";

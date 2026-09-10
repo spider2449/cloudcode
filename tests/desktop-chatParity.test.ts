@@ -17,6 +17,12 @@ describe("desktop shell split", () => {
     expect(source).not.toContain("node-pty");
     expect(source).not.toContain("pty.spawn");
   });
+  it("main never writes to the backend pipe unguarded", () => {
+    const source = readFileSync("desktop/main.mjs", "utf8");
+    expect(source).toContain("writeChatBackend");
+    const bare = source.split("\n").filter(line => line.includes("chatChild?.stdin.write"));
+    expect(bare).toHaveLength(1);
+  });
 });
 
 describe("slash parity", () => {

@@ -57,6 +57,30 @@ function stopChatBackend() {
   try { active.kill(); } catch { /* already exited */ }
 }
 
+// Writes to the backend never throw into Electron: a broken pipe means the
+// child died mid-write (its exit handler may not have run yet), so restart it
+// and tell the renderer the request was lost instead of crashing the app.
+function writeChatBackend(line) {
+  try {
+    if (!chatChild) startChatBackend();
+    chatChild?.stdin.write(`${line}\n`);
+    return true;
+  } catch {
+    stopChatBackend();
+    startChatBackend();
+    return false;
+  }
+}
+
+function backendLost(id) {
+  send("cloudcode:chat-event", { id, type: "error", text: "Chat backend restarted; please resend." });
+  send("cloudcode:chat-event", { id, type: "done" });
+}
+
+function forwardChatLine(line, id) {
+  if (!writeChatBackend(line)) backendLost(id);
+}
+
 function resolveCliPath() {
   // Packaged layout: electron-builder packs files into app.asar, which the
   // Electron process can read but the child node.exe spawned below cannot.
@@ -107,7 +131,6 @@ ipcMain.handle("cloudcode:git-push", async (_event, workspaceId, branch) => host
 ipcMain.handle("cloudcode:git-pull", async (_event, workspaceId) => host.gitPull(requireString(workspaceId, "workspace ID")));
 ipcMain.handle("cloudcode:git-fetch", async (_event, workspaceId) => host.gitFetch(requireString(workspaceId, "workspace ID")));
 ipcMain.handle("cloudcode:chat-send", (_event, request) => {
-  if (!chatChild) startChatBackend();
   if (typeof request !== "object" || request === null) {
     send("cloudcode:chat-event", { id: "unknown", type: "error", text: "Invalid chat request." });
     send("cloudcode:chat-event", { id: "unknown", type: "done" });
@@ -125,19 +148,19 @@ ipcMain.handle("cloudcode:chat-send", (_event, request) => {
     send("cloudcode:chat-event", { id, type: "done" });
     return;
   }
-  chatChild?.stdin.write(`${JSON.stringify(cwd === undefined ? rest : { ...rest, cwd })}\n`);
+  forwardChatLine(JSON.stringify(cwd === undefined ? rest : { ...rest, cwd }), typeof rest.id === "string" ? rest.id : "unknown");
 });
 ipcMain.handle("cloudcode:chat-abort", (_event, id) => {
-  chatChild?.stdin.write(`${JSON.stringify({ kind: "abort", id })}\n`);
+  forwardChatLine(JSON.stringify({ kind: "abort", id }), typeof id === "string" ? id : "unknown");
 });
 ipcMain.handle("cloudcode:chat-history", (_event, sessionId) => {
-  chatChild?.stdin.write(`${JSON.stringify({ kind: "history", sessionId })}\n`);
+  forwardChatLine(JSON.stringify({ kind: "history", sessionId }), "history");
 });
 ipcMain.handle("cloudcode:chat-respond", (_event, response) => {
-  chatChild?.stdin.write(`${JSON.stringify({ kind: "respond", ...response })}\n`);
+  const id = response !== null && typeof response === "object" && typeof response.id === "string" ? response.id : "unknown";
+  forwardChatLine(JSON.stringify({ kind: "respond", ...response }), id);
 });
 ipcMain.handle("cloudcode:chat-complete", (_event, request) => {
-  if (!chatChild) startChatBackend();
   if (typeof request !== "object" || request === null) return;
   const { workspaceId, ...rest } = request;
   // Same workspace-to-directory resolution as chat-send so argument values
@@ -148,7 +171,8 @@ ipcMain.handle("cloudcode:chat-complete", (_event, request) => {
   } catch {
     return;
   }
-  chatChild?.stdin.write(`${JSON.stringify(cwd === undefined ? rest : { ...rest, cwd })}\n`);
+  const id = typeof rest.id === "string" ? rest.id : "unknown";
+  forwardChatLine(JSON.stringify(cwd === undefined ? rest : { ...rest, cwd }), id);
 });
 ipcMain.handle("cloudcode:close-application", () => window?.close());
 
