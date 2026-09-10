@@ -11,6 +11,7 @@ export type Subcommand = (typeof SUBCOMMANDS)[number];
 export type CliResult =
   | { kind: "help" }
   | { kind: "version" }
+  | { kind: "guiserver" }
   | { kind: "error"; message: string }
   | { kind: "subcommand"; name: Subcommand; args: string[] }
   | { kind: "interactive"; continue: boolean; resume: boolean; session?: string; provider?: string; networkMode?: NetworkMode }
@@ -50,7 +51,8 @@ Options:
       --timeout <duration>      Complete run timeout, e.g. 10m (with -p only)
       --max-cost-usd <amount>   Known-model cost cap (with -p only)
   -v, --version                 Print version and exit
-  -h, --help                    Show this help`;
+  -h, --help                    Show this help
+  --gui-server              Headless JSON-RPC backend for the desktop GUI shell`;
 
 export function parseCli(argv: string[]): CliResult {
   const first = argv[0];
@@ -61,7 +63,7 @@ export function parseCli(argv: string[]): CliResult {
     return { kind: "error", message: `Unknown command "${first}". Run cloudcode --help for usage.` };
   }
   let values: {
-    help: boolean; version: boolean; continue: boolean; resume: boolean; print: boolean;
+    help: boolean; version: boolean; continue: boolean; resume: boolean; print: boolean; "gui-server": boolean;
     provider?: string; session?: string; "network-mode"?: string; "permission-mode"?: string; "trust-project-config": boolean;
     "output-format"?: string; "max-turns"?: string; timeout?: string; "max-cost-usd"?: string;
   };
@@ -84,7 +86,8 @@ export function parseCli(argv: string[]): CliResult {
         "output-format": { type: "string" },
         "max-turns": { type: "string" },
         timeout: { type: "string" },
-        "max-cost-usd": { type: "string" }
+        "max-cost-usd": { type: "string" },
+        "gui-server": { type: "boolean", default: false }
       }
     }));
   } catch (err) {
@@ -94,6 +97,12 @@ export function parseCli(argv: string[]): CliResult {
   }
   if (values.help) return { kind: "help" };
   if (values.version) return { kind: "version" };
+  if (values["gui-server"]) {
+    if (values.print || values.continue || values.resume || values.session !== undefined || positionals.length > 0) {
+      return { kind: "error", message: "--gui-server cannot be combined with other flags. Run cloudcode --help for usage." };
+    }
+    return { kind: "guiserver" };
+  }
   const networkMode = values["network-mode"];
   if (networkMode !== undefined && !isNetworkMode(networkMode)) {
     return { kind: "error", message: `Invalid --network-mode "${networkMode}". Valid: offlineStrict, providerOnly, unrestricted.` };

@@ -3,21 +3,20 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// The embedded TUI owns its cursor and scrolling presentation: the terminal
-// pane must not show xterm's native viewport scrollbar. Its thumb parks at
-// the bottom-right corner while following the tail and reads as a spurious
-// second input cursor there.
+// Native chat has no xterm/PTY backend: no terminal- or xterm-scoped CSS may
+// remain in the renderer stylesheet (comments excluded).
 const css = readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), "..", "desktop", "renderer", "style.css"),
   "utf8"
 );
+const code = css.replace(/\/\*[\s\S]*?\*\//g, "");
 
-describe("desktop terminal scrollbar", () => {
-  it("hides the xterm viewport scrollbar in the terminal pane", () => {
-    expect(css).toMatch(/\.terminal-host\s+\.xterm-viewport\s*\{[^}]*scrollbar-width:\s*none/);
+describe("desktop native chat style", () => {
+  it("has no terminal-scoped selectors", () => {
+    expect(code).not.toMatch(/terminal-/);
   });
 
-  it("hides the Chromium scrollbar for the xterm viewport", () => {
-    expect(css).toMatch(/\.terminal-host\s+\.xterm-viewport::-webkit-scrollbar\s*\{[^}]*display:\s*none/);
+  it("has no xterm selectors", () => {
+    expect(code).not.toMatch(/xterm/);
   });
 });

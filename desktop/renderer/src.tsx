@@ -1,12 +1,8 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createRoot } from "react-dom/client";
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
-import "@xterm/xterm/css/xterm.css";
 import "./style.css";
-import { terminalKeySequence } from "./terminalKeys.js";
-import { installImeCursorSync } from "./imePosition.js";
 import { VERSION } from "../../src/version.js";
+import { ChatPane } from "./chatPane.js";
 
 type Session = { id: string; firstMessage: string; timestamp: string; provider: string };
 type Workspace = { id: string; name: string; sessions: Session[] };
@@ -14,6 +10,8 @@ type GitFile = { path: string; originalPath?: string; index: string; workingTree
 type GitCommit = { hash: string; shortHash: string; author: string; date: string; subject: string };
 type GitState = { isGitRepo: boolean; branch?: string; upstream?: string; ahead: number; behind: number; files: GitFile[]; truncated: boolean; error?: string; lastCommit?: GitCommit; recent: GitCommit[]; lastFetchedAt?: number };
 type GitDiff = { text: string; truncated: boolean; error?: string };
+type ChatRequest = { id: string; sessionId: string | undefined; text: string };
+type ChatBridgeEvent = { id: string; type: string; text?: string; toolName?: string; toolInput?: Record<string, unknown> };
 
 declare global {
   interface Window {
@@ -34,14 +32,12 @@ declare global {
       gitPush(workspaceId: string, branch?: string): Promise<void>;
       gitPull(workspaceId: string): Promise<void>;
       gitFetch(workspaceId: string): Promise<void>;
-      startTerminal(workspaceId: string, sessionId: string | undefined, columns: number, rows: number, generation: string): Promise<void>;
-      drainTerminal(generation: string): Promise<string>;
-      writeTerminal(data: string): Promise<void>;
-      terminalBusy(): Promise<boolean>;
-      onTerminalBusy(listener: (payload: { busy: boolean }) => void): () => void;
-      resizeTerminal(columns: number, rows: number): Promise<void>;
+      chatSend(request: ChatRequest): Promise<void>;
+      chatAbort(id: string): Promise<void>;
+      chatHistory(sessionId: string | undefined): Promise<void>;
+      chatRespond(response: { id: string; allow: boolean }): Promise<void>;
+      onChatEvent(listener: (event: ChatBridgeEvent) => void): () => void;
       closeApplication(): Promise<void>;
-      onTerminalExit(listener: (payload: { generation: string; exitCode: number }) => void): () => void;
     };
   }
 }
@@ -73,82 +69,24 @@ function App() {
   const [active, setActive] = useState<string>();
   const [activeSessions, setActiveSessions] = useState<Record<string, string | undefined>>({});
   const [gitStates, setGitStates] = useState<Record<string, GitState | undefined>>({});
-  const [terminalReady, setTerminalReady] = useState(false);
-  const [terminalExit, setTerminalExit] = useState<number>();
-  const [terminalGeneration, setTerminalGeneration] = useState(0);
-  const [turnBusy, setTurnBusy] = useState(false);
-  const [pendingSwitch, setPendingSwitch] = useState<
-    | { kind: "session"; workspaceId: string; sessionId: string | undefined }
-    | { kind: "workspace"; nextId: string }
-    | undefined
-  >(undefined);
+  const [backendExit, setBackendExit] = useState<string>();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(() => readStoredWidth("cloudcode.sidebarWidth", DEFAULT_SIDEBAR_WIDTH));
   const [inspectorWidth, setInspectorWidth] = useState(() => readStoredWidth("cloudcode.inspectorWidth", DEFAULT_INSPECTOR_WIDTH));
   const [dragging, setDragging] = useState<"left" | "right" | null>(null);
   const dragState = useRef<{ side: "left" | "right"; startX: number; startSidebar: number; startInspector: number } | null>(null);
-  const terminalElement = useRef<HTMLDivElement>(null);
-  const terminal = useRef<Terminal>();
-  const fitAddon = useRef<FitAddon>();
-  const currentTerminalGeneration = useRef("");
+  const lastChat = useRef<ChatRequest | undefined>(undefined);
   const activeWorkspace = workspaces.find(workspace => workspace.id === active);
 
+  // Only the reserved backend id reports process exits; turn failures from
+  // any other id render as error bubbles in the chat pane. A recovered
+  // stream (text delta or turn completion) clears the banner again.
   useEffect(() => {
-    const element = terminalElement.current;
-    if (!element) return;
-    const instance = new Terminal({
-      // The embedded TUI draws its own solid block marker at the input
-      // position, so a blinking native cursor on the same cell renders as a
-      // second, redundant indicator. Keep the native cursor solid instead.
-      cursorBlink: false,
-      cursorStyle: "block",
-      fontFamily: '"Cascadia Mono", "Cascadia Code", Consolas, monospace',
-      fontSize: 13,
-      lineHeight: 1.15,
-      scrollback: 10_000,
-      allowProposedApi: false,
-      theme: { background: "#15171b", foreground: "#d8dbe1", cursor: "#dce5f5", selectionBackground: "#536d9970" }
+    return window.cloudcode.onChatEvent(event => {
+      if (event.id === "backend" && event.type === "error") setBackendExit(event.text ?? "Backend exited");
+      else if (event.type === "text_delta" || event.type === "done") setBackendExit(undefined);
     });
-    const fit = new FitAddon();
-    instance.loadAddon(fit);
-    instance.open(element);
-    const removeImeCursorSync = installImeCursorSync(instance, element);
-    instance.attachCustomKeyEventHandler(event => {
-      const sequence = terminalKeySequence(event);
-      if (sequence === undefined) return true;
-      void window.cloudcode.writeTerminal(sequence);
-      return false;
-    });
-    fit.fit();
-    terminal.current = instance;
-    fitAddon.current = fit;
-    const input = instance.onData(data => { void window.cloudcode.writeTerminal(data); });
-    const removeExit = window.cloudcode.onTerminalExit(({ generation, exitCode }) => {
-      if (generation === currentTerminalGeneration.current) setTerminalExit(exitCode);
-    });
-    const observer = new ResizeObserver(() => {
-      fit.fit();
-      void window.cloudcode.resizeTerminal(instance.cols, instance.rows);
-    });
-    observer.observe(element);
-    setTerminalReady(true);
-    return () => {
-      observer.disconnect();
-      removeImeCursorSync();
-      input.dispose();
-      removeExit();
-      instance.dispose();
-      terminal.current = undefined;
-      fitAddon.current = undefined;
-    };
-  }, []);
-
-  useEffect(() => {
-    let disposed = false;
-    void window.cloudcode.terminalBusy().then(busy => { if (!disposed) setTurnBusy(busy); }).catch(() => {});
-    const remove = window.cloudcode.onTerminalBusy(({ busy }) => { if (!disposed) setTurnBusy(busy); });
-    return () => { disposed = true; remove(); };
   }, []);
 
   useEffect(() => {
@@ -158,34 +96,6 @@ function App() {
       setActiveSessions(Object.fromEntries(restored.map(workspace => [workspace.id, workspace.sessions[0]?.id])));
     });
   }, []);
-
-  useEffect(() => {
-    if (!active || !terminalReady) return;
-    const sessionId = activeSessions[active];
-    const instance = terminal.current;
-    if (!instance) return;
-    instance.clear();
-    setTerminalExit(undefined);
-    fitAddon.current?.fit();
-    const generation = `${active}:${terminalGeneration}:${Date.now()}`;
-    currentTerminalGeneration.current = generation;
-    let disposed = false;
-    const drain = async () => {
-      try {
-        const output = await window.cloudcode.drainTerminal(generation);
-        if (!disposed && currentTerminalGeneration.current === generation && output !== "") instance.write(output);
-      } catch {
-        // A session restart can invalidate an in-flight drain request.
-      }
-    };
-    void window.cloudcode.startTerminal(active, sessionId, instance.cols, instance.rows, generation)
-      .then(drain)
-      .catch(error => {
-        if (currentTerminalGeneration.current === generation) instance.writeln(`\r\n${error instanceof Error ? error.message : String(error)}`);
-      });
-    const poll = window.setInterval(() => { void drain(); }, 50);
-    return () => { disposed = true; window.clearInterval(poll); };
-  }, [active, activeSessions, terminalReady, terminalGeneration]);
 
   useEffect(() => {
     if (!active) return;
@@ -242,9 +152,6 @@ function App() {
     const onUp = () => {
       dragState.current = null;
       setDragging(null);
-      fitAddon.current?.fit();
-      const instance = terminal.current;
-      if (instance) void window.cloudcode.resizeTerminal(instance.cols, instance.rows);
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -267,11 +174,6 @@ function App() {
   function resetResize(side: "left" | "right") {
     if (side === "left") setSidebarWidth(DEFAULT_SIDEBAR_WIDTH);
     else setInspectorWidth(DEFAULT_INSPECTOR_WIDTH);
-    requestAnimationFrame(() => {
-      fitAddon.current?.fit();
-      const instance = terminal.current;
-      if (instance) void window.cloudcode.resizeTerminal(instance.cols, instance.rows);
-    });
   }
 
   const inspectorVisible = inspectorOpen && activeWorkspace !== undefined;
@@ -303,7 +205,7 @@ function App() {
 
   function switchWorkspace(nextId: string) {
     if (nextId === active) return;
-    void confirmUnlessBusy({ kind: "workspace", nextId }, () => applyWorkspaceSwitch(nextId));
+    applyWorkspaceSwitch(nextId);
   }
 
   async function openProject() {
@@ -314,42 +216,17 @@ function App() {
     setActive(workspace.id);
   }
 
-  function applySessionSelect(workspaceId: string, sessionId: string | undefined) {
-    setActiveSessions(current => ({ ...current, [workspaceId]: sessionId }));
-    setTerminalGeneration(value => value + 1);
-  }
-
-  // Switching sessions kills the live PTY, interrupting any running turn.
-  // Warn first, but only when a turn is actually running.
-  async function confirmUnlessBusy(
-    pending: { kind: "session"; workspaceId: string; sessionId: string | undefined } | { kind: "workspace"; nextId: string },
-    apply: () => void
-  ): Promise<void> {
-    let busy = turnBusy;
-    try {
-      busy = await window.cloudcode.terminalBusy();
-    } catch {
-      // Fall back to the last pushed state when the query fails.
-    }
-    setTurnBusy(busy);
-    if (!busy) {
-      apply();
-      return;
-    }
-    setPendingSwitch(pending);
-  }
-
+  // Session switching no longer kills a live PTY, so no busy confirmation is needed.
   function selectSession(workspaceId: string, sessionId: string | undefined) {
     if (activeSessions[workspaceId] === sessionId) return;
-    void confirmUnlessBusy({ kind: "session", workspaceId, sessionId }, () => applySessionSelect(workspaceId, sessionId));
+    setActiveSessions(current => ({ ...current, [workspaceId]: sessionId }));
   }
 
-  function confirmPendingSwitch() {
-    const pending = pendingSwitch;
-    setPendingSwitch(undefined);
-    if (!pending) return;
-    if (pending.kind === "session") applySessionSelect(pending.workspaceId, pending.sessionId);
-    else applyWorkspaceSwitch(pending.nextId);
+  function retryLastChat() {
+    const request = lastChat.current;
+    if (!request) return;
+    setBackendExit(undefined);
+    void window.cloudcode.chatSend(request);
   }
 
   return <main className={`app-shell ${sidebarOpen ? "" : "sidebar-collapsed"} ${inspectorVisible ? "" : "inspector-collapsed"}${dragging ? " resizing" : ""}`} style={{ gridTemplateColumns }}>
@@ -359,24 +236,16 @@ function App() {
       <div className="project-switcher"><span>⌘</span><select aria-label="Active project" value={active ?? ""} onChange={event => switchWorkspace(event.target.value)}>{workspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select><button className="bare-button" title="Open project" onClick={openProject}>＋</button></div>
       <div className="section-heading"><span>SESSIONS</span><span>{activeWorkspace?.sessions.length ?? 0}</span></div>
       <nav className="workspace-list" aria-label="Sessions">{activeWorkspace?.sessions.map(session => <button key={session.id} className={activeSessions[activeWorkspace.id] === session.id ? "session-card active" : "session-card"} onClick={() => selectSession(activeWorkspace.id, session.id)}><span className="session-title">{session.firstMessage || "Untitled session"}</span><span className="session-meta">{formatSessionDate(session.timestamp)} · {session.provider}</span></button>)}{activeWorkspace && activeWorkspace.sessions.length === 0 && <p className="no-sessions">Your first message will name this session.</p>}</nav>
-      <div className="sidebar-footer"><span className="status-dot" /> Embedded CloudCode TUI<br /><small>One engine, one interaction model</small></div>
+      <div className="sidebar-footer"><span className="status-dot" /> Native chat<br /><small>One engine, one interaction model</small></div>
     </aside>}
     {!sidebarOpen && <button className="sidebar-reveal icon-button" onClick={() => setSidebarOpen(true)}>☰</button>}
     {sidebarOpen && <div className="resizer resizer-left" role="separator" tabIndex={0} aria-orientation="vertical" aria-label="Resize sidebar" title="Drag to resize sidebar (double-click to reset)" onKeyDown={event => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") setSidebarWidth(value => clamp(value + (event.key === "ArrowLeft" ? -10 : 10), MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH)); }} onMouseDown={event => beginResize("left", event)} onDoubleClick={() => resetResize("left")} />}
-    <section className="terminal-pane"><header className="titlebar"><div className="title-copy"><strong>{activeWorkspace?.sessions.find(session => session.id === activeSessions[activeWorkspace.id])?.firstMessage || "New session"}</strong><span><b>{activeWorkspace?.name ?? "No project"}</b><i /> TUI v{VERSION}</span></div><div className="title-actions">{terminalExit !== undefined && <span className="terminal-exit">Exited ({terminalExit})</span>}<button className="icon-button" title="Toggle Git" onClick={() => setInspectorOpen(value => !value)}>◫</button></div></header><div className="terminal-host"><div className="terminal-fit" ref={terminalElement} /></div></section>
+    <section className="chat-main"><header className="titlebar"><div className="title-copy"><strong>{activeWorkspace?.sessions.find(session => session.id === activeSessions[activeWorkspace.id])?.firstMessage || "New session"}</strong><span><b>{activeWorkspace?.name ?? "No project"}</b><i /> Chat v{VERSION}</span></div><div className="title-actions">{backendExit !== undefined && <span className="backend-exit">Backend exited <button className="bare-button" onClick={retryLastChat}>Retry</button></span>}<button className="icon-button" title="Toggle Git" onClick={() => setInspectorOpen(value => !value)}>◫</button></div></header><ChatPane sessionId={activeSessions[active ?? ""]} onSend={request => { lastChat.current = request; }} /></section>
     {inspectorVisible && <div className="resizer resizer-right" role="separator" tabIndex={0} aria-orientation="vertical" aria-label="Resize git panel" title="Drag to resize git panel (double-click to reset)" onKeyDown={event => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") setInspectorWidth(value => clamp(value + (event.key === "ArrowLeft" ? 10 : -10), MIN_INSPECTOR_WIDTH, MAX_INSPECTOR_WIDTH)); }} onMouseDown={event => beginResize("right", event)} onDoubleClick={() => resetResize("right")} />}
     {activeWorkspace && inspectorVisible && <GitInspector workspaceId={activeWorkspace.id} state={gitStates[activeWorkspace.id]} onRefresh={async () => {
       const git = await window.cloudcode.gitState(activeWorkspace.id);
       setGitStates(current => ({ ...current, [activeWorkspace.id]: git }));
     }} onClose={() => setInspectorOpen(false)} />}
-    {pendingSwitch !== undefined && <div className="desktop-dialog" role="alertdialog" aria-modal="true" aria-label="Confirm session switch">
-      <strong>AI 正在回覆中，確定要切換嗎？</strong>
-      <pre>切換 session 會中斷目前的 terminal 連線，進行中的回覆會停下來。已完成的訊息已存檔並會在回來時重播，但這次尚未完成的回覆內容會遺失。</pre>
-      <div className="desktop-dialog-actions">
-        <button onClick={() => setPendingSwitch(undefined)}>留在這裡</button>
-        <button className="danger" onClick={confirmPendingSwitch}>仍要切換</button>
-      </div>
-    </div>}
   </main>;
 }
 

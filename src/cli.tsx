@@ -43,6 +43,145 @@ if (parsed.kind === "error") {
   console.error(parsed.message);
   process.exit(EXIT_CODES.invalidConfiguration);
 }
+if (parsed.kind === "guiserver") {
+  const { GuiServer, splitInputLines } = await import("./desktop/guiServer.js");
+  const { buildRegistry } = await import("./commands/builtins.js");
+  const { AgentSession } = await import("./agent/session.js");
+  const { loadMcpServers } = await import("./agent/mcp.js");
+  const { loadRegistry } = await import("./engine/lsp/config.js");
+  const { join } = await import("node:path");
+  const { toChatEvents, fromApiMessages } = await import("./desktop/chatEvents.js");
+  const { SessionFile } = await import("./engine/sessions.js");
+  const registry = buildRegistry({ ...process.env, CLOUDCODE_DESKTOP: "1" });
+  const emit = (event: unknown) => { process.stdout.write(`${JSON.stringify(event)}\n`); };
+  const guiProviders = loadProviders();
+  const guiSettings = loadSettings();
+  let guiProviderName = guiSettings.provider ?? "anthropic";
+  if (!guiProviders[guiProviderName]) guiProviderName = "anthropic";
+  const sessions = new Map<string, InstanceType<typeof AgentSession>>();
+  const inFlight = new Map<string, string>();
+  const turnDone = new Map<string, () => void>();
+  const pendingPermission = new Map<string, (allow: boolean) => void>();
+  function getSession(cwd: string): InstanceType<typeof AgentSession> {
+    const existing = sessions.get(cwd);
+    if (existing) return existing;
+    const session = new AgentSession({
+      providerName: guiProviderName,
+      provider: guiProviders[guiProviderName],
+      model: guiSettings.model,
+      effort: guiSettings.effort,
+      permissionMode: guiSettings.permissionMode ?? "default",
+      cwd,
+      mcpServers: loadMcpServers(cwd),
+      lspRegistry: loadRegistry(undefined, join(cwd, ".cloudcode", "lsp.json"), false),
+      onMessage: (msg) => {
+        const id = inFlight.get(cwd);
+        if (!id) return;
+        for (const event of toChatEvents(id, msg)) emit(event);
+        if (msg.type === "result" || msg.type === "limit") {
+          inFlight.delete(cwd);
+          turnDone.get(cwd)?.();
+          turnDone.delete(cwd);
+        }
+      },
+      onPermissionRequest: (req) => {
+        const id = inFlight.get(cwd);
+        if (!id) {
+          req.resolve(false);
+          return;
+        }
+        pendingPermission.set(id, req.resolve);
+        emit({ id, type: "permission_request", toolName: req.toolName, toolInput: req.input });
+      },
+      onSessionId: () => {},
+    });
+    session.start();
+    sessions.set(cwd, session);
+    return session;
+  }
+  let activeCwd = process.cwd();
+  const server = new GuiServer({
+    commands: registry as never,
+    runTurn: async (id, text, emitTurn) => {
+      const cwd = activeCwd;
+      // Reject overlapping turns on the same workspace before claiming the slot.
+      if (inFlight.has(cwd)) {
+        emitTurn({ id, type: "error", text: "A turn is already running for this workspace." });
+        return;
+      }
+      const session = getSession(cwd);
+      inFlight.set(cwd, id);
+      await new Promise<void>((resolve) => {
+        turnDone.set(cwd, resolve);
+        session.send(text);
+      });
+    },
+    emit: (event) => { process.stdout.write(`${JSON.stringify(event)}\n`); },
+  });
+  let buffer = "";
+  let historySeq = 0;
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk: string) => {
+    buffer += chunk;
+    const framed = splitInputLines(buffer);
+    buffer = framed.rest;
+    for (const line of framed.lines) {
+      try {
+        const request = JSON.parse(line) as { id?: unknown; text?: unknown; cwd?: unknown; kind?: unknown; allow?: unknown; sessionId?: unknown };
+        if (request.kind === "history") {
+          // History lines are routed here so GuiServer.handle never sees them.
+          // SessionFile stores Anthropic API messages plus todos records, so
+          // replay maps each entry through fromApiMessages (todos map to []).
+          // Malformed or unknown sessions emit error + done and never throw.
+          historySeq += 1;
+          const replyId = `history-${Date.now()}-${historySeq}`;
+          try {
+            if (typeof request.sessionId !== "string" || request.sessionId === "") {
+              throw new Error("Invalid history session id.");
+            }
+            const entries = SessionFile.load(request.sessionId);
+            for (const event of fromApiMessages(replyId, entries as Array<{ role?: string; content?: unknown; type?: string }>)) emit(event);
+            emit({ id: replyId, type: "done" });
+          } catch (error) {
+            emit({ id: replyId, type: "error", text: error instanceof Error ? error.message : String(error) });
+            emit({ id: replyId, type: "done" });
+          }
+          continue;
+        }
+        if (request.kind === "respond") {
+          if (typeof request.id === "string" && typeof request.allow === "boolean") {
+            pendingPermission.get(request.id)?.(request.allow);
+            pendingPermission.delete(request.id);
+          }
+          continue;
+        }
+        if (request.kind === "abort") {
+          if (typeof request.id === "string") {
+            let cwd: string | undefined;
+            for (const [key, value] of inFlight) {
+              if (value === request.id) {
+                cwd = key;
+                break;
+              }
+            }
+            // Unknown ids no-op: never fall back to another session.
+            if (cwd !== undefined) void sessions.get(cwd)?.interrupt();
+          }
+          continue;
+        }
+        activeCwd = typeof request.cwd === "string" ? request.cwd : process.cwd();
+        void server.handle({ id: request.id, text: request.text });
+      } catch (error) {
+        process.stdout.write(`${JSON.stringify({ id: "unknown", type: "error", text: error instanceof Error ? error.message : String(error) })}\n`);
+      }
+    }
+  });
+  // Top-level return is not valid in a module, so gate the rest of the CLI
+  // (subcommand/TUI branches below) on stdin closing instead. The data
+  // listener above keeps the event loop alive while the GUI holds the pipe.
+  await new Promise<void>((resolve) => process.stdin.on("end", () => resolve()));
+  process.exit(0);
+}
 let taskLaunch: TaskLaunch | undefined;
 if (parsed.kind === "subcommand") {
   const networkArg = networkModeFromArgs(parsed.args);

@@ -2,11 +2,9 @@ import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
-import { execFile } from "node:child_process";
-import * as pty from "node-pty";
+import { spawn } from "node:child_process";
 import { DesktopShellHost } from "../dist/desktop/shellHost.js";
-import { TurnStream } from "../dist/desktop/turnStream.js";
-import { requireBranchName, requireDimension, requireOptionalString, requirePaths, requireString } from "../dist/desktop/ipcContract.js";
+import { requireBranchName, requirePaths, requireString } from "../dist/desktop/ipcContract.js";
 import { resolveNodeExecutable } from "../dist/desktop/runtime.js";
 import { VERSION } from "../dist/version.js";
 
@@ -18,43 +16,45 @@ const projectRoot = process.resourcesPath && desktopDir.includes(".asar")
   : join(desktopDir, "..");
 const host = new DesktopShellHost();
 let window;
-let terminal;
-let terminalGeneration;
-let terminalOutput = "";
-let terminalBusy = false;
-// Turn-state markers emitted by the embedded TUI (see
-// src/ui/turnSignal.ts). TurnStream strips them from the PTY flow so they
-// never render, tolerates markers split across PTY chunks, and drives the
-// busy flag the renderer checks before switching sessions.
-const turnStream = new TurnStream();
-
-function setTerminalBusy(busy) {
-  if (terminalBusy === busy) return;
-  terminalBusy = busy;
-  send("cloudcode:terminal-busy", { busy });
-}
-
-const MAX_PENDING_TERMINAL_OUTPUT = 4 * 1024 * 1024;
+let chatChild;
 
 function send(channel, payload) {
   if (!window || window.isDestroyed() || window.webContents.isDestroyed()) return;
   window.webContents.send(channel, payload);
 }
 
-function stopTerminal() {
-  if (!terminal) return;
-  setTerminalBusy(false);
-  turnStream.reset();
-  const active = terminal;
-  terminal = undefined;
-  terminalOutput = "";
-  try { active.kill(); } catch { /* the PTY may already have exited */ }
-  // Electron running with ELECTRON_RUN_AS_NODE can outlive node-pty's normal
-  // Windows termination path. Kill its process tree so session switches do
-  // not leave stale CLI agents competing for the same persisted session.
-  if (process.platform === "win32" && active.pid) {
-    execFile("taskkill", ["/PID", String(active.pid), "/T", "/F"], { windowsHide: true }, () => {});
-  }
+// A single shared backend serves all chat IPC. The child speaks
+// newline-delimited JSON on stdout and each line becomes a renderer event.
+function startChatBackend() {
+  stopChatBackend();
+  const cliPath = resolveCliPath();
+  const executable = resolveNodeExecutable();
+  chatChild = spawn(executable, [cliPath, "--gui-server"], { cwd: projectRoot, stdio: ["pipe", "pipe", "inherit"] });
+  let buffer = "";
+  chatChild.stdout.setEncoding("utf8");
+  chatChild.stdout.on("data", (chunk) => {
+    buffer += chunk;
+    const newline = buffer.lastIndexOf("\n");
+    if (newline === -1) return;
+    const complete = buffer.slice(0, newline).split("\n");
+    buffer = buffer.slice(newline + 1);
+    for (const line of complete) {
+      if (!line) continue;
+      try { send("cloudcode:chat-event", JSON.parse(line)); } catch { /* malformed child output is ignored */ }
+    }
+  });
+  chatChild.on("exit", () => {
+    chatChild = undefined;
+    // Reserved backend id: the renderer shows the exit banner only for this id.
+    send("cloudcode:chat-event", { id: "backend", type: "error", text: "Chat backend exited." });
+  });
+}
+
+function stopChatBackend() {
+  if (!chatChild) return;
+  const active = chatChild;
+  chatChild = undefined;
+  try { active.kill(); } catch { /* already exited */ }
 }
 
 function resolveCliPath() {
@@ -73,50 +73,6 @@ function resolveCliPath() {
     if (existsSync(candidate)) return candidate;
   }
   throw new Error(`Cannot find dist/cli.js. Checked: ${candidates.join(", ")}`);
-}
-
-function startTerminal(workspaceId, sessionId, columns, rows, generation) {
-  if (sessionId) host.assertSession(workspaceId, sessionId);
-  stopTerminal();
-  let cliPath;
-  let executable;
-  try {
-    cliPath = resolveCliPath();
-    executable = resolveNodeExecutable();
-  } catch (err) {
-    throw err;
-  }
-  const args = [cliPath];
-  if (sessionId) args.push("--session", sessionId);
-  const environment = {
-    ...process.env,
-    TERM: "xterm-256color",
-    COLORTERM: "truecolor",
-    CLOUDCODE_DESKTOP: "1",
-    ...(executable === process.execPath ? { ELECTRON_RUN_AS_NODE: "1" } : {})
-  };
-  const spawned = pty.spawn(executable, args, {
-    name: "xterm-256color",
-    cols: Math.max(20, columns),
-    rows: Math.max(10, rows),
-    cwd: host.cwd(workspaceId),
-    env: environment
-  });
-  terminal = spawned;
-  terminalGeneration = generation;
-  terminalOutput = "";
-  spawned.onData(data => {
-    if (terminal !== spawned || terminalGeneration !== generation) return;
-    data = turnStream.push(data);
-    setTerminalBusy(turnStream.busy);
-    if (data === "") return;
-    terminalOutput = (terminalOutput + data).slice(-MAX_PENDING_TERMINAL_OUTPUT);
-  });
-  spawned.onExit(({ exitCode }) => {
-    if (terminal !== spawned) return;
-    terminal = undefined;
-    send("cloudcode:terminal-exit", { generation, exitCode });
-  });
 }
 
 function createWindow() {
@@ -150,20 +106,21 @@ ipcMain.handle("cloudcode:git-create-branch", async (_event, workspaceId, branch
 ipcMain.handle("cloudcode:git-push", async (_event, workspaceId, branch) => host.gitPush(requireString(workspaceId, "workspace ID"), branch === undefined ? undefined : requireBranchName(branch)));
 ipcMain.handle("cloudcode:git-pull", async (_event, workspaceId) => host.gitPull(requireString(workspaceId, "workspace ID")));
 ipcMain.handle("cloudcode:git-fetch", async (_event, workspaceId) => host.gitFetch(requireString(workspaceId, "workspace ID")));
-ipcMain.handle("cloudcode:terminal-start", (_event, workspaceId, sessionId, columns, rows, generation) => startTerminal(requireString(workspaceId, "workspace ID"), requireOptionalString(sessionId, "session ID"), requireDimension(columns, "terminal columns"), requireDimension(rows, "terminal rows"), requireString(generation, "terminal generation")));
-ipcMain.handle("cloudcode:terminal-drain", (_event, generation) => {
-  if (requireString(generation, "terminal generation") !== terminalGeneration) return "";
-  const output = terminalOutput;
-  terminalOutput = "";
-  return output;
+ipcMain.handle("cloudcode:chat-send", (_event, request) => {
+  if (!chatChild) startChatBackend();
+  chatChild?.stdin.write(`${JSON.stringify(request)}\n`);
 });
-ipcMain.handle("cloudcode:terminal-write", (_event, data) => terminal?.write(requireString(data, "terminal data", true)));
-ipcMain.handle("cloudcode:terminal-busy", () => terminalBusy);
-ipcMain.handle("cloudcode:terminal-resize", (_event, columns, rows) => {
-  if (terminal) terminal.resize(Math.max(20, requireDimension(columns, "terminal columns")), Math.max(10, requireDimension(rows, "terminal rows")));
+ipcMain.handle("cloudcode:chat-abort", (_event, id) => {
+  chatChild?.stdin.write(`${JSON.stringify({ kind: "abort", id })}\n`);
+});
+ipcMain.handle("cloudcode:chat-history", (_event, sessionId) => {
+  chatChild?.stdin.write(`${JSON.stringify({ kind: "history", sessionId })}\n`);
+});
+ipcMain.handle("cloudcode:chat-respond", (_event, response) => {
+  chatChild?.stdin.write(`${JSON.stringify({ kind: "respond", ...response })}\n`);
 });
 ipcMain.handle("cloudcode:close-application", () => window?.close());
 
 app.whenReady().then(createWindow);
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
-app.on("before-quit", () => stopTerminal());
+app.on("before-quit", () => stopChatBackend());

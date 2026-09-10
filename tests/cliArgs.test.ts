@@ -113,3 +113,13 @@ describe("HELP_TEXT", () => {
     }
   });
 });
+
+describe("gui-server flag", () => {
+  it("parses --gui-server into a guiserver result", () => {
+    expect(parseCli(["--gui-server"])).toEqual({ kind: "guiserver" });
+  });
+  it("rejects --gui-server combined with --print", () => {
+    const result = parseCli(["--gui-server", "--print"]);
+    expect(result.kind).toBe("error");
+  });
+});

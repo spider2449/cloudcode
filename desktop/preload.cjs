@@ -17,20 +17,14 @@ contextBridge.exposeInMainWorld("cloudcode", {
   gitPush: (workspaceId, branch) => ipcRenderer.invoke("cloudcode:git-push", workspaceId, branch),
   gitPull: workspaceId => ipcRenderer.invoke("cloudcode:git-pull", workspaceId),
   gitFetch: workspaceId => ipcRenderer.invoke("cloudcode:git-fetch", workspaceId),
-  startTerminal: (workspaceId, sessionId, columns, rows, generation) => ipcRenderer.invoke("cloudcode:terminal-start", workspaceId, sessionId, columns, rows, generation),
-  drainTerminal: generation => ipcRenderer.invoke("cloudcode:terminal-drain", generation),
-  writeTerminal: data => ipcRenderer.invoke("cloudcode:terminal-write", data),
-  terminalBusy: () => ipcRenderer.invoke("cloudcode:terminal-busy"),
-  onTerminalBusy: listener => {
+  chatSend: (request) => ipcRenderer.invoke("cloudcode:chat-send", request),
+  chatAbort: (id) => ipcRenderer.invoke("cloudcode:chat-abort", id),
+  chatHistory: (sessionId) => ipcRenderer.invoke("cloudcode:chat-history", sessionId),
+  chatRespond: (response) => ipcRenderer.invoke("cloudcode:chat-respond", response),
+  onChatEvent: listener => {
     const callback = (_event, payload) => listener(payload);
-    ipcRenderer.on("cloudcode:terminal-busy", callback);
-    return () => ipcRenderer.removeListener("cloudcode:terminal-busy", callback);
+    ipcRenderer.on("cloudcode:chat-event", callback);
+    return () => ipcRenderer.removeListener("cloudcode:chat-event", callback);
   },
-  resizeTerminal: (columns, rows) => ipcRenderer.invoke("cloudcode:terminal-resize", columns, rows),
-  closeApplication: () => ipcRenderer.invoke("cloudcode:close-application"),
-  onTerminalExit: listener => {
-    const callback = (_event, payload) => listener(payload);
-    ipcRenderer.on("cloudcode:terminal-exit", callback);
-    return () => ipcRenderer.removeListener("cloudcode:terminal-exit", callback);
-  }
+  closeApplication: () => ipcRenderer.invoke("cloudcode:close-application")
 });
