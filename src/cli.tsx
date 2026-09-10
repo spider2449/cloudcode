@@ -59,6 +59,7 @@ if (parsed.kind === "guiserver") {
   const { PermissionStore } = await import("./agent/permissionStore.js");
   const { buildGuiCommandContext } = await import("./desktop/guiCommandContext.js");
   const { toChatEvents, fromApiMessages } = await import("./desktop/chatEvents.js");
+  const { suggestCompletions } = await import("./desktop/guiComplete.js");
   const { SessionFile } = await import("./engine/sessions.js");
   const { requireChatSessionId } = await import("./desktop/chatProtocol.js");
   const { join } = await import("node:path");
@@ -235,7 +236,35 @@ if (parsed.kind === "guiserver") {
     buffer = framed.rest;
     for (const line of framed.lines) {
       try {
-        const request = JSON.parse(line) as { id?: unknown; text?: unknown; cwd?: unknown; kind?: unknown; allow?: unknown; sessionId?: unknown };
+        const request = JSON.parse(line) as { id?: unknown; text?: unknown; cwd?: unknown; kind?: unknown; allow?: unknown; sessionId?: unknown; prefix?: unknown };
+        if (request.kind === "complete") {
+          // Input-box autocomplete: same getSuggestions machinery as the
+          // terminal input box. Routed here (not through GuiServer) because
+          // suggestions are not a turn and must never touch session state.
+          const replyId = typeof request.id === "string" && request.id !== "" ? request.id : `complete-${Date.now()}-${historySeq}`;
+          try {
+            const prefix = typeof request.prefix === "string" ? request.prefix : "";
+            const completeCwd = typeof request.cwd === "string" && request.cwd !== "" ? request.cwd : process.cwd();
+            const completeSession = typeof request.sessionId === "string" ? request.sessionId : undefined;
+            const completeKey = sessionKey(completeCwd, completeSession);
+            const completeState = keyState(completeCwd, completeSession);
+            refreshModels(completeKey, completeState);
+            emit({
+              id: replyId,
+              type: "complete",
+              items: suggestCompletions(prefix, {
+                cwd: completeCwd,
+                providers: guiProviders,
+                availableModels: completeState.models
+              })
+            });
+            emit({ id: replyId, type: "done" });
+          } catch (error) {
+            emit({ id: replyId, type: "error", text: error instanceof Error ? error.message : String(error) });
+            emit({ id: replyId, type: "done" });
+          }
+          continue;
+        }
         if (request.kind === "history") {
           // History lines are routed here so GuiServer.handle never sees them.
           // SessionFile stores Anthropic API messages plus todos records, so

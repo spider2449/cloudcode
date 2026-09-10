@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { buildRegistry } from "../../src/commands/builtins.js";
 
 // Slash parity (enforced by tests/desktop-chatParity.test.ts): every
@@ -13,12 +13,18 @@ type ChatMsg = { id: string; role: "user" | "assistant" | "notice" | "error"; te
 // Per-module counter suffix keeps ids unique across rapid sends within the same millisecond.
 let sendSeq = 0;
 
+type Completion = { label: string; value: string; replaceStart: number; replaceEnd: number };
+
 export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: string | undefined; sessionId: string | undefined; onSend?: (request: { id: string; sessionId: string | undefined; text: string; workspaceId: string | undefined }) => void }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
-  const [completions, setCompletions] = useState<string[]>([]);
+  const [completions, setCompletions] = useState<Completion[]>([]);
   const [permission, setPermission] = useState<{ id: string; toolName: string; toolInput?: Record<string, unknown> } | undefined>(undefined);
   const [pendingIds, setPendingIds] = useState<string[]>([]);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  // Latest in-flight argument-completion request; stale responses are dropped.
+  const completeReq = useRef<{ id: string; prefix: string } | undefined>(undefined);
+  const completeSeq = useRef(0);
 
   // Session switch: drop the previous transcript, permission prompt, and
   // pending state, then ask the backend to replay the stored history.
@@ -27,7 +33,16 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
     setPendingIds([]);
     setPermission(undefined);
     void window.cloudcode.chatHistory(sessionId);
-    return window.cloudcode.onChatEvent((event: { id: string; type: string; text?: string; toolName?: string; toolInput?: Record<string, unknown> }) => {
+    return window.cloudcode.onChatEvent((event: { id: string; type: string; text?: string; toolName?: string; toolInput?: Record<string, unknown>; items?: Completion[] }) => {
+      if (event.type === "complete") {
+        // Drop stale responses: only the latest request for the unchanged
+        // input may populate the dropdown.
+        const pending = completeReq.current;
+        if (pending && event.id === pending.id && inputRef.current?.value === pending.prefix && event.items) {
+          setCompletions(event.items);
+        }
+        return;
+      }
       if (event.type === "permission_request") {
         setPermission({ id: event.id, toolName: event.toolName ?? "tool", toolInput: event.toolInput });
         return;
@@ -53,11 +68,39 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
 
   function onChange(value: string) {
     setInput(value);
-    if (value.startsWith("/")) {
-      setCompletions(SLASH_NAMES.filter(name => name.startsWith(value.split(" ")[0] ?? "")));
-    } else {
+    if (!value.startsWith("/")) {
+      completeReq.current = undefined;
       setCompletions([]);
+      return;
     }
+    if (!value.includes(" ")) {
+      // Command names complete instantly from the local registry copy.
+      completeReq.current = undefined;
+      const token = value;
+      setCompletions(SLASH_NAMES.filter(name => name.startsWith(token)).map(name => ({
+        label: name,
+        value: `${name} `,
+        replaceStart: 0,
+        replaceEnd: value.length
+      })));
+      return;
+    }
+    // Argument values come from the backend (live provider/model data).
+    completeSeq.current += 1;
+    const id = `complete-${Date.now()}-${completeSeq.current}`;
+    completeReq.current = { id, prefix: value };
+    void window.cloudcode.chatComplete({ id, prefix: value, sessionId, workspaceId });
+  }
+
+  // Same splice as applySuggestion in src/commands/completion.ts (duplicated
+  // to keep node-only modules out of the renderer bundle): the option only
+  // replaces its own token, so the command prefix is never lost — clicking
+  // "github" for "/theme gi" yields "/theme github", not a bare prompt.
+  function applyCompletion(option: Completion) {
+    const current = inputRef.current?.value ?? input;
+    const next = current.slice(0, option.replaceStart) + option.value + current.slice(option.replaceEnd);
+    onChange(next);
+    requestAnimationFrame(() => inputRef.current?.focus());
   }
 
   function send() {
@@ -103,11 +146,11 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
       </div>
       {completions.length > 0 && (
         <ul className="slash-complete" aria-label="Slash commands">
-          {completions.map(name => <li key={name}><button onClick={() => onChange(name + " ")}>{name}</button></li>)}
+          {completions.map(option => <li key={option.label}><button onClick={() => applyCompletion(option)}>{option.label}</button></li>)}
         </ul>
       )}
       <div className="chat-input">
-        <input aria-label="Message input" value={input} onChange={event => onChange(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } }} placeholder="Message, or / for commands" />
+        <input ref={inputRef} aria-label="Message input" value={input} onChange={event => onChange(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } }} placeholder="Message, or / for commands" />
         <button onClick={send}>Send</button>
         {pendingIds.length > 0 && <button aria-label="Abort turn" onClick={() => { const last = pendingIds[pendingIds.length - 1]; if (last) abort(last); }}>Stop</button>}
       </div>

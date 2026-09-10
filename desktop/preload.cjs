@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld("cloudcode", {
   chatAbort: (id) => ipcRenderer.invoke("cloudcode:chat-abort", id),
   chatHistory: (sessionId) => ipcRenderer.invoke("cloudcode:chat-history", sessionId),
   chatRespond: (response) => ipcRenderer.invoke("cloudcode:chat-respond", response),
+  chatComplete: (request) => ipcRenderer.invoke("cloudcode:chat-complete", request),
   onChatEvent: listener => {
     const callback = (_event, payload) => listener(payload);
     ipcRenderer.on("cloudcode:chat-event", callback);

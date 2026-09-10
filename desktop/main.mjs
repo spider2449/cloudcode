@@ -136,6 +136,20 @@ ipcMain.handle("cloudcode:chat-history", (_event, sessionId) => {
 ipcMain.handle("cloudcode:chat-respond", (_event, response) => {
   chatChild?.stdin.write(`${JSON.stringify({ kind: "respond", ...response })}\n`);
 });
+ipcMain.handle("cloudcode:chat-complete", (_event, request) => {
+  if (!chatChild) startChatBackend();
+  if (typeof request !== "object" || request === null) return;
+  const { workspaceId, ...rest } = request;
+  // Same workspace-to-directory resolution as chat-send so argument values
+  // complete against the project the user is looking at.
+  let cwd;
+  try {
+    cwd = workspaceId === undefined ? undefined : host.cwd(requireString(workspaceId, "workspace ID"));
+  } catch {
+    return;
+  }
+  chatChild?.stdin.write(`${JSON.stringify(cwd === undefined ? rest : { ...rest, cwd })}\n`);
+});
 ipcMain.handle("cloudcode:close-application", () => window?.close());
 
 app.whenReady().then(createWindow);

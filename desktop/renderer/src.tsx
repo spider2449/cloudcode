@@ -36,6 +36,7 @@ declare global {
       chatAbort(id: string): Promise<void>;
       chatHistory(sessionId: string | undefined): Promise<void>;
       chatRespond(response: { id: string; allow: boolean }): Promise<void>;
+      chatComplete(request: { id: string; prefix: string; sessionId: string | undefined; workspaceId: string | undefined }): Promise<void>;
       onChatEvent(listener: (event: ChatBridgeEvent) => void): () => void;
       closeApplication(): Promise<void>;
     };

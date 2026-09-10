@@ -1,4 +1,5 @@
 import { requireString } from "./ipcContract.js";
+import type { Suggestion } from "../commands/completion.js";
 
 export const MAX_CHAT_ID_LENGTH = 200;
 export const MAX_CHAT_TEXT_LENGTH = 200_000;
@@ -6,7 +7,7 @@ export const MAX_CHAT_CWD_LENGTH = 4096;
 
 // Thinking deltas are intentionally not forwarded (renderer shows final text; see `toChatEvents` in the engine-wiring task).
 // user_text is user turn replay for history; live user messages are echoed locally by the renderer.
-export const CHAT_EVENT_TYPES = ["text_delta", "tool_use", "tool_result", "notice", "error", "permission_request", "user_text", "done"] as const;
+export const CHAT_EVENT_TYPES = ["text_delta", "tool_use", "tool_result", "notice", "error", "permission_request", "user_text", "complete", "done"] as const;
 export type ChatEventType = (typeof CHAT_EVENT_TYPES)[number];
 
 export interface ChatSendRequest {
@@ -22,6 +23,8 @@ export interface ChatEvent {
   text?: string;
   toolName?: string;
   toolInput?: Record<string, unknown>;
+  // Suggestion list for "complete" events (input-box autocomplete).
+  items?: Suggestion[];
 }
 
 export function requireChatId(value: unknown): string {
