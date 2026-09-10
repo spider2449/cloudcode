@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeSlashInput } from "../desktop/renderer/chatPane.js";
+import { applySuggestionText, describeSlashInput } from "../desktop/renderer/chatPane.js";
 
 describe("slash input classification", () => {
   it("treats plain text as non-slash", () => {
@@ -18,5 +18,18 @@ describe("slash input classification", () => {
   it("keeps completing arguments after the first space", () => {
     expect(describeSlashInput("/config th")).toEqual({ kind: "args", prefix: "/config th" });
     expect(describeSlashInput("/theme github")).toEqual({ kind: "args", prefix: "/theme github" });
+  });
+});
+
+describe("suggestion application", () => {
+  it("replaces only the option token, preserving the command prefix", () => {
+    expect(applySuggestionText("/theme gi", { value: "github", replaceStart: 7, replaceEnd: 9 })).toBe("/theme github");
+    expect(applySuggestionText("/config ", { value: "provider", replaceStart: 8, replaceEnd: 8 })).toBe("/config provider");
+  });
+  it("detects pure echoes that should descend or hide", () => {
+    const echo = { value: "theme", replaceStart: 8, replaceEnd: 13 };
+    expect(applySuggestionText("/config theme", echo)).toBe("/config theme");
+    const nested = { value: "theme dark", replaceStart: 8, replaceEnd: 14 };
+    expect(applySuggestionText("/config theme ", nested)).toBe("/config theme dark");
   });
 });

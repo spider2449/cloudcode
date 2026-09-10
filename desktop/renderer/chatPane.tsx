@@ -19,6 +19,14 @@ export type SlashInputKind =
   | { kind: "plain" }
   | { kind: "command"; token: string }
   | { kind: "args"; prefix: string };
+// Pure splice behind every dropdown pick (mirrors applySuggestion in
+// src/commands/completion.ts): only the option's own token range is replaced.
+export function applySuggestionText(
+  input: string,
+  s: { value: string; replaceStart: number; replaceEnd: number }
+): string {
+  return input.slice(0, s.replaceStart) + s.value + input.slice(s.replaceEnd);
+}
 
 // Pure decision of what the dropdown should show for an input value.
 // An exactly-typed command name ("/config") jumps straight to its argument
@@ -44,6 +52,9 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
   // Latest in-flight argument-completion request; stale responses are dropped.
   const completeReq = useRef<{ id: string; prefix: string } | undefined>(undefined);
   const completeSeq = useRef(0);
+  // One-shot guard for nested descent (below): prevents "/provider anthropic"
+  // style dead-ends from appending spaces forever.
+  const nestedOnce = useRef(false);
 
   // Session switch: drop the previous transcript, permission prompt, and
   // pending state, then ask the backend to replay the stored history.
@@ -51,6 +62,8 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
     setMessages([]);
     setPendingIds([]);
     setPermission(undefined);
+    nestedOnce.current = false;
+    completeReq.current = undefined;
     void window.cloudcode.chatHistory(sessionId);
     return window.cloudcode.onChatEvent((event: { id: string; type: string; text?: string; toolName?: string; toolInput?: Record<string, unknown>; items?: Completion[] }) => {
       if (event.type === "complete") {
@@ -58,7 +71,21 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
         // input may populate the dropdown.
         const pending = completeReq.current;
         if (pending && event.id === pending.id && inputRef.current?.value === pending.prefix && event.items) {
-          showCompletions(event.items);
+          const current = inputRef.current?.value ?? "";
+          const [only] = event.items;
+          if (event.items.length === 1 && only && applySuggestionText(current, only) === current) {
+            // Pure echo: the option adds nothing (e.g. "/config theme" answered
+            // with ["theme"]). Descend one nesting level automatically so the
+            // next options appear; hide the dropdown if there is nothing deeper.
+            if (!current.endsWith(" ") && !nestedOnce.current) {
+              nestedOnce.current = true;
+              onChange(`${current} `, true);
+            } else {
+              showCompletions([]);
+            }
+          } else {
+            showCompletions(event.items);
+          }
         }
         return;
       }
@@ -98,7 +125,8 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
     void window.cloudcode.chatComplete({ id, prefix, sessionId, workspaceId });
   }
 
-  function onChange(value: string) {
+  function onChange(value: string, auto = false) {
+    if (!auto) nestedOnce.current = false;
     setInput(value);
     const kind = describeSlashInput(value);
     if (kind.kind === "plain") {
@@ -117,6 +145,13 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
       })));
       return;
     }
+    if (kind.prefix !== value) {
+      // Exactly-typed command ("/config"): the backend offsets assume the
+      // trailing space, so normalize the visible input first.
+      setInput(kind.prefix);
+      requestArgCompletions(kind.prefix);
+      return;
+    }
     requestArgCompletions(kind.prefix);
   }
 
@@ -126,8 +161,7 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
   // "github" for "/theme gi" yields "/theme github", not a bare prompt.
   function applyCompletion(option: Completion) {
     const current = inputRef.current?.value ?? input;
-    const next = current.slice(0, option.replaceStart) + option.value + current.slice(option.replaceEnd);
-    onChange(next);
+    onChange(applySuggestionText(current, option));
     requestAnimationFrame(() => inputRef.current?.focus());
   }
 
@@ -168,6 +202,7 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
     setMessages(current => [...current, { id, role: "user", text }]);
     setInput("");
     completeReq.current = undefined;
+    nestedOnce.current = false;
     showCompletions([]);
     onSend?.({ id, sessionId, text, workspaceId });
     void window.cloudcode.chatSend({ id, sessionId, text, workspaceId });
