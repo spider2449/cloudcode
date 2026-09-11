@@ -54,3 +54,38 @@ describe("SessionIndex.touch", () => {
     expect(index.list()).toEqual([]);
   });
 });
+
+describe("SessionIndex.rename/remove", () => {
+  it("renames the title and bumps recency", async () => {
+    const index = new SessionIndex(tempFile());
+    index.record({ id: "old", cwd: "/p", firstMessage: "old", timestamp: "2000-01-01T00:00:00.000Z", provider: "anthropic" });
+    index.record({ id: "new", cwd: "/p", firstMessage: "new", timestamp: "2000-01-02T00:00:00.000Z", provider: "anthropic" });
+    await new Promise(resolve => setTimeout(resolve, 5));
+    index.rename("old", "  renamed  ");
+    const list = index.list();
+    expect(list[0].id).toBe("old");
+    expect(list[0].firstMessage).toBe("renamed");
+  });
+
+  it("ignores blank titles and unknown ids", () => {
+    const index = new SessionIndex(tempFile());
+    index.record({ id: "s1", cwd: "/p", firstMessage: "hi", timestamp: "2000-01-01T00:00:00.000Z", provider: "anthropic" });
+    index.rename("s1", "   ");
+    index.rename("missing", "x");
+    expect(index.list()[0].firstMessage).toBe("hi");
+  });
+
+  it("removes entries and persists the removal", () => {
+    const file = tempFile();
+    const index = new SessionIndex(file);
+    index.record({ id: "s1", cwd: "/p", firstMessage: "hi", timestamp: "2000-01-01T00:00:00.000Z", provider: "anthropic" });
+    index.remove("s1");
+    expect(index.list()).toEqual([]);
+    expect(new SessionIndex(file).list()).toEqual([]);
+  });
+
+  it("remove ignores unknown ids instead of throwing", () => {
+    const index = new SessionIndex(tempFile());
+    expect(() => index.remove("missing")).not.toThrow();
+  });
+});

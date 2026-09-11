@@ -50,6 +50,29 @@ export class SessionIndex {
     writeFileSync(this.filePath, JSON.stringify(this.entries, null, 2));
   }
 
+  /** Rename a session's display title and bump it to most-recent. Blank titles and unknown ids are ignored. */
+  rename(id: string, firstMessage: string): void {
+    const title = firstMessage.trim().slice(0, 200);
+    if (!title) return;
+    this.reload();
+    const entry = this.entries.find(e => e.id === id);
+    if (!entry) return;
+    entry.firstMessage = title;
+    entry.timestamp = new Date().toISOString();
+    mkdirSync(dirname(this.filePath), { recursive: true });
+    writeFileSync(this.filePath, JSON.stringify(this.entries, null, 2));
+  }
+
+  /** Drop a session entry. Unknown ids are ignored, mirroring touch(). */
+  remove(id: string): void {
+    this.reload();
+    const before = this.entries.length;
+    this.entries = this.entries.filter(e => e.id !== id);
+    if (this.entries.length === before) return;
+    mkdirSync(dirname(this.filePath), { recursive: true });
+    writeFileSync(this.filePath, JSON.stringify(this.entries, null, 2));
+  }
+
   latestForCwd(cwd: string): SessionEntry | undefined {
     return this.list().find(e => e.cwd === cwd);
   }
