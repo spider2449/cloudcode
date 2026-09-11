@@ -153,8 +153,17 @@ ipcMain.handle("cloudcode:chat-send", (_event, request) => {
 ipcMain.handle("cloudcode:chat-abort", (_event, id) => {
   forwardChatLine(JSON.stringify({ kind: "abort", id }), typeof id === "string" ? id : "unknown");
 });
-ipcMain.handle("cloudcode:chat-history", (_event, sessionId) => {
-  forwardChatLine(JSON.stringify({ kind: "history", sessionId }), "history");
+ipcMain.handle("cloudcode:chat-history", (_event, sessionId, workspaceId) => {
+  // Same workspace-to-directory resolution as chat-send: the backend resets
+  // the workspace's live anonymous session on history(undefined), so the
+  // New Session button starts genuinely fresh without touching other projects.
+  let cwd;
+  try {
+    cwd = workspaceId === undefined ? undefined : host.cwd(requireString(workspaceId, "workspace ID"));
+  } catch {
+    cwd = undefined;
+  }
+  forwardChatLine(JSON.stringify(cwd === undefined ? { kind: "history", sessionId } : { kind: "history", sessionId, cwd }), "history");
 });
 ipcMain.handle("cloudcode:chat-respond", (_event, response) => {
   const id = response !== null && typeof response === "object" && typeof response.id === "string" ? response.id : "unknown";

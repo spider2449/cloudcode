@@ -58,10 +58,12 @@ if (parsed.kind === "guiserver") {
   const { fetchModels } = await import("./agent/models.js");
   const { PermissionStore } = await import("./agent/permissionStore.js");
   const { buildGuiCommandContext } = await import("./desktop/guiCommandContext.js");
-  const { toChatEvents, fromApiMessages } = await import("./desktop/chatEvents.js");
+  const { toChatEvents } = await import("./desktop/chatEvents.js");
   const { suggestCompletions } = await import("./desktop/guiComplete.js");
-  const { SessionFile } = await import("./engine/sessions.js");
-  const { requireChatSessionId } = await import("./desktop/chatProtocol.js");
+  const { loadHistoryEvents } = await import("./desktop/chatHistory.js");
+  const { recordGuiTurn } = await import("./desktop/sessionRecord.js");
+  const { requireChatCwd } = await import("./desktop/chatProtocol.js");
+  const { SessionIndex } = await import("./agent/sessionIndex.js");
   const { join } = await import("node:path");
   const registryEnv = { ...process.env, CLOUDCODE_DESKTOP: "1" };
   const emit = (event: unknown) => { process.stdout.write(`${JSON.stringify(event)}\n`); };
@@ -93,6 +95,9 @@ if (parsed.kind === "guiserver") {
   }
   const keyStates = new Map<string, GuiKeyState>();
   const sessions = new Map<string, InstanceType<typeof AgentSession>>();
+  // Same sessions.json the terminal UI and DesktopShellHost read, so GUI
+  // turns appear in the sidebar and survive app restarts.
+  const guiSessionIndex = new SessionIndex();
   const permissionStores = new Map<string, InstanceType<typeof PermissionStore>>();
   const inFlight = new Map<string, string>();
   const turnDone = new Map<string, () => void>();
@@ -215,17 +220,20 @@ if (parsed.kind === "guiserver") {
       const key = sessionKey(req.cwd, req.sessionId);
       const state = keyState(req.cwd, req.sessionId);
       // Reject overlapping turns on the same conversation before claiming the slot.
+      // Anonymous turns always reuse the workspace's live session: a genuine
+      // fresh start arrives as a history(undefined) reset (New Session button),
+      // so disposing here would wipe the transcript on every second message.
       if (inFlight.has(key)) {
         emitTurn({ id: req.id, type: "error", text: "A turn is already running for this session." });
         return;
       }
-      if (req.sessionId === undefined && state.turns > 0 && sessions.has(key)) {
-        // Anonymous "new session" that already ran: start genuinely fresh so
-        // the GUI's New Session button never appends to an old transcript.
-        await disposeKey(key);
-      }
       const session = getSession(key, state);
       state.turns += 1;
+      // Persist like the terminal UI: first turn records the index entry
+      // (first user text becomes firstMessage), later turns just touch it.
+      recordGuiTurn(guiSessionIndex, {
+        cwd: state.cwd, provider: state.providerName, sessionId: session.sessionId, text: req.text
+      });
       inFlight.set(key, req.id);
       await new Promise<void>((resolve) => {
         turnDone.set(key, resolve);
@@ -274,18 +282,19 @@ if (parsed.kind === "guiserver") {
         }
         if (request.kind === "history") {
           // History lines are routed here so GuiServer.handle never sees them.
-          // SessionFile stores Anthropic API messages plus todos records, so
-          // replay maps each entry through fromApiMessages (todos map to []).
-          // Malformed or unknown sessions emit error + done and never throw.
+          // A missing session id means a brand-new conversation with no stored
+          // transcript, so it replays as empty (done only) and resets the
+          // workspace's live anonymous session — that reset is the New Session
+          // button's fresh-start signal. Malformed ids and unknown sessions
+          // emit error + done and never throw.
           historySeq += 1;
           const replyId = `history-${Date.now()}-${historySeq}`;
           try {
-            const historySession = requireChatSessionId(request.sessionId);
-            if (historySession === undefined) {
-              throw new Error("Invalid history session id.");
+            if (request.sessionId === undefined && typeof request.cwd === "string" && request.cwd !== "") {
+              const historyCwd = requireChatCwd(request.cwd) ?? process.cwd();
+              void disposeKey(sessionKey(historyCwd, undefined));
             }
-            const entries = SessionFile.load(historySession);
-            for (const event of fromApiMessages(replyId, entries as Array<{ role?: string; content?: unknown; type?: string }>)) emit(event);
+            for (const event of loadHistoryEvents(replyId, request.sessionId)) emit(event);
             emit({ id: replyId, type: "done" });
           } catch (error) {
             emit({ id: replyId, type: "error", text: error instanceof Error ? error.message : String(error) });

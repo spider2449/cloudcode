@@ -19,7 +19,7 @@ contextBridge.exposeInMainWorld("cloudcode", {
   gitFetch: workspaceId => ipcRenderer.invoke("cloudcode:git-fetch", workspaceId),
   chatSend: (request) => ipcRenderer.invoke("cloudcode:chat-send", request),
   chatAbort: (id) => ipcRenderer.invoke("cloudcode:chat-abort", id),
-  chatHistory: (sessionId) => ipcRenderer.invoke("cloudcode:chat-history", sessionId),
+  chatHistory: (sessionId, workspaceId) => ipcRenderer.invoke("cloudcode:chat-history", sessionId, workspaceId),
   chatRespond: (response) => ipcRenderer.invoke("cloudcode:chat-respond", response),
   chatComplete: (request) => ipcRenderer.invoke("cloudcode:chat-complete", request),
   onChatEvent: listener => {

@@ -34,7 +34,7 @@ declare global {
       gitFetch(workspaceId: string): Promise<void>;
       chatSend(request: ChatRequest): Promise<void>;
       chatAbort(id: string): Promise<void>;
-      chatHistory(sessionId: string | undefined): Promise<void>;
+      chatHistory(sessionId: string | undefined, workspaceId?: string): Promise<void>;
       chatRespond(response: { id: string; allow: boolean }): Promise<void>;
       chatComplete(request: { id: string; prefix: string; sessionId: string | undefined; workspaceId: string | undefined }): Promise<void>;
       onChatEvent(listener: (event: ChatBridgeEvent) => void): () => void;

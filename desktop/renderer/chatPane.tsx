@@ -67,7 +67,7 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
     setPermission(undefined);
     nestedOnce.current = false;
     completeReq.current = undefined;
-    void window.cloudcode.chatHistory(sessionId);
+    void window.cloudcode.chatHistory(sessionId, workspaceId);
     return window.cloudcode.onChatEvent((event: { id: string; type: string; text?: string; toolName?: string; toolInput?: Record<string, unknown>; items?: Completion[] }) => {
       if (event.type === "complete") {
         // Drop stale responses: only the latest request for the unchanged
@@ -113,7 +113,7 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
         setMessages(current => [...current, { id: event.id, role: event.type, text: event.text ?? "" }]);
       }
     });
-  }, [sessionId]);
+  }, [sessionId, workspaceId]);
 
   function showCompletions(items: Completion[]) {
     setCompletions(items);
