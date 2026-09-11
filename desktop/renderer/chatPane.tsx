@@ -321,7 +321,12 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
           onCompositionEnd={() => { composingRef.current = false; }}
           placeholder="Message, or / for commands (Shift+Enter for newline)"
         />
-        <button className="chat-send" onClick={send}>Send</button>
+        {busyLabel(pendingIds.length) !== null && (
+          <span className="chat-busy" role="status">
+            {busyLabel(pendingIds.length)}<span className="chat-busy-dots" aria-hidden="true" />
+          </span>
+        )}
+        <button className="chat-send" onClick={send} disabled={pendingIds.length > 0}>Send</button>
         {pendingIds.length > 0 && <button className="chat-stop" aria-label="Abort turn" onClick={() => { const last = pendingIds[pendingIds.length - 1]; if (last) abort(last); }}>Stop</button>}
       </div>
     </section>
