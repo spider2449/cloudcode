@@ -3,6 +3,7 @@ dist/
 desktop/dist/
 release/
 .cloudcode/
+.superpowers/
 .worktrees/
 .claude/worktrees/
 *.bun-build
