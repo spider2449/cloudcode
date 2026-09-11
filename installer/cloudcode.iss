@@ -1,5 +1,5 @@
 #define AppName "cloudcode"
-#define AppVersion "0.1.60"
+#define AppVersion "0.1.61"
 
 [Setup]
 AppId={{B7E4C1D2-5A3F-4E8B-9C6D-0F1A2B3C4D5E}

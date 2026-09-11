@@ -82,4 +82,11 @@ describe("slash parity", () => {
     expect(css).toContain(".chat-input .chat-send");
     expect(css).toContain(".chat-input .chat-stop");
   });
+  it("message roles are visually distinct", () => {
+    const css = readFileSync("desktop/renderer/style.css", "utf8");
+    expect(css).toContain(".bubble.user");
+    expect(css).toContain(".bubble.assistant");
+    expect(css).toContain(".bubble.notice");
+    expect(css).toContain(".bubble.error");
+  });
 });
