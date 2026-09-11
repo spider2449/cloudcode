@@ -117,6 +117,21 @@ describe("DesktopShellHost", () => {
     expect(() => host.assertSession(workspace.id, "right-session")).toThrow("does not belong");
   });
 
+  it("keeps the same workspace id for a project across host restarts", () => {
+    const root = mkdtempSync(join(tmpdir(), "cloudcode-shell-"));
+    roots.push(root);
+    const project = join(root, "project");
+    mkdirSync(project);
+    const idsFile = join(root, "ids.json");
+    const stubProjects = { load: () => [], save: () => {} };
+
+    const first = new DesktopShellHost({ sessionIndex: new SessionIndex(join(root, "sessions.json")), recentProjects: stubProjects, workspaceIdsFile: idsFile });
+    const before = first.openProject(project).id;
+    // A fresh host (new app process) reopening the same directory must reuse the id.
+    const second = new DesktopShellHost({ sessionIndex: new SessionIndex(join(root, "sessions.json")), recentProjects: stubProjects, workspaceIdsFile: idsFile });
+    expect(second.openProject(project).id).toBe(before);
+  });
+
   it("renames a session title within its workspace", () => {
     const root = mkdtempSync(join(tmpdir(), "cloudcode-shell-"));
     roots.push(root);

@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { SessionIndex } from "../agent/sessionIndex.js";
 import { SessionFile } from "../engine/sessions.js";
+import { loadWorkspaceIds, saveWorkspaceId } from "./workspaceIds.js";
 import { loadRecentProjects, saveRecentProject } from "../agent/recentProjects.js";
 import type { GitRunner } from "../agent/gitReview.js";
 import { DesktopGitService, type DesktopGitState } from "./gitService.js";
@@ -27,6 +28,8 @@ export interface DesktopShellHostOptions {
   gitRunner?: GitRunner;
   // Overrides the transcript directory for SessionFile.delete (tests only).
   sessionDir?: string;
+  // Overrides the workspace-id map file (tests only).
+  workspaceIdsFile?: string;
 }
 
 /** Read-only desktop navigation authority used around the embedded TUI. */
@@ -43,8 +46,13 @@ export class DesktopShellHost {
   openProject(selectedPath: string): DesktopShellWorkspace {
     const cwd = canonicalProjectRoot(selectedPath);
     const existing = [...this.roots.entries()].find(([, root]) => root === cwd);
-    const id = existing?.[0] ?? randomUUID();
+    // Workspace ids must survive app restarts: the renderer remembers its
+    // selection by id, so reuse the persisted id for a known directory and
+    // only mint (and persist) a new one for a directory seen the first time.
+    const persisted = existing ? undefined : loadWorkspaceIds(this.options.workspaceIdsFile)[cwd];
+    const id = existing?.[0] ?? persisted ?? randomUUID();
     this.roots.set(id, cwd);
+    if (!existing && !persisted) saveWorkspaceId(cwd, id, this.options.workspaceIdsFile);
     (this.options.recentProjects ?? { load: loadRecentProjects, save: saveRecentProject }).save(cwd);
     return this.describe(id);
   }

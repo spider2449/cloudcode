@@ -64,6 +64,12 @@ In the existing `restoreProjects().then(...)` effect:
 3. `target = restored.find(w => w.id === stored.workspaceId) ?? restored[0]`.
    If there is no workspace at all, behave exactly as today
    (`setActive(undefined)`, empty selection map).
+   Prerequisite (fixed 2026-09-11 after a failed manual test): workspace ids
+   must be stable across restarts. `DesktopShellHost.openProject` used to mint
+   a fresh `randomUUID()` per process, so a stored id could never match and
+   restore always fell back. Ids are now persisted per canonical project path
+   (`desktop-workspace-ids.json` via `src/desktop/workspaceIds.ts`) and reused
+   on reopen; only genuinely new directories mint an id.
 4. `activeSessions` starts from today's defaults (`sessions[0]?.id` per
    workspace), then overrides only the target workspace:
    - stored `sessionId` is `null` → `undefined` (open on New session);
@@ -103,8 +109,10 @@ is the existing `{ id: string; name: string; sessions: Session[] }`.
 
 ### 4.6 Files to touch
 
-- Create: `desktop/renderer/lastSelection.ts`, `tests/desktop-lastSelection.test.ts`
-- Modify: `desktop/renderer/src.tsx` (restore effect + persist effect only)
+- Create: `desktop/renderer/lastSelection.ts`, `tests/desktop-lastSelection.test.ts`,
+  `src/desktop/workspaceIds.ts`, `tests/desktop-workspaceIds.test.ts`
+- Modify: `desktop/renderer/src.tsx` (restore effect + persist effect only),
+  `src/desktop/shellHost.ts` (stable ids in `openProject`)
 
 ## 5. Out of scope
 
