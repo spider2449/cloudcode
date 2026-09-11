@@ -264,6 +264,7 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
   function send() {
     const text = input.trim();
     if (!text) return;
+    if (pendingIds.length > 0) return;
     const id = `${Date.now()}-${++sendSeq}`;
     setPendingIds(current => [...current, id]);
     setMessages(current => [...current, { id, role: "user", text }]);
