@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SessionIndex } from "../src/agent/sessionIndex.js";
+import { SessionFile } from "../src/engine/sessions.js";
 import { DesktopShellHost, parseDesktopGitStatus } from "../src/desktop/shellHost.js";
 
 const roots: string[] = [];
@@ -114,5 +115,53 @@ describe("DesktopShellHost", () => {
     const workspace = host.openProject(left);
 
     expect(() => host.assertSession(workspace.id, "right-session")).toThrow("does not belong");
+  });
+
+  it("renames a session title within its workspace", () => {
+    const root = mkdtempSync(join(tmpdir(), "cloudcode-shell-"));
+    roots.push(root);
+    const project = join(root, "project");
+    mkdirSync(project);
+    const index = new SessionIndex(join(root, "sessions.json"));
+    index.record({ id: "s1", cwd: project, firstMessage: "Old", timestamp: "2026-09-01T00:00:00Z", provider: "local" });
+    const host = new DesktopShellHost({ sessionIndex: index, recentProjects: { load: () => [], save: () => {} } });
+    const workspace = host.openProject(project);
+
+    const updated = host.renameSession(workspace.id, "s1", "  New title  ");
+    expect(updated.sessions).toEqual([expect.objectContaining({ id: "s1", firstMessage: "New title" })]);
+  });
+
+  it("rejects renaming a session from another workspace", () => {
+    const root = mkdtempSync(join(tmpdir(), "cloudcode-shell-"));
+    roots.push(root);
+    const left = join(root, "left");
+    const right = join(root, "right");
+    mkdirSync(left);
+    mkdirSync(right);
+    const index = new SessionIndex(join(root, "sessions.json"));
+    index.record({ id: "right-session", cwd: right, firstMessage: "Right", timestamp: "2026-09-01T00:00:00Z", provider: "local" });
+    const host = new DesktopShellHost({ sessionIndex: index, recentProjects: { load: () => [], save: () => {} } });
+    const workspace = host.openProject(left);
+
+    expect(() => host.renameSession(workspace.id, "right-session", "x")).toThrow("does not belong");
+  });
+
+  it("removes the index entry and the transcript file", () => {
+    const root = mkdtempSync(join(tmpdir(), "cloudcode-shell-"));
+    roots.push(root);
+    const project = join(root, "project");
+    mkdirSync(project);
+    const sessionDir = join(root, "transcripts");
+    mkdirSync(sessionDir);
+    const index = new SessionIndex(join(root, "sessions.json"));
+    index.record({ id: "s1", cwd: project, firstMessage: "Gone", timestamp: "2026-09-01T00:00:00Z", provider: "local" });
+    new SessionFile("s1", sessionDir).append({ role: "user", content: "hi" });
+    const host = new DesktopShellHost({ sessionIndex: index, sessionDir, recentProjects: { load: () => [], save: () => {} } });
+    const workspace = host.openProject(project);
+
+    const updated = host.removeSession(workspace.id, "s1");
+    expect(updated.sessions).toEqual([]);
+    expect(SessionFile.load("s1", sessionDir)).toEqual([]);
+    expect(index.list()).toEqual([]);
   });
 });

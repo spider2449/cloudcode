@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld("cloudcode", {
   chatHistory: (sessionId, workspaceId) => ipcRenderer.invoke("cloudcode:chat-history", sessionId, workspaceId),
   chatRespond: (response) => ipcRenderer.invoke("cloudcode:chat-respond", response),
   chatComplete: (request) => ipcRenderer.invoke("cloudcode:chat-complete", request),
+  renameSession: (workspaceId, sessionId, title) => ipcRenderer.invoke("cloudcode:rename-session", workspaceId, sessionId, title),
+  removeSession: (workspaceId, sessionId) => ipcRenderer.invoke("cloudcode:remove-session", workspaceId, sessionId),
   onChatEvent: listener => {
     const callback = (_event, payload) => listener(payload);
     ipcRenderer.on("cloudcode:chat-event", callback);

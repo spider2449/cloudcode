@@ -2,6 +2,7 @@ import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { SessionIndex } from "../agent/sessionIndex.js";
+import { SessionFile } from "../engine/sessions.js";
 import { loadRecentProjects, saveRecentProject } from "../agent/recentProjects.js";
 import type { GitRunner } from "../agent/gitReview.js";
 import { DesktopGitService, type DesktopGitState } from "./gitService.js";
@@ -24,6 +25,8 @@ export interface DesktopShellHostOptions {
   sessionIndex?: SessionIndex;
   recentProjects?: { load(): string[]; save(path: string): void };
   gitRunner?: GitRunner;
+  // Overrides the transcript directory for SessionFile.delete (tests only).
+  sessionDir?: string;
 }
 
 /** Read-only desktop navigation authority used around the embedded TUI. */
@@ -70,6 +73,19 @@ export class DesktopShellHost {
     if (!sessions.some(session => session.id === sessionId)) {
       throw new Error("Session does not belong to this workspace.");
     }
+  }
+
+  renameSession(workspaceId: string, sessionId: string, title: string): DesktopShellWorkspace {
+    this.assertSession(workspaceId, sessionId);
+    this.sessionIndex.rename(sessionId, title);
+    return this.describe(workspaceId);
+  }
+
+  removeSession(workspaceId: string, sessionId: string): DesktopShellWorkspace {
+    this.assertSession(workspaceId, sessionId);
+    this.sessionIndex.remove(sessionId);
+    SessionFile.delete(sessionId, this.options.sessionDir);
+    return this.describe(workspaceId);
   }
 
   async gitState(workspaceId: string): Promise<DesktopGitState> {

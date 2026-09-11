@@ -186,6 +186,8 @@ ipcMain.handle("cloudcode:chat-complete", (_event, request) => {
   // sent completion keystrokes into the turn pipeline as text-less messages.
   forwardChatLine(JSON.stringify({ kind: "complete", ...(cwd === undefined ? rest : { ...rest, cwd }) }), id);
 });
+ipcMain.handle("cloudcode:rename-session", (_event, workspaceId, sessionId, title) => host.renameSession(requireString(workspaceId, "workspace ID"), requireString(sessionId, "session ID"), requireString(title, "session title")));
+ipcMain.handle("cloudcode:remove-session", (_event, workspaceId, sessionId) => host.removeSession(requireString(workspaceId, "workspace ID"), requireString(sessionId, "session ID")));
 ipcMain.handle("cloudcode:close-application", () => window?.close());
 
 app.whenReady().then(createWindow);
