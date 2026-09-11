@@ -31,6 +31,7 @@ function fakeSession(): GuiCommandSession & { sent: string[] } {
 
 function setup() {
   const notices: string[] = [];
+  const newSessionRequests: string[] = [];
   const errors: unknown[] = [];
   const session = fakeSession();
   const store = new PermissionStore(mkdtempSync(join(tmpdir(), "gui-perm-")));
@@ -58,6 +59,7 @@ function setup() {
       if (name) providerName = name;
       return session;
     },
+    requestNewSession: () => { newSessionRequests.push("new"); },
     mcpDisabled: () => new Set<string>(),
     permissionStore: () => store
   };
@@ -69,7 +71,7 @@ function setup() {
     });
   }
   const ctx: CommandContext = buildGuiCommandContext(deps);
-  return { notices, errors, session, slash, ctx };
+  return { notices, errors, session, slash, ctx, newSessionRequests };
 }
 
 describe("gui command context against the real registry", () => {
@@ -115,5 +117,11 @@ describe("gui command context against the real registry", () => {
   it("reports current working directory", () => {
     const { ctx } = setup();
     expect(typeof ctx.currentCwd()).toBe("string");
+  });
+  it("/new restarts the backend session and requests a fresh anonymous session", async () => {
+    const { errors, slash, newSessionRequests } = setup();
+    await slash("/new");
+    expect(errors).toEqual([]);
+    expect(newSessionRequests).toEqual(["new"]);
   });
 });

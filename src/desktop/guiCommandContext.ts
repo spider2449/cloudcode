@@ -53,6 +53,9 @@ export interface GuiCommandDeps {
   getSession(): GuiCommandSession;
   // Disposes the live session and creates a fresh one (same or new provider).
   restartSession(provider?: string): Promise<GuiCommandSession>;
+  // Switches the GUI shell to a fresh anonymous session (the New Session
+  // button path). Invoked by /new and /clear so slash and button stay identical.
+  requestNewSession(): void;
   mcpDisabled(): Set<string>;
   permissionStore(): PermissionStore;
 }
@@ -73,7 +76,7 @@ export function buildGuiCommandContext(deps: GuiCommandDeps): CommandContext {
     notice: text => deps.notice(text),
     clearSession: async () => {
       await deps.restartSession();
-      deps.notice("New session started.");
+      deps.requestNewSession();
     },
     setModel: async m => {
       await deps.getSession().setModel(m);

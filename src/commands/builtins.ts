@@ -189,7 +189,7 @@ const commands: Command[] = [
   {
     name: "clear",
     description: "Start a new session",
-    async run(ctx) { await ctx.clearSession(); ctx.notice("Started a new session."); }
+    async run(ctx) { await ctx.clearSession(); }
   },
   {
     name: "compact",
@@ -270,7 +270,7 @@ const commands: Command[] = [
   },
   {
     name: "new",
-    description: "Start a new session and show the welcome screen",
+    description: "Start a new session",
     async run(ctx) { await ctx.clearSession(); }
   },
   {
