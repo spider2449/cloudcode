@@ -37,6 +37,8 @@ declare global {
       chatHistory(sessionId: string | undefined, workspaceId?: string): Promise<void>;
       chatRespond(response: { id: string; allow: boolean }): Promise<void>;
       chatComplete(request: { id: string; prefix: string; sessionId: string | undefined; workspaceId: string | undefined }): Promise<void>;
+      renameSession(workspaceId: string, sessionId: string, title: string): Promise<Workspace>;
+      removeSession(workspaceId: string, sessionId: string): Promise<Workspace>;
       onChatEvent(listener: (event: ChatBridgeEvent) => void): () => void;
       closeApplication(): Promise<void>;
     };
@@ -69,6 +71,8 @@ function App() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [active, setActive] = useState<string>();
   const [activeSessions, setActiveSessions] = useState<Record<string, string | undefined>>({});
+  const [editingId, setEditingId] = useState<string>();
+  const [draft, setDraft] = useState("");
   const [gitStates, setGitStates] = useState<Record<string, GitState | undefined>>({});
   const [backendExit, setBackendExit] = useState<string>();
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -223,6 +227,24 @@ function App() {
     setActiveSessions(current => ({ ...current, [workspaceId]: sessionId }));
   }
 
+  async function submitRename(workspaceId: string, sessionId: string, title: string) {
+    const trimmed = title.trim().slice(0, 200);
+    setEditingId(undefined);
+    if (!trimmed) return;
+    const workspace = await window.cloudcode.renameSession(workspaceId, sessionId, trimmed);
+    setWorkspaces(current => current.map(item => item.id === workspace.id ? workspace : item));
+  }
+
+  async function deleteSession(workspaceId: string, sessionId: string) {
+    if (!window.confirm("Delete this session? This removes it from the list and deletes its transcript.")) return;
+    const workspace = await window.cloudcode.removeSession(workspaceId, sessionId);
+    setWorkspaces(current => current.map(item => item.id === workspace.id ? workspace : item));
+    setActiveSessions(current => {
+      if (current[workspaceId] !== sessionId) return current;
+      return { ...current, [workspaceId]: undefined };
+    });
+  }
+
   function retryLastChat() {
     const request = lastChat.current;
     if (!request) return;
@@ -236,12 +258,12 @@ function App() {
       <button className="new-session" disabled={!active} onClick={() => active && selectSession(active, undefined)}><span>＋</span> New session <kbd>Ctrl N</kbd></button>
       <div className="project-switcher"><span>⌘</span><select aria-label="Active project" value={active ?? ""} onChange={event => switchWorkspace(event.target.value)}>{workspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select><button className="bare-button" title="Open project" onClick={openProject}>＋</button></div>
       <div className="section-heading"><span>SESSIONS</span><span>{activeWorkspace?.sessions.length ?? 0}</span></div>
-      <nav className="workspace-list" aria-label="Sessions">{activeWorkspace?.sessions.map(session => <button key={session.id} className={activeSessions[activeWorkspace.id] === session.id ? "session-card active" : "session-card"} onClick={() => selectSession(activeWorkspace.id, session.id)}><span className="session-title">{session.firstMessage || "Untitled session"}</span><span className="session-meta">{formatSessionDate(session.timestamp)} · {session.provider}</span></button>)}{activeWorkspace && activeWorkspace.sessions.length === 0 && <p className="no-sessions">Your first message will name this session.</p>}</nav>
+      <nav className="workspace-list" aria-label="Sessions">{activeWorkspace?.sessions.map(session => <div key={session.id} className="session-item">{editingId === session.id ? <input className="session-edit-input" autoFocus value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter") void submitRename(activeWorkspace.id, session.id, draft); else if (event.key === "Escape") setEditingId(undefined); }} onBlur={() => void submitRename(activeWorkspace.id, session.id, draft)} aria-label="Rename session" /> : <><button className={activeSessions[activeWorkspace.id] === session.id ? "session-card active" : "session-card"} onClick={() => selectSession(activeWorkspace.id, session.id)}><span className="session-title">{session.firstMessage || "Untitled session"}</span><span className="session-meta">{formatSessionDate(session.timestamp)} · {session.provider}</span></button><span className="session-actions"><button title="Rename session" aria-label={`Rename ${session.firstMessage || "Untitled session"}`} onClick={() => { setEditingId(session.id); setDraft(session.firstMessage); }}>✎</button><button title="Delete session" aria-label={`Delete ${session.firstMessage || "Untitled session"}`} onClick={() => void deleteSession(activeWorkspace.id, session.id)}>🗑</button></span></>}</div>)}{activeWorkspace && activeWorkspace.sessions.length === 0 && <p className="no-sessions">Your first message will name this session.</p>}</nav>
       <div className="sidebar-footer"><span className="status-dot" /> Native chat<br /><small>One engine, one interaction model</small></div>
     </aside>}
     {!sidebarOpen && <button className="sidebar-reveal icon-button" onClick={() => setSidebarOpen(true)}>☰</button>}
     {sidebarOpen && <div className="resizer resizer-left" role="separator" tabIndex={0} aria-orientation="vertical" aria-label="Resize sidebar" title="Drag to resize sidebar (double-click to reset)" onKeyDown={event => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") setSidebarWidth(value => clamp(value + (event.key === "ArrowLeft" ? -10 : 10), MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH)); }} onMouseDown={event => beginResize("left", event)} onDoubleClick={() => resetResize("left")} />}
-    <section className="chat-main"><header className="titlebar"><div className="title-copy"><strong>{activeWorkspace?.sessions.find(session => session.id === activeSessions[activeWorkspace.id])?.firstMessage || "New session"}</strong><span><b>{activeWorkspace?.name ?? "No project"}</b><i /> Chat v{VERSION}</span></div><div className="title-actions">{backendExit !== undefined && <span className="backend-exit">Backend exited <button className="bare-button" onClick={retryLastChat}>Retry</button></span>}<button className="icon-button" title="Toggle Git" onClick={() => setInspectorOpen(value => !value)}>◫</button></div></header><ChatPane workspaceId={active} sessionId={activeSessions[active ?? ""]} onSend={request => { lastChat.current = request; }} /></section>
+    <section className="chat-main"><header className="titlebar"><div className="title-copy"><strong>{activeWorkspace?.sessions.find(session => session.id === activeSessions[activeWorkspace.id])?.firstMessage || "New session"}</strong><span><b>{activeWorkspace?.name ?? "No project"}</b><i /> Chat v{VERSION}</span></div><div className="title-actions">{backendExit !== undefined && <span className="backend-exit">Backend exited <button className="bare-button" onClick={retryLastChat}>Retry</button></span>}<button className="icon-button" title="Toggle Git" onClick={() => setInspectorOpen(value => !value)}>◫</button></div></header><ChatPane workspaceId={active} sessionId={activeSessions[active ?? ""]} onSend={request => { lastChat.current = request; }} onRequestNewSession={workspaceId => { if (workspaceId) selectSession(workspaceId, undefined); }} /></section>
     {inspectorVisible && <div className="resizer resizer-right" role="separator" tabIndex={0} aria-orientation="vertical" aria-label="Resize git panel" title="Drag to resize git panel (double-click to reset)" onKeyDown={event => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") setInspectorWidth(value => clamp(value + (event.key === "ArrowLeft" ? 10 : -10), MIN_INSPECTOR_WIDTH, MAX_INSPECTOR_WIDTH)); }} onMouseDown={event => beginResize("right", event)} onDoubleClick={() => resetResize("right")} />}
     {activeWorkspace && inspectorVisible && <GitInspector workspaceId={activeWorkspace.id} state={gitStates[activeWorkspace.id]} onRefresh={async () => {
       const git = await window.cloudcode.gitState(activeWorkspace.id);

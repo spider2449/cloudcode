@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applySuggestionText, describeSlashInput } from "../desktop/renderer/chatPane.js";
+import { applySuggestionText, describeSlashInput, isNewSessionEvent } from "../desktop/renderer/chatPane.js";
 
 describe("slash input classification", () => {
   it("treats plain text as non-slash", () => {
@@ -31,5 +31,13 @@ describe("suggestion application", () => {
     expect(applySuggestionText("/config theme", echo)).toBe("/config theme");
     const nested = { value: "theme dark", replaceStart: 8, replaceEnd: 14 };
     expect(applySuggestionText("/config theme ", nested)).toBe("/config theme dark");
+  });
+});
+
+describe("new session events", () => {
+  it("recognizes the backend new-session signal", () => {
+    expect(isNewSessionEvent({ type: "new_session" })).toBe(true);
+    expect(isNewSessionEvent({ type: "done" })).toBe(false);
+    expect(isNewSessionEvent({ type: "notice" })).toBe(false);
   });
 });

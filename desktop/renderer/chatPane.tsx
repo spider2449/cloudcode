@@ -41,7 +41,13 @@ export function describeSlashInput(value: string): SlashInputKind {
   return { kind: "args", prefix: value };
 }
 
-export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: string | undefined; sessionId: string | undefined; onSend?: (request: { id: string; sessionId: string | undefined; text: string; workspaceId: string | undefined }) => void }) {
+// True when the backend asks the shell to start a fresh anonymous session
+// (GUI /new and /clear emit this; the shell handles it like the New Session button).
+export function isNewSessionEvent(event: { type: string }): boolean {
+  return event.type === "new_session";
+}
+
+export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession }: { workspaceId: string | undefined; sessionId: string | undefined; onSend?: (request: { id: string; sessionId: string | undefined; text: string; workspaceId: string | undefined }) => void; onRequestNewSession?: (workspaceId: string | undefined) => void }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [completions, setCompletions] = useState<Completion[]>([]);
@@ -58,6 +64,10 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
   // One-shot guard for nested descent (below): prevents "/provider anthropic"
   // style dead-ends from appending spaces forever.
   const nestedOnce = useRef(false);
+  // Latest new-session callback; stored in a ref so the chat-event
+  // subscription below never goes stale when the parent re-renders.
+  const newSessionRef = useRef(onRequestNewSession);
+  newSessionRef.current = onRequestNewSession;
 
   // Session switch: drop the previous transcript, permission prompt, and
   // pending state, then ask the backend to replay the stored history.
@@ -69,6 +79,10 @@ export function ChatPane({ workspaceId, sessionId, onSend }: { workspaceId: stri
     completeReq.current = undefined;
     void window.cloudcode.chatHistory(sessionId, workspaceId);
     return window.cloudcode.onChatEvent((event: { id: string; type: string; text?: string; toolName?: string; toolInput?: Record<string, unknown>; items?: Completion[] }) => {
+      if (isNewSessionEvent(event)) {
+        newSessionRef.current?.(workspaceId);
+        return;
+      }
       if (event.type === "complete") {
         // Drop stale responses: only the latest request for the unchanged
         // input may populate the dropdown.
