@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applySuggestionText, describeSlashInput, isNewSessionEvent, parseSessionIdEvent } from "../desktop/renderer/chatPane.js";
+import { applySuggestionText, busyLabel, describeSlashInput, isNewSessionEvent, parseSessionIdEvent } from "../desktop/renderer/chatPane.js";
 
 describe("slash input classification", () => {
   it("treats plain text as non-slash", () => {
@@ -49,5 +49,13 @@ describe("session id events", () => {
     expect(parseSessionIdEvent({ type: "session_id" })).toBeUndefined();
     expect(parseSessionIdEvent({ type: "session_id", sessionId: "" })).toBeUndefined();
     expect(parseSessionIdEvent({ type: "session_id", sessionId: 42 })).toBeUndefined();
+  });
+});
+
+describe("busy label", () => {
+  it("shows Thinking while turns are in flight, nothing when idle", () => {
+    expect(busyLabel(0)).toBeNull();
+    expect(busyLabel(1)).toBe("Thinking");
+    expect(busyLabel(3)).toBe("Thinking");
   });
 });

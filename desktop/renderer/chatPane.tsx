@@ -55,6 +55,13 @@ export function parseSessionIdEvent(event: { type: string; sessionId?: unknown }
   return typeof event.sessionId === "string" && event.sessionId !== "" ? event.sessionId : undefined;
 }
 
+// Text status for an in-flight LLM turn. Null means idle (hide the label).
+// The animated dots are a separate CSS span so this stays a pure function
+// that node-based unit tests can import (same pattern as lastSelection.ts).
+export function busyLabel(pendingCount: number): string | null {
+  return pendingCount > 0 ? "Thinking" : null;
+}
+
 export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, onAdoptSession }: { workspaceId: string | undefined; sessionId: string | undefined; onSend?: (request: { id: string; sessionId: string | undefined; text: string; workspaceId: string | undefined }) => void; onRequestNewSession?: (workspaceId: string | undefined) => void; onAdoptSession?: (workspaceId: string | undefined, sessionId: string) => void }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
