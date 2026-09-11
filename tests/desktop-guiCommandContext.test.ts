@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +8,18 @@ import type { CommandContext } from "../src/commands/types.js";
 import { PermissionStore } from "../src/agent/permissionStore.js";
 import type { ProviderConfig } from "../src/agent/providers.js";
 import { buildGuiCommandContext, type GuiCommandDeps, type GuiCommandSession } from "../src/desktop/guiCommandContext.js";
+
+// Never touch the real user config: the context under test persists provider,
+// model, permission mode, and theme through the real settings/theme modules
+// (same isolation pattern as tests/commands.test.ts).
+vi.mock("../src/agent/settings.js", () => ({
+  loadSettings: vi.fn().mockReturnValue({}),
+  saveSetting: vi.fn()
+}));
+vi.mock("../src/ui/theme.js", async importOriginal => ({
+  ...(await importOriginal<typeof import("../src/ui/theme.js")>()),
+  loadThemeName: vi.fn().mockReturnValue("dark")
+}));
 
 function fakeSession(): GuiCommandSession & { sent: string[] } {
   const sent: string[] = [];
