@@ -50,4 +50,17 @@ describe("SessionFile", () => {
     s.rewrite([]);
     expect(SessionFile.load("abc", dir)).toEqual([]);
   });
+
+  it("delete() removes the transcript file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cc-sess6-"));
+    const s = new SessionFile("abc", dir);
+    s.append({ role: "user", content: "hi" });
+    SessionFile.delete("abc", dir);
+    expect(SessionFile.load("abc", dir)).toEqual([]);
+  });
+
+  it("delete() ignores missing files instead of throwing", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cc-sess7-"));
+    expect(() => SessionFile.delete("missing", dir)).not.toThrow();
+  });
 });

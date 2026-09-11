@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { configDir } from "../agent/providers.js";
 
@@ -20,6 +20,16 @@ export class SessionFile {
   // loads the compacted history instead of the stale pre-compact transcript.
   rewrite(entries: unknown[]): void {
     writeFileSync(this.filePath, entries.map(e => JSON.stringify(e) + "\n").join(""));
+  }
+
+  // Deletes the transcript file. Missing files are not errors, so removing
+  // an index entry never fails when its transcript is already gone.
+  static delete(sessionId: string, dir: string = defaultDir()): void {
+    try {
+      rmSync(join(dir, `${sessionId}.jsonl`), { force: true });
+    } catch {
+      // Undeletable file: the index entry is the source of truth, ignore.
+    }
   }
 
   static load(sessionId: string, dir: string = defaultDir()): unknown[] {
