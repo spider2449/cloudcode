@@ -12,7 +12,7 @@ describe("chat protocol", () => {
     expect(() => requireChatText("x".repeat(200_001))).toThrow("Invalid chat text");
   });
   it("advertises a fixed event vocabulary", () => {
-    expect(CHAT_EVENT_TYPES).toEqual(["text_delta", "tool_use", "tool_result", "notice", "error", "permission_request", "user_text", "complete", "new_session", "done"]);
+    expect(CHAT_EVENT_TYPES).toEqual(["text_delta", "tool_use", "tool_result", "notice", "error", "permission_request", "user_text", "complete", "new_session", "session_id", "done"]);
   });
   it("rejects control characters and non-strings, accepts boundary lengths", () => {
     expect(() => requireChatId("x".repeat(201))).toThrow("Invalid chat id");

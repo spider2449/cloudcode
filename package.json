@@ -1,10 +1,10 @@
 {
   "name": "cloudcode",
-  "version": "0.1.75",
+  "version": "0.1.76",
   "description": "Terminal AI coding agent with its own native agent engine talking directly to the Anthropic Messages API",
   "author": {
-    "name": "spider244",
-    "email": "spider244@hotmail.com"
+    "name": "spider2449",
+    "email": "spider2449@hotmail.com"
   },
   "license": "MIT",
   "type": "module",

@@ -242,6 +242,12 @@ if (parsed.kind === "guiserver") {
         turnDone.set(key, resolve);
         session.send(req.text);
       });
+      // Tell the GUI the backend id of an anonymous conversation once it has
+      // content, so the shell can adopt it (persisted, restorable). Named
+      // sessions are already known to the shell and need no announcement.
+      if (req.sessionId === undefined && session.sessionId !== undefined) {
+        emitTurn({ id: req.id, type: "session_id", sessionId: session.sessionId });
+      }
     },
     emit: (event) => { process.stdout.write(`${JSON.stringify(event)}\n`); },
   });

@@ -72,7 +72,13 @@ In the existing `restoreProjects().then(...)` effect:
    on reopen; only genuinely new directories mint an id.
 4. `activeSessions` starts from today's defaults (`sessions[0]?.id` per
    workspace), then overrides only the target workspace:
-   - stored `sessionId` is `null` → `undefined` (open on New session);
+   - stored `sessionId` is `null` → `undefined` (open on New session). A `null`
+     is only stored when the workspace was left on a content-free anonymous
+     session: once an anonymous turn completes, the backend pushes a
+     `session_id` event and the shell silently adopts the real id (no
+     transcript reset, no refetch), so quitting afterwards restores the full
+     conversation. Adoption is skipped if the user already navigated elsewhere
+     mid-turn;
    - stored `sessionId` matches one of `target.sessions` → that id;
    - otherwise (session renamed is fine since rename keeps the id; session
      deleted) → the workspace's `sessions[0]?.id`.

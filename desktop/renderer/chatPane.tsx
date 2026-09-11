@@ -47,7 +47,15 @@ export function isNewSessionEvent(event: { type: string }): boolean {
   return event.type === "new_session";
 }
 
-export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession }: { workspaceId: string | undefined; sessionId: string | undefined; onSend?: (request: { id: string; sessionId: string | undefined; text: string; workspaceId: string | undefined }) => void; onRequestNewSession?: (workspaceId: string | undefined) => void }) {
+// Extracts the backend session id from a "session_id" event so the shell can
+// adopt an anonymous conversation once it has content. Anything else yields
+// undefined instead of throwing on malformed payloads.
+export function parseSessionIdEvent(event: { type: string; sessionId?: unknown }): string | undefined {
+  if (event.type !== "session_id") return undefined;
+  return typeof event.sessionId === "string" && event.sessionId !== "" ? event.sessionId : undefined;
+}
+
+export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, onAdoptSession }: { workspaceId: string | undefined; sessionId: string | undefined; onSend?: (request: { id: string; sessionId: string | undefined; text: string; workspaceId: string | undefined }) => void; onRequestNewSession?: (workspaceId: string | undefined) => void; onAdoptSession?: (workspaceId: string | undefined, sessionId: string) => void }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [completions, setCompletions] = useState<Completion[]>([]);
@@ -68,19 +76,44 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession }
   // subscription below never goes stale when the parent re-renders.
   const newSessionRef = useRef(onRequestNewSession);
   newSessionRef.current = onRequestNewSession;
+  // Live selection mirror for the adoption guard below: only adopt when the
+  // pane is still showing the anonymous session the event belongs to.
+  const liveRef = useRef({ workspaceId, sessionId });
+  liveRef.current = { workspaceId, sessionId };
+  const adoptRef = useRef(onAdoptSession);
+  adoptRef.current = onAdoptSession;
+  // Remembers an adopted id across the prop change it triggers, so the
+  // session-switch effect below keeps the on-screen transcript instead of
+  // clearing and replaying the identical history.
+  const adoptedRef = useRef<string>();
 
   // Session switch: drop the previous transcript, permission prompt, and
   // pending state, then ask the backend to replay the stored history.
+  // Adopting an anonymous session skips the reset: the visible transcript
+  // already is that session's content.
   useEffect(() => {
-    setMessages([]);
-    setPendingIds([]);
-    setPermission(undefined);
-    nestedOnce.current = false;
-    completeReq.current = undefined;
-    void window.cloudcode.chatHistory(sessionId, workspaceId);
-    return window.cloudcode.onChatEvent((event: { id: string; type: string; text?: string; toolName?: string; toolInput?: Record<string, unknown>; items?: Completion[] }) => {
+    const adopted = adoptedRef.current !== undefined && adoptedRef.current === sessionId;
+    adoptedRef.current = undefined;
+    if (!adopted) {
+      setMessages([]);
+      setPendingIds([]);
+      setPermission(undefined);
+      nestedOnce.current = false;
+      completeReq.current = undefined;
+      void window.cloudcode.chatHistory(sessionId, workspaceId);
+    }
+    return window.cloudcode.onChatEvent((event: { id: string; type: string; text?: string; toolName?: string; toolInput?: Record<string, unknown>; items?: Completion[]; sessionId?: unknown }) => {
       if (isNewSessionEvent(event)) {
         newSessionRef.current?.(workspaceId);
+        return;
+      }
+      const adoptedId = parseSessionIdEvent(event);
+      if (adoptedId !== undefined) {
+        const live = liveRef.current;
+        if (live.sessionId === undefined) {
+          adoptedRef.current = adoptedId;
+          adoptRef.current?.(live.workspaceId, adoptedId);
+        }
         return;
       }
       if (event.type === "complete") {

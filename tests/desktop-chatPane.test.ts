@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applySuggestionText, describeSlashInput, isNewSessionEvent } from "../desktop/renderer/chatPane.js";
+import { applySuggestionText, describeSlashInput, isNewSessionEvent, parseSessionIdEvent } from "../desktop/renderer/chatPane.js";
 
 describe("slash input classification", () => {
   it("treats plain text as non-slash", () => {
@@ -39,5 +39,15 @@ describe("new session events", () => {
     expect(isNewSessionEvent({ type: "new_session" })).toBe(true);
     expect(isNewSessionEvent({ type: "done" })).toBe(false);
     expect(isNewSessionEvent({ type: "notice" })).toBe(false);
+  });
+});
+
+describe("session id events", () => {
+  it("extracts the backend session id for adoption", () => {
+    expect(parseSessionIdEvent({ type: "session_id", sessionId: "sess-9" })).toBe("sess-9");
+    expect(parseSessionIdEvent({ type: "done" })).toBeUndefined();
+    expect(parseSessionIdEvent({ type: "session_id" })).toBeUndefined();
+    expect(parseSessionIdEvent({ type: "session_id", sessionId: "" })).toBeUndefined();
+    expect(parseSessionIdEvent({ type: "session_id", sessionId: 42 })).toBeUndefined();
   });
 });
