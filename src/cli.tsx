@@ -206,6 +206,9 @@ if (parsed.kind === "guiserver") {
         await disposeKey(key);
         return getSession(key, state);
       },
+      requestNewSession: () => {
+        emit({ id, type: "new_session" });
+      },
       mcpDisabled: () => state.mcpDisabled,
       permissionStore: () => permissionStoreFor(cwd)
     });
