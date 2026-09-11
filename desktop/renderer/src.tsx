@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./style.css";
 import { VERSION } from "../../src/version.js";
 import { ChatPane } from "./chatPane.js";
+import { LAST_SELECTION_KEY, loadStoredSelection, resolveRestoredSelection, serializeSelection } from "./lastSelection.js";
 
 type Session = { id: string; firstMessage: string; timestamp: string; provider: string };
 type Workspace = { id: string; name: string; sessions: Session[] };
@@ -82,6 +83,9 @@ function App() {
   const [dragging, setDragging] = useState<"left" | "right" | null>(null);
   const dragState = useRef<{ side: "left" | "right"; startX: number; startSidebar: number; startInspector: number } | null>(null);
   const lastChat = useRef<ChatRequest | undefined>(undefined);
+  // Set once the initial restore resolves; the persist effect below must not
+  // run before that, or a slow restore would clobber the remembered value.
+  const restoredRef = useRef(false);
   const activeWorkspace = workspaces.find(workspace => workspace.id === active);
 
   // Only the reserved backend id reports process exits; turn failures from
@@ -97,10 +101,26 @@ function App() {
   useEffect(() => {
     void window.cloudcode.restoreProjects().then(restored => {
       setWorkspaces(restored);
-      setActive(restored[0]?.id);
-      setActiveSessions(Object.fromEntries(restored.map(workspace => [workspace.id, workspace.sessions[0]?.id])));
+      restoredRef.current = true;
+      const resolved = resolveRestoredSelection(
+        restored,
+        loadStoredSelection(() => window.localStorage.getItem(LAST_SELECTION_KEY))
+      );
+      setActive(resolved.active);
+      setActiveSessions(resolved.activeSessions);
     });
   }, []);
+
+  // Remembers the last active pair on every switch (crash-safe). Failures are
+  // ignored so the next launch simply falls back to the default selection.
+  useEffect(() => {
+    if (!restoredRef.current) return;
+    try {
+      window.localStorage.setItem(LAST_SELECTION_KEY, serializeSelection(active, activeSessions));
+    } catch {
+      // Storage unavailable: keep the previously stored value, if any.
+    }
+  }, [active, activeSessions]);
 
   useEffect(() => {
     if (!active) return;
