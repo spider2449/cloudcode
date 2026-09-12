@@ -2,63 +2,17 @@ import type { SessionEntry } from "../../agent/sessionIndex.js";
 import type { PermissionRequest } from "../../agent/session.js";
 import type { Key } from "../input.js";
 import { visibleWindow, MAX_ROWS } from "./menu.js";
-import { toolLabel } from "../transcript.js";
 import { sgr, SGR_RESET } from "../term/ansi.js";
 import type { Theme } from "../theme.js";
 import type { MemoryOption } from "../MemoryPicker.js";
-import { commandPrefix } from "../../agent/permissionStore.js";
-import { hostScope, ruleScope } from "../../engine/permissions.js";
+import { PermissionOverlay, type PermissionDecisionHandler } from "./permissionOverlay.js";
 import { STATUS_LINE_ITEMS, STATUS_LINE_LABELS, canonicalOrder } from "../../statusLineItems.js";
 import type { StatusLineItem } from "../../statusLineItems.js";
 
 export type OverlayMode = "none" | "resume" | "project" | "permission" | "memory" | "trust" | "statusline" | "config" | "theme";
 
-interface PermOption {
-  label: string;
-  hotkey: string;
-  allow: boolean;
-  rememberAs?: "allow" | "deny";
-}
-
-const BASE_OPTIONS: PermOption[] = [
-  { label: "Yes (y)", hotkey: "y", allow: true },
-  { label: "No (n)", hotkey: "n", allow: false }
-];
-
 function safeTerminalText(value: string): string {
   return value.replace(/[\u0000-\u001f\u007f]+/g, " ").slice(0, 300);
-}
-
-const FILE_OPTIONS: PermOption[] = [
-  { label: "Yes (y)", hotkey: "y", allow: true },
-  { label: "Always for this directory (a)", hotkey: "a", allow: true, rememberAs: "allow" },
-  { label: "No (n)", hotkey: "n", allow: false },
-  { label: "Never for this directory (d)", hotkey: "d", allow: false, rememberAs: "deny" }
-];
-
-function commandOptions(prefix: string): PermOption[] {
-  return [
-    { label: "Yes (y)", hotkey: "y", allow: true },
-    { label: `Always allow '${prefix}' commands (a)`, hotkey: "a", allow: true, rememberAs: "allow" },
-    { label: "No (n)", hotkey: "n", allow: false },
-    { label: `Never allow '${prefix}' commands (d)`, hotkey: "d", allow: false, rememberAs: "deny" }
-  ];
-}
-
-function hostOptions(host: string): PermOption[] {
-  return [
-    { label: "Yes (y)", hotkey: "y", allow: true },
-    { label: `Always allow ${host} (a)`, hotkey: "a", allow: true, rememberAs: "allow" },
-    { label: "No (n)", hotkey: "n", allow: false },
-    { label: `Never allow ${host} (d)`, hotkey: "d", allow: false, rememberAs: "deny" }
-  ];
-}
-
-interface PermissionState {
-  request: PermissionRequest;
-  options: PermOption[];
-  selected: number;
-  onDecision: (allow: boolean, rememberAs?: "allow" | "deny") => void;
 }
 
 interface ResumeState {
@@ -136,7 +90,7 @@ export class OverlayManager {
   private _mode: OverlayMode = "none";
   private resumeState: ResumeState | undefined;
   private projectState: ProjectState | undefined;
-  private permissionState: PermissionState | undefined;
+  private permission = new PermissionOverlay();
   private memoryState: MemoryState | undefined;
   private trustState: TrustState | undefined;
   private statusLineState: StatusLineState | undefined;
@@ -161,22 +115,9 @@ export class OverlayManager {
     this.projectState = { projects, currentCwd, index: 0, text: "", onPick, onCancel };
   }
 
-  openPermission(request: PermissionRequest, onDecision: (allow: boolean, rememberAs?: "allow" | "deny") => void): void {
+  openPermission(request: PermissionRequest, onDecision: PermissionDecisionHandler): void {
     this._mode = "permission";
-    // Offer "always" exactly when a remembered rule would actually be
-    // consulted later: path-scoped (see ruleScope), command-prefix (Bash),
-    // or host-scoped (WebFetch).
-    const hasPathRule = ruleScope(request.toolName, request.input) !== undefined;
-    const isBashCommand = request.toolName === "Bash" && typeof request.input.command === "string";
-    const host = hostScope(request.toolName, request.input);
-    const options = hasPathRule
-      ? FILE_OPTIONS
-      : isBashCommand
-        ? commandOptions(commandPrefix(String(request.input.command)))
-        : host
-          ? hostOptions(host)
-          : BASE_OPTIONS;
-    this.permissionState = { request, options, selected: 0, onDecision };
+    this.permission.open(request, onDecision);
   }
 
   openMemory(options: MemoryOption[], onPick: (o: MemoryOption) => void, onCancel: () => void): void {
@@ -233,7 +174,7 @@ export class OverlayManager {
     this._mode = "none";
     this.resumeState = undefined;
     this.projectState = undefined;
-    this.permissionState = undefined;
+    this.permission.reset();
     this.memoryState = undefined;
     this.trustState = undefined;
     this.statusLineState = undefined;
@@ -244,7 +185,7 @@ export class OverlayManager {
   handleKey(k: Key, input?: string): void {
     if (this._mode === "resume") this.handleResumeKey(k);
     else if (this._mode === "project") this.handleProjectKey(k, input);
-    else if (this._mode === "permission") this.handlePermissionKey(k, input);
+    else if (this._mode === "permission") this.permission.handleKey(k, input, () => this.close());
     else if (this._mode === "memory") this.handleMemoryKey(k);
     else if (this._mode === "trust") this.handleTrustKey(k, input);
     else if (this._mode === "statusline") this.handleStatusLineKey(k, input);
@@ -292,24 +233,6 @@ export class OverlayManager {
 
   private filteredProjects(s: ProjectState): string[] {
     return s.text ? s.projects.filter(p => p.toLowerCase().includes(s.text.toLowerCase())) : s.projects;
-  }
-
-  private handlePermissionKey(k: Key, input?: string): void {
-    const s = this.permissionState;
-    if (!s) return;
-    const decide = (opt: PermOption) => {
-      const cb = s.onDecision;
-      this.close();
-      cb(opt.allow, opt.rememberAs);
-    };
-    if (input) {
-      const hot = s.options.find(o => o.hotkey === input.toLowerCase());
-      if (hot) { decide(hot); return; }
-    }
-    if (k.t === "esc") { const cb = s.onDecision; this.close(); cb(false); return; }
-    if (k.t === "left" || k.t === "up") { s.selected = (s.selected + s.options.length - 1) % s.options.length; return; }
-    if (k.t === "right" || k.t === "down") { s.selected = (s.selected + 1) % s.options.length; return; }
-    if (k.t === "enter") decide(s.options[s.selected]);
   }
 
   private handleProjectKey(k: Key, input?: string): void {
@@ -440,7 +363,7 @@ export class OverlayManager {
   render(theme: Theme, width: number): string[] {
     if (this._mode === "resume") return this.renderResume(theme, width);
     if (this._mode === "project") return this.renderProject(theme, width);
-    if (this._mode === "permission") return this.renderPermission(theme, width);
+    if (this._mode === "permission") return this.permission.render(theme, width);
     if (this._mode === "memory") return this.renderMemory(theme, width);
     if (this._mode === "trust") return this.renderTrust(theme, width);
     if (this._mode === "statusline") return this.renderStatusLine(theme, width);
@@ -544,22 +467,6 @@ export class OverlayManager {
     });
     rows.push("╰" + "─".repeat(Math.max(0, width - 2)) + "╯");
     return rows;
-  }
-
-  private renderPermission(theme: Theme, width: number): string[] {
-    const s = this.permissionState;
-    if (!s) return [];
-    const warning = sgr(theme.warning);
-    const optionsLine = s.options
-      .map((o, i) => (i === s.selected ? `\x1b[7m ${o.label} \x1b[27m` : ` ${o.label} `))
-      .join("  ");
-    return [
-      "╭" + "─".repeat(Math.max(0, width - 2)) + "╮",
-      `${warning}Permission required${SGR_RESET}`,
-      toolLabel(s.request.toolName, s.request.input),
-      optionsLine,
-      "╰" + "─".repeat(Math.max(0, width - 2)) + "╯"
-    ];
   }
 
   private renderProject(theme: Theme, width: number): string[] {

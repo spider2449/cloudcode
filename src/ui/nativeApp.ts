@@ -4,7 +4,7 @@ import { History } from "../agent/history.js";
 import type { ProviderConfig } from "../agent/providers.js";
 import { SessionIndex } from "../agent/sessionIndex.js";
 import { PermissionStore } from "../agent/permissionStore.js";
-import { buildRegistry, applyConfigValue, configChoices, type ConfigKey } from "../commands/builtins.js";
+import { buildRegistry } from "../commands/builtins.js";
 import { runSlashCommand } from "../commands/runtime.js";
 import type { CommandContext } from "../commands/types.js";
 import { FileIndex } from "../commands/fileIndex.js";
@@ -12,7 +12,6 @@ import { liveCompletionContext, type CompletionContext } from "../commands/compl
 import { toDisplayItems, streamDelta, streamThinkingDelta, transcriptToDisplayItems, type DisplayItem } from "./transcript.js";
 import { fetchModels } from "../agent/models.js";
 import { applyContextWindow } from "../agent/contextProbe.js";
-import { loadMcpServers, loadMcpServersByScope, isMcpServerDisabled, resolveMcpServerScope, setMcpServerDisabled, formatMcpStatus } from "../agent/mcp.js";
 import { loadRegistry } from "../engine/lsp/config.js";
 import { loadSkills, formatSkillList, type Skill } from "../agent/skills.js";
 import { mergeSkillCommands } from "../commands/skillCommands.js";
@@ -22,7 +21,7 @@ import { GitStatusPoller } from "./useGitStatus.js";
 import { PermissionController } from "./permissionController.js";
 import { KeyRouter, type KeyRouterHost } from "./keyRouter.js";
 import { UsageTracker, contextUsageForResult } from "./usageTracker.js";
-import { openConfigPicker, openMemoryPicker, openProjectPicker, openResumePicker, openStatusLinePicker, openThemePicker, type PickerDeps } from "./appPickers.js";
+import type { PickerDeps } from "./appPickers.js";
 import { DEFAULT_STATUS_LINE_ITEMS, type StatusLineItem } from "../statusLineItems.js";
 import { collectGitReview } from "../agent/gitReview.js";
 import { Buffer } from "./buffer.js";
@@ -42,6 +41,8 @@ import { resolveProjectConfigTrust } from "./projectTrustPrompt.js";
 import type { EffortLevel } from "../engine/effort.js";
 import type { NetworkDecisionRecorder, NetworkMode } from "../agent/networkPolicy.js";
 import { NetworkController } from "./networkController.js";
+import { McpController } from "./mcpController.js";
+import { buildAppCommandContext, formatPermissionRules } from "./appCommandContext.js";
 import { SessionPresentation } from "./sessionPresentation.js";
 import { TaskUiController, type TaskUiOptions } from "./taskController.js";
 import { TURN_BUSY_MARKER, TURN_IDLE_MARKER } from "./turnSignal.js";
@@ -108,8 +109,7 @@ export class App {
   private skills: Skill[] = [];
   private fileIndex: FileIndex;
   private availableModels: string[] = [];
-  private mcpServers: Record<string, Record<string, unknown>> = {};
-  private mcpDisabled = new Set<string>();
+  private mcp: McpController;
   private allowProjectConfig = false;
   private git: GitStatusPoller;
   private running = false;
@@ -125,13 +125,14 @@ export class App {
     this.model = this.presentation.modelFor(props.initialProvider);
     this.mode = props.initialMode ?? "default";
     this.network = new NetworkController(props.networkMode ?? "providerOnly", props.providers, props.networkAudit);
+    this.mcp = new McpController(props.cwd);
     this.permissionStore = new PermissionStore(props.cwd);
     this.fileIndex = new FileIndex(props.cwd);
     this.git = new GitStatusPoller(props.cwd);
     this.completionCtx = liveCompletionContext({
       registry: () => this.registry, providerNames: () => Object.keys(this.props.providers),
       availableModels: () => this.availableModels,
-      mcpServerNames: () => Array.from(new Set([...Object.keys(this.mcpServers), ...this.mcpDisabled])),
+      mcpServerNames: () => this.mcp.serverNames(),
       listFiles: () => this.fileIndex.list(),
       refreshFiles: () => this.fileIndex.refresh()
     });
@@ -262,15 +263,7 @@ export class App {
   }
   private createSession(name: string, resume?: string, modeOverride?: PermissionMode): AgentSession {
     this.availableModels = [];
-    this.mcpServers = this.props.task?.disableMcp ? {} : loadMcpServers(this.props.cwd, undefined, this.allowProjectConfig);
-    const scopes = loadMcpServersByScope(this.props.cwd);
-    const visible = this.allowProjectConfig ? scopes : { user: scopes.user, project: {} as typeof scopes.project };
-    this.mcpDisabled = new Set(
-      Object.keys({ ...visible.user, ...visible.project }).filter(name => {
-        const effective = visible.project[name] ?? visible.user[name];
-        return effective ? isMcpServerDisabled(effective) : false;
-      })
-    );
+    this.mcp.reload(this.props.task?.disableMcp ?? false, this.allowProjectConfig);
     this.refreshSkills();
     const session = new AgentSession({
       providerName: name,
@@ -282,7 +275,7 @@ export class App {
       cwd: this.props.cwd,
       networkPolicy: this.network.policyFor(name),
       oauthAuthToken: this.props.oauthAuthToken,
-      mcpServers: this.mcpServers,
+      mcpServers: this.mcp.inventory(),
       lspRegistry: loadRegistry(undefined, join(this.props.cwd, ".cloudcode", "lsp.json"), this.allowProjectConfig),
       toolAllowlist: this.props.task?.toolAllowlist,
       onMessage: msg => this.handleMessage(msg),
@@ -333,9 +326,10 @@ export class App {
   }
 
   private buildCommandContext(): CommandContext {
-    return {
+    return buildAppCommandContext({
+      cwd: this.props.cwd, providers: this.props.providers,
       notice: text => this.notice(text),
-      clearSession: async () => {
+      clearTranscript: () => {
         this.buffer.clear();
         this.terminal.write(CLEAR_AND_HOME);
         this.renderer.invalidate();
@@ -343,32 +337,26 @@ export class App {
         this.thinkingText = "";
         this.activeTool = undefined;
         this.appendWelcome();
-        await this.restartSession(this.providerName);
-        this.recompute();
       },
-      setModel: async m => { await this.session?.setModel(m); this.model = m; this.servedModel = undefined; this.recompute(); },
-      availableModels: () => this.availableModels,
-      currentModel: () => this.model,
+      recompute: () => this.recompute(),
+      restartSession: (name?: string) => this.restartSession(name ?? this.providerName),
+      providerName: () => this.providerName, currentEffort: () => this.effort,
+      availableModels: () => this.availableModels, currentModel: () => this.model,
+      setModel: async m => { await this.session?.setModel(m); this.model = m; this.servedModel = undefined; },
       setEffort: async level => { await this.session?.setEffort(level); this.effort = level; },
-      currentEffort: () => this.effort,
       setPermissionMode: async m => {
         const pm = m as PermissionMode;
         await this.session?.setPermissionMode(pm);
         if (pm !== "bypassPermissions") saveSetting("permissionMode", pm);
         this.mode = pm;
-        this.recompute();
       },
       currentNetworkMode: () => this.network.mode,
       setNetworkMode: async networkMode => {
         this.network.setMode(networkMode);
         saveSetting("networkMode", networkMode);
         await this.restartSession(this.providerName);
-        this.recompute();
       },
-      setSessionNetworkMode: async mode => {
-        this.network.setMode(mode);
-        this.recompute();
-      },
+      setSessionNetworkMode: async mode => { this.network.setMode(mode); },
       networkPolicy: () => this.network.policyFor(this.providerName),
       switchProvider: async name => {
         if (!this.props.providers[name]) {
@@ -385,56 +373,27 @@ export class App {
           this.notice(`Failed to switch provider: ${String(err)}. Staying on ${previous}.`);
           await this.restartSession(previous);
         }
-        this.recompute();
       },
       compact: async onProgress => {
         const estimatedTokens = await this.session?.compact(onProgress);
         this.usage.applyCompactedSize(estimatedTokens);
         return estimatedTokens;
       },
-      setCompactProgress: pct => { this.usage.setCompactProgress(pct); this.recompute(); },
-      openResumePicker: () => openResumePicker(this.pickerDeps(), e => this.pickResume(e)),
+      setCompactProgress: pct => { this.usage.setCompactProgress(pct); },
+      pickResume: e => this.pickResume(e),
       costSummary: () => `Session cost: $${this.usage.cost.toFixed(4)}`,
       contextInfo: () => ({
         snapshot: this.session?.contextSnapshot(),
         model: this.presentation.modelFor(this.providerName) ?? "unknown",
         contextWindow: this.presentation.contextWindowFor(this.providerName)
       }),
-      providerNames: () => Object.keys(this.props.providers),
       exit: () => { void this.session?.dispose(); this.stop(); },
-      listPermissionRules: () => {
-        const rules = this.permissionStore.list();
-        if (rules.length === 0) return "No permission rules.";
-        return rules.map(r => {
-          const scope = r.dir ?? (r.host !== undefined ? r.host : `'${r.prefix}' commands`);
-          return `${r.decision === "allow" ? "✓" : "✗"} ${r.tool} ${scope}`;
-        }).join("\n");
-      },
+      listPermissionRules: () => formatPermissionRules(this.permissionStore.list()),
       clearPermissionRules: () => this.permissionStore.clear(),
-      mcpStatus: async () =>
-        formatMcpStatus(
-          [...Object.keys(this.mcpServers), ...this.mcpDisabled],
-          (await this.session?.mcpStatus()) ?? [],
-          this.session?.tools ?? [],
-          this.mcpDisabled
-        ),
-      mcpSetEnabled: async (name, enabled) => {
-        const scope = resolveMcpServerScope(name, this.props.cwd);
-        if (!scope) return `No MCP server named "${name}".`;
-        if (name.startsWith("pack__")) return `Pack servers cannot be disabled (${name}).`;
-        try {
-          setMcpServerDisabled(name, !enabled, scope, this.props.cwd);
-        } catch (err) {
-          return err instanceof Error ? err.message : String(err);
-        }
-        if (enabled) this.mcpDisabled.delete(name);
-        else this.mcpDisabled.add(name);
-        const verb = enabled ? "Enabled" : "Disabled";
-        return `${verb} ${name} (${scope}). Use /clear to reconnect.`;
-      },
+      mcpStatus: () => this.mcp.status(this.session),
+      mcpSetEnabled: (name, enabled) => this.mcp.setEnabled(name, enabled),
       sendPrompt: text => this.sendUserMessage(text),
-      listSkills: () => formatSkillList(this.skills),
-      reloadSkills: () => this.refreshSkills(),
+      listSkills: () => formatSkillList(this.skills), reloadSkills: () => this.refreshSkills(),
       setTheme: name => {
         if (!THEMES[name]) return;
         saveThemeName(name);
@@ -448,46 +407,17 @@ export class App {
         void this.session?.dispose();
         this.stop();
       },
-      openProjectPicker: () => openProjectPicker(this.pickerDeps(), path => this.ctx.switchProject(path)),
-      openMemoryPicker: () =>
-        openMemoryPicker(this.pickerDeps(), () => { void this.session?.refreshSystemPrompt(); }),
-      openStatusLinePicker: () =>
-        openStatusLinePicker(this.pickerDeps(), this.statusLineItems, next => {
-          this.statusLineItems = next; saveSetting("statusLineItems", next); this.recompute();
-        }),
-      openConfigPicker: () =>
-        openConfigPicker(
-          this.pickerDeps(),
-          configChoices(this.ctx),
-          (key, value) => {
-            void applyConfigValue(this.ctx, key as ConfigKey, value);
-          },
-          (key, value) => {
-            // Live preview while browsing the picker's values: rendered
-            // without saving, so Esc restores the saved theme and only Enter
-            // persists. Other keys ignore the highlight and apply on Enter
-            // via applyConfigValue as before.
-            if (key === "theme") this.applyThemeUnsaved(value);
-          }
-        ),
-      openThemePicker: () =>
-        openThemePicker(
-          this.pickerDeps(),
-          Object.keys(THEMES),
-          loadThemeName(),
-          name => {
-            this.ctx.setTheme(name);
-            this.notice(`Theme: ${name}`);
-          },
-          name => this.applyThemeUnsaved(name)
-        ),
-      currentCwd: () => this.props.cwd,
-      changeSummaries: latestOnly => this.session?.changeSummaries(latestOnly) ?? [], changeDiff: path =>
-        this.session?.changeDiff(path) ?? { content: "No session-owned changes.", truncated: false },
-      previewUndo: () => this.session?.previewUndo() ?? { operations: [], conflicts: [] }, undoLatest: () =>
-        this.session?.undoLatest() ?? { applied: false, operations: [], conflicts: [], rollbackErrors: [] },
-      gitReview: stagedOnly => collectGitReview(this.props.cwd, stagedOnly)
-    };
+      pickers: () => this.pickerDeps(), statusLineItems: () => this.statusLineItems,
+      setStatusLineItems: next => { this.statusLineItems = next; saveSetting("statusLineItems", next); },
+      applyThemeUnsaved: name => this.applyThemeUnsaved(name),
+      refreshSystemPrompt: () => void this.session?.refreshSystemPrompt(),
+      changeSummaries: latestOnly => this.session?.changeSummaries(latestOnly) ?? [],
+      changeDiff: path => this.session?.changeDiff(path) ?? { content: "No session-owned changes.", truncated: false },
+      previewUndo: () => this.session?.previewUndo() ?? { operations: [], conflicts: [] },
+      undoLatest: () => this.session?.undoLatest() ?? { applied: false, operations: [], conflicts: [], rollbackErrors: [] },
+      gitReview: stagedOnly => collectGitReview(this.props.cwd, stagedOnly),
+      self: () => this.ctx
+    });
   }
 
   private sendUserMessage(text: string): void {

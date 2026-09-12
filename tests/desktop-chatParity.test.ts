@@ -61,8 +61,8 @@ describe("slash parity", () => {
     expect(main).toContain('kind: "theme-set"');
     const preload = readFileSync("desktop/preload.cjs", "utf8");
     expect(preload).toContain("setTheme");
-    const cli = readFileSync("src/cli.tsx", "utf8");
-    expect(cli).toContain('kind === "theme-set"');
+    const backend = readFileSync("src/desktop/guiBackend.ts", "utf8");
+    expect(backend).toContain('kind === "theme-set"');
     const pane = readFileSync("desktop/renderer/chatPane.tsx", "utf8");
     expect(pane).toContain("confirmGuiTheme");
     const css = readFileSync("desktop/renderer/style.css", "utf8");
@@ -84,8 +84,8 @@ describe("slash parity", () => {
     // text-less messages ("Invalid chat text." per keystroke).
     const completeBlock = main.slice(main.indexOf("chat-complete"));
     expect(completeBlock).toContain('kind: "complete"');
-    const cli = readFileSync("src/cli.tsx", "utf8");
-    expect(cli).toContain('kind === "complete"');
+    const backend = readFileSync("src/desktop/guiBackend.ts", "utf8");
+    expect(backend).toContain('kind === "complete"');
     const preload = readFileSync("desktop/preload.cjs", "utf8");
     expect(preload).toContain("chatComplete");
   });
@@ -132,10 +132,10 @@ describe("slash parity", () => {
     const preload = readFileSync("desktop/preload.cjs", "utf8");
     expect(preload).toContain("chatStatus");
     expect(preload).toContain("chatStatusLineSet");
-    const cli = readFileSync("src/cli.tsx", "utf8");
-    expect(cli).toContain('kind === "status"');
-    expect(cli).toContain('kind === "statusline-set"');
-    expect(cli).toContain("emitStatusLinePicker");
+    const backend = readFileSync("src/desktop/guiBackend.ts", "utf8");
+    expect(backend).toContain('kind === "status"');
+    expect(backend).toContain('kind === "statusline-set"');
+    expect(backend).toContain("emitStatusLinePicker");
     const css = readFileSync("desktop/renderer/style.css", "utf8");
     expect(css).toContain(".statusline");
     // The footer is a second app-shell grid row: row-1 children must not
@@ -158,19 +158,19 @@ describe("slash parity", () => {
     expect(pane).toContain('event.id === "backend"');
     // Aborting drops the dead prompt for that turn.
     expect(pane).toContain("permissionRef");
-    const cli = readFileSync("src/cli.tsx", "utf8");
+    const backend = readFileSync("src/desktop/guiBackend.ts", "utf8");
     // Abort denies the outstanding permission first: the loop awaits
     // requestPermission with no abort awareness, so interrupt() alone wedges.
-    expect(cli).toContain("pendingPermission.get(request.id)?.(false)");
+    expect(backend).toContain("pendingPermission.get(request.id)?.(false)");
     // Slash-initiated turns are tracked (streamed, can pop permission).
-    expect(cli).toContain("runSlashPrompt");
+    expect(backend).toContain("runSlashPrompt");
   });
   it("session switches resurface background turns instead of erroring", () => {
     // Backend tags status with the running turn id; the pane reseeds its
     // pending state from it, so a switch-back shows Thinking + Stop rather
     // than failing the next send with "already running".
-    const cli = readFileSync("src/cli.tsx", "utf8");
-    expect(cli).toContain("inFlightId");
+    const backend = readFileSync("src/desktop/guiBackend.ts", "utf8");
+    expect(backend).toContain("inFlightId");
     const pane = readFileSync("desktop/renderer/chatPane.tsx", "utf8");
     expect(pane).toContain("chatStatus");
     expect(pane).toContain("inFlightId");

@@ -49,8 +49,17 @@ as a warning, one past ~1,000 fails the build.
 `ui/keyRouter.ts`, the permission-overlay queue to
 `ui/permissionController.ts`, the resume/project/memory overlays to
 `ui/appPickers.ts`, and cost/token/auto-compact accounting to
-`ui/usageTracker.ts`. Those extractions moved *state ownership*, not just
-code: `App` no longer holds the fields each collaborator owns. That is the
+`ui/usageTracker.ts`. A second round (0.1.100) pushed the regrown hotspots
+back under the ceiling the same way: the `--gui-server` backend moved from
+`src/cli.tsx` to `desktop/guiBackend.ts` (cli.tsx keeps a lazy dynamic
+import so TUI startup stays fast), `App`'s command assembly to
+`ui/appCommandContext.ts` (behind an `AppCommandDeps` interface, mirroring
+`desktop/guiCommandContext.ts`), MCP inventory to `ui/mcpController.ts`,
+and the permission prompt to `ui/widgets/permissionOverlay.ts`. Shared test
+fixtures live in `tests/helpers/` (`commandContext.ts`, `renderFixtures.ts`)
+so split test files don't duplicate mock setup. Those extractions moved
+*state ownership*, not just code: `App` no longer holds the fields each
+collaborator owns. That is the
 pattern to repeat — relocating a method that closes over a dozen `App`
 fields buys nothing, since the field access has to be plumbed back in.
 `App.recompute()` is deliberately **not** extracted for that reason: every

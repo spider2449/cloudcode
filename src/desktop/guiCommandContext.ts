@@ -15,6 +15,7 @@ import type { EffortLevel } from "../engine/effort.js";
 import type { CommandContext } from "../commands/types.js";
 import { missingMentions } from "../commands/mentions.js";
 import { THEMES, loadThemeName, saveThemeName } from "../ui/theme.js";
+import { formatPermissionRules } from "../ui/appCommandContext.js";
 import { loadSettings, saveSetting } from "../agent/settings.js";
 import { DEFAULT_STATUS_LINE_ITEMS } from "../statusLineItems.js";
 
@@ -150,14 +151,7 @@ export function buildGuiCommandContext(deps: GuiCommandDeps): CommandContext {
     }),
     providerNames: () => Object.keys(deps.providers),
     exit: () => deps.notice("Close the desktop window to quit CloudCode."),
-    listPermissionRules: () => {
-      const rules = deps.permissionStore().list();
-      if (rules.length === 0) return "No permission rules.";
-      return rules.map(r => {
-        const scope = r.dir ?? (r.host !== undefined ? r.host : `'${r.prefix}' commands`);
-        return `${r.decision === "allow" ? "✓" : "✗"} ${r.tool} ${scope}`;
-      }).join("\n");
-    },
+    listPermissionRules: () => formatPermissionRules(deps.permissionStore().list()),
     clearPermissionRules: () => deps.permissionStore().clear(),
     mcpStatus: async () => {
       const servers = loadMcpServers(deps.cwd);
