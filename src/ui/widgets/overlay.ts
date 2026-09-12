@@ -11,7 +11,7 @@ import { hostScope, ruleScope } from "../../engine/permissions.js";
 import { STATUS_LINE_ITEMS, STATUS_LINE_LABELS, canonicalOrder } from "../../statusLineItems.js";
 import type { StatusLineItem } from "../../statusLineItems.js";
 
-export type OverlayMode = "none" | "resume" | "project" | "permission" | "memory" | "trust" | "statusline" | "config";
+export type OverlayMode = "none" | "resume" | "project" | "permission" | "memory" | "trust" | "statusline" | "config" | "theme";
 
 interface PermOption {
   label: string;
@@ -113,6 +113,23 @@ interface ConfigState {
   activeKey: ConfigEntry | undefined;
   onPick: (key: string, value: string) => void;
   onCancel: () => void;
+  // Fires whenever the highlighted value changes (entering the values
+  // phase, arrow navigation) and with the entry's original current when
+  // backing out to the keys phase, so callers can live-preview a value
+  // without applying it. Enter still goes through onPick.
+  onHighlight?: (key: string, value: string) => void;
+}
+
+// Standalone theme picker backing bare /theme: same preview semantics as
+// the config values phase (highlight previews, Enter applies, Esc reverts
+// to the saved theme) without the keys-phase detour.
+interface ThemeState {
+  names: string[];
+  current: string;
+  index: number;
+  onPick: (name: string) => void;
+  onCancel: () => void;
+  onHighlight?: (name: string) => void;
 }
 
 export class OverlayManager {
@@ -124,6 +141,7 @@ export class OverlayManager {
   private trustState: TrustState | undefined;
   private statusLineState: StatusLineState | undefined;
   private configState: ConfigState | undefined;
+  private themeState: ThemeState | undefined;
 
   get mode(): OverlayMode {
     return this._mode;
@@ -189,10 +207,26 @@ export class OverlayManager {
   openConfig(
     entries: ConfigEntry[],
     onPick: (key: string, value: string) => void,
-    onCancel: () => void
+    onCancel: () => void,
+    onHighlight?: (key: string, value: string) => void
   ): void {
     this._mode = "config";
-    this.configState = { entries, phase: "keys", keyIndex: 0, valueIndex: 0, activeKey: undefined, onPick, onCancel };
+    this.configState = { entries, phase: "keys", keyIndex: 0, valueIndex: 0, activeKey: undefined, onPick, onCancel, onHighlight };
+  }
+
+  openTheme(
+    names: string[],
+    current: string,
+    onPick: (name: string) => void,
+    onCancel: () => void,
+    onHighlight?: (name: string) => void
+  ): void {
+    this._mode = "theme";
+    this.themeState = {
+      names, current,
+      index: Math.max(0, names.indexOf(current)),
+      onPick, onCancel, onHighlight
+    };
   }
 
   close(): void {
@@ -204,6 +238,7 @@ export class OverlayManager {
     this.trustState = undefined;
     this.statusLineState = undefined;
     this.configState = undefined;
+    this.themeState = undefined;
   }
 
   handleKey(k: Key, input?: string): void {
@@ -214,6 +249,7 @@ export class OverlayManager {
     else if (this._mode === "trust") this.handleTrustKey(k, input);
     else if (this._mode === "statusline") this.handleStatusLineKey(k, input);
     else if (this._mode === "config") this.handleConfigKey(k);
+    else if (this._mode === "theme") this.handleThemeKey(k);
   }
 
   private handleTrustKey(k: Key, input?: string): void {
@@ -313,19 +349,34 @@ export class OverlayManager {
           s.activeKey = entry;
           s.valueIndex = Math.max(0, entry.choices.indexOf(entry.current));
           s.phase = "values";
+          const highlighted = entry.choices[s.valueIndex];
+          if (highlighted !== undefined) s.onHighlight?.(entry.key, highlighted);
         }
       }
       return;
     }
     if (k.t === "esc") {
+      // Backing out restores the entry's original current through the same
+      // preview channel, so an unconfirmed highlight never leaks.
+      const key = s.activeKey;
       s.phase = "keys";
       s.activeKey = undefined;
       s.valueIndex = 0;
+      if (key) s.onHighlight?.(key.key, key.current);
       return;
     }
-    if (k.t === "up") { s.valueIndex = Math.max(0, s.valueIndex - 1); return; }
+    if (k.t === "up") {
+      s.valueIndex = Math.max(0, s.valueIndex - 1);
+      const highlighted = s.activeKey?.choices[s.valueIndex];
+      if (s.activeKey && highlighted !== undefined) s.onHighlight?.(s.activeKey.key, highlighted);
+      return;
+    }
     if (k.t === "down") {
-      if (s.activeKey) s.valueIndex = Math.min(s.activeKey.choices.length - 1, s.valueIndex + 1);
+      if (s.activeKey) {
+        s.valueIndex = Math.min(s.activeKey.choices.length - 1, s.valueIndex + 1);
+        const highlighted = s.activeKey.choices[s.valueIndex];
+        if (highlighted !== undefined) s.onHighlight?.(s.activeKey.key, highlighted);
+      }
       return;
     }
     if (k.t === "enter") {
@@ -335,6 +386,41 @@ export class OverlayManager {
         const key = s.activeKey.key;
         this.close();
         cb(key, value);
+      }
+    }
+  }
+
+  private handleThemeKey(k: Key): void {
+    const s = this.themeState;
+    if (!s) return;
+    if (k.t === "esc") {
+      // Abandoned: restore the saved theme through the preview channel,
+      // but only when the highlight actually moved away from it.
+      const cb = s.onCancel;
+      const previewed = s.names[s.index];
+      const current = s.current;
+      this.close();
+      if (previewed !== undefined && previewed !== current) s.onHighlight?.(current);
+      cb();
+      return;
+    }
+    if (k.t === "up" || k.t === "down") {
+      const next = k.t === "up"
+        ? Math.max(0, s.index - 1)
+        : Math.min(s.names.length - 1, s.index + 1);
+      if (next !== s.index) {
+        s.index = next;
+        const name = s.names[next];
+        if (name !== undefined) s.onHighlight?.(name);
+      }
+      return;
+    }
+    if (k.t === "enter") {
+      const name = s.names[s.index];
+      if (name !== undefined) {
+        const cb = s.onPick;
+        this.close();
+        cb(name);
       }
     }
   }
@@ -359,6 +445,7 @@ export class OverlayManager {
     if (this._mode === "trust") return this.renderTrust(theme, width);
     if (this._mode === "statusline") return this.renderStatusLine(theme, width);
     if (this._mode === "config") return this.renderConfig(theme, width);
+    if (this._mode === "theme") return this.renderTheme(theme, width);
     return [];
   }
 
@@ -387,6 +474,24 @@ export class OverlayManager {
         const line = `${choice === s.activeKey.current ? "●" : " "} ${choice}`;
         rows.push(i === s.valueIndex ? `\x1b[7m ${line}\x1b[27m` : ` ${line}`);
       }
+    }
+    rows.push("╰" + "─".repeat(Math.max(0, width - 2)) + "╯");
+    return rows;
+  }
+
+  private renderTheme(theme: Theme, width: number): string[] {
+    const s = this.themeState;
+    if (!s) return [];
+    const warning = sgr(theme.warning);
+    const rows: string[] = [
+      "╭" + "─".repeat(Math.max(0, width - 2)) + "╮",
+      `${warning}Theme (↑/↓ preview, Enter apply, Esc cancel)${SGR_RESET}`
+    ];
+    const { start, end } = visibleWindow(s.names.length, s.index, MAX_ROWS);
+    for (let i = start; i < end; i++) {
+      const name = s.names[i];
+      const line = `${name === s.current ? "●" : " "} ${name}`;
+      rows.push(i === s.index ? `\x1b[7m ${line}\x1b[27m` : ` ${line}`);
     }
     rows.push("╰" + "─".repeat(Math.max(0, width - 2)) + "╯");
     return rows;

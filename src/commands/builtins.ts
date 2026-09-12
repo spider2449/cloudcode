@@ -521,9 +521,9 @@ const commands: Command[] = [
   },
   {
     name: "theme",
-    description: "Switch color theme: /theme <name> (no arg lists themes)",
+    description: "Switch color theme: /theme <name> (no arg opens a live-preview picker)",
     async run(ctx, args) {
-      if (!args) { ctx.notice(ctx.listThemes()); return; }
+      if (!args) { ctx.openThemePicker(); return; }
       if (!(args in THEMES)) {
         ctx.notice(`Unknown theme: ${args}. Themes: ${Object.keys(THEMES).join(", ")}`);
         return;
@@ -542,8 +542,12 @@ const commands: Command[] = [
   }
 ];
 
+// The desktop GUI switches themes from the titlebar Theme menu, so /theme
+// is hidden from its input box; /exit is window chrome there as well.
+const DESKTOP_HIDDEN = new Set(["exit", "theme"]);
+
 function visibleCommands(env: NodeJS.ProcessEnv = process.env): Command[] {
-  if (isDesktopGui(env)) return commands.filter(c => c.name !== "exit");
+  if (isDesktopGui(env)) return commands.filter(c => !DESKTOP_HIDDEN.has(c.name));
   return commands;
 }
 

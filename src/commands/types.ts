@@ -40,6 +40,8 @@ export interface CommandContext {
   openStatusLinePicker(): void;
   /** Opens the interactive settings picker (/config with no arguments). */
   openConfigPicker(): void;
+  /** Opens the live-preview theme picker (/theme with no arguments). */
+  openThemePicker(): void;
   changeSummaries(latestOnly?: boolean): ChangeSummary[];
   changeDiff(path?: string): { content: string; truncated: boolean };
   previewUndo(): UndoPreview;

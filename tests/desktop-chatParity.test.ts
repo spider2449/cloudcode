@@ -34,6 +34,29 @@ describe("slash parity", () => {
       expect(source, `/${name} missing from chat autocomplete`).toContain(`/${name}`);
     }
   });
+  it("desktop theme switching lives in the titlebar menu with preview semantics, not the input", () => {
+    // Browsing previews without saving; only Enter persists via the backend.
+    const menu = readFileSync("desktop/renderer/themeMenu.tsx", "utf8");
+    expect(menu).toContain("previewGuiTheme");
+    expect(menu).toContain("getConfirmedGuiTheme");
+    expect(menu).toContain("setTheme");
+    expect(menu).toContain("Escape");
+    const themeState = readFileSync("desktop/renderer/themeState.ts", "utf8");
+    expect(themeState).toContain("previewGuiTheme");
+    expect(themeState).toContain("confirmGuiTheme");
+    expect(themeState).toContain("getConfirmedGuiTheme");
+    const main = readFileSync("desktop/main.mjs", "utf8");
+    expect(main).toContain("cloudcode:set-theme");
+    expect(main).toContain('kind: "theme-set"');
+    const preload = readFileSync("desktop/preload.cjs", "utf8");
+    expect(preload).toContain("setTheme");
+    const cli = readFileSync("src/cli.tsx", "utf8");
+    expect(cli).toContain('kind === "theme-set"');
+    const pane = readFileSync("desktop/renderer/chatPane.tsx", "utf8");
+    expect(pane).toContain("confirmGuiTheme");
+    const css = readFileSync("desktop/renderer/style.css", "utf8");
+    expect(css).toContain(".theme-menu");
+  });
   it("chat requests carry the workspace so the backend runs in the right directory", () => {
     const pane = readFileSync("desktop/renderer/chatPane.tsx", "utf8");
     expect(pane).toContain("workspaceId");

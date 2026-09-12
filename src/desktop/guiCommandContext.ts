@@ -56,6 +56,9 @@ export interface GuiCommandDeps {
   // Switches the GUI shell to a fresh anonymous session (the New Session
   // button path). Invoked by /new and /clear so slash and button stay identical.
   requestNewSession(): void;
+  // Pushes a live "theme" chat event to the GUI shell so /theme recolors
+  // the running window instead of only persisting for next launch.
+  emitTheme(name: string): void;
   mcpDisabled(): Set<string>;
   permissionStore(): PermissionStore;
 }
@@ -176,7 +179,8 @@ export function buildGuiCommandContext(deps: GuiCommandDeps): CommandContext {
         return;
       }
       saveThemeName(name);
-      deps.notice(`Theme set to ${name}. Applies to the terminal UI.`);
+      deps.emitTheme(name);
+      deps.notice(`Theme set to ${name}.`);
     },
     listThemes: () => Object.keys(THEMES).map(n => `${n === loadThemeName() ? "●" : " "} ${n}`).join("\n"),
     switchProject: () => deps.notice("Switch projects from the desktop sidebar."),
@@ -184,6 +188,7 @@ export function buildGuiCommandContext(deps: GuiCommandDeps): CommandContext {
     openMemoryPicker: () => deps.notice(guiOnly("Memory", "Memory management UI is not available yet.")),
     openStatusLinePicker: () => deps.notice(guiOnly("Status line", "Status line UI is not available yet.")),
     openConfigPicker: () => deps.notice(guiOnly("Config", "Use /config <key> <value> instead.")),
+    openThemePicker: () => deps.notice(guiOnly("Theme", "Use the titlebar Theme menu instead.")),
     currentCwd: () => deps.cwd,
     changeSummaries: latestOnly => deps.getSession().changeSummaries(latestOnly) ?? [],
     changeDiff: path => deps.getSession().changeDiff(path) ?? { content: "No session-owned changes.", truncated: false },

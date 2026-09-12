@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./style.css";
 import { VERSION } from "../../src/version.js";
 import { ChatPane } from "./chatPane.js";
+import { ThemeMenu } from "./themeMenu.js";
 import { LAST_SELECTION_KEY, loadStoredSelection, resolveRestoredSelection, serializeSelection } from "./lastSelection.js";
 
 type Session = { id: string; firstMessage: string; timestamp: string; provider: string };
@@ -41,6 +42,7 @@ declare global {
       renameSession(workspaceId: string, sessionId: string, title: string): Promise<Workspace>;
       removeSession(workspaceId: string, sessionId: string): Promise<Workspace>;
       onChatEvent(listener: (event: ChatBridgeEvent) => void): () => void;
+      setTheme(name: string): Promise<void>;
       closeApplication(): Promise<void>;
     };
   }
@@ -283,7 +285,7 @@ function App() {
     </aside>}
     {!sidebarOpen && <button className="sidebar-reveal icon-button" onClick={() => setSidebarOpen(true)}>☰</button>}
     {sidebarOpen && <div className="resizer resizer-left" role="separator" tabIndex={0} aria-orientation="vertical" aria-label="Resize sidebar" title="Drag to resize sidebar (double-click to reset)" onKeyDown={event => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") setSidebarWidth(value => clamp(value + (event.key === "ArrowLeft" ? -10 : 10), MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH)); }} onMouseDown={event => beginResize("left", event)} onDoubleClick={() => resetResize("left")} />}
-    <section className="chat-main"><header className="titlebar"><div className="title-copy"><strong>{activeWorkspace?.sessions.find(session => session.id === activeSessions[activeWorkspace.id])?.firstMessage || "New session"}</strong><span><b>{activeWorkspace?.name ?? "No project"}</b><i /> Chat v{VERSION}</span></div><div className="title-actions">{backendExit !== undefined && <span className="backend-exit">Backend exited <button className="bare-button" onClick={retryLastChat}>Retry</button></span>}<button className="icon-button" title="Toggle Git" onClick={() => setInspectorOpen(value => !value)}>◫</button></div></header><ChatPane workspaceId={active} sessionId={activeSessions[active ?? ""]} onSend={request => { lastChat.current = request; }} onRequestNewSession={workspaceId => { if (workspaceId) selectSession(workspaceId, undefined); }} onAdoptSession={(workspaceId, sessionId) => {
+    <section className="chat-main"><header className="titlebar"><div className="title-copy"><strong>{activeWorkspace?.sessions.find(session => session.id === activeSessions[activeWorkspace.id])?.firstMessage || "New session"}</strong><span><b>{activeWorkspace?.name ?? "No project"}</b><i /> Chat v{VERSION}</span></div><div className="title-actions">{backendExit !== undefined && <span className="backend-exit">Backend exited <button className="bare-button" onClick={retryLastChat}>Retry</button></span>}<ThemeMenu /><button className="icon-button" title="Toggle Git" onClick={() => setInspectorOpen(value => !value)}>◫</button></div></header><ChatPane workspaceId={active} sessionId={activeSessions[active ?? ""]} onSend={request => { lastChat.current = request; }} onRequestNewSession={workspaceId => { if (workspaceId) selectSession(workspaceId, undefined); }} onAdoptSession={(workspaceId, sessionId) => {
         if (workspaceId === undefined) return;
         setActiveSessions(current => current[workspaceId] === undefined ? { ...current, [workspaceId]: sessionId } : current);
       }} /></section>

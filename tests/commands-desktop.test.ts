@@ -48,6 +48,7 @@ function mockCtx(): CommandContext {
     openMemoryPicker: vi.fn(),
     openStatusLinePicker: vi.fn(),
     openConfigPicker: vi.fn(),
+    openThemePicker: vi.fn(),
     changeSummaries: vi.fn().mockReturnValue([]),
     changeDiff: vi.fn().mockReturnValue({ content: "", truncated: false }),
     previewUndo: vi.fn().mockReturnValue({ operations: [], conflicts: [] }),
@@ -69,6 +70,25 @@ describe("desktop GUI /exit", () => {
   it("excludes /exit from registry in desktop GUI mode", () => {
     expect(buildRegistry({ CLOUDCODE_DESKTOP: "1" } as NodeJS.ProcessEnv).has("exit")).toBe(false);
     expect(buildRegistry({} as NodeJS.ProcessEnv).has("exit")).toBe(true);
+  });
+
+  it("excludes /theme from registry in desktop GUI mode (menu bar instead)", () => {
+    expect(buildRegistry({ CLOUDCODE_DESKTOP: "1" } as NodeJS.ProcessEnv).has("theme")).toBe(false);
+    expect(buildRegistry({} as NodeJS.ProcessEnv).has("theme")).toBe(true);
+  });
+
+  it("excludes /theme from /help in desktop GUI mode", async () => {
+    const prev = process.env.CLOUDCODE_DESKTOP;
+    process.env.CLOUDCODE_DESKTOP = "1";
+    try {
+      const ctx = mockCtx();
+      await buildRegistry().get("help")!.run(ctx, "");
+      const output = vi.mocked(ctx.notice).mock.calls[0]?.[0] as string;
+      expect(output).not.toContain("/theme");
+    } finally {
+      if (prev === undefined) delete process.env.CLOUDCODE_DESKTOP;
+      else process.env.CLOUDCODE_DESKTOP = prev;
+    }
   });
 
   it("excludes /exit from /help in desktop GUI mode", async () => {

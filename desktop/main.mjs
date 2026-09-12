@@ -189,6 +189,13 @@ ipcMain.handle("cloudcode:chat-complete", (_event, request) => {
 ipcMain.handle("cloudcode:rename-session", (_event, workspaceId, sessionId, title) => host.renameSession(requireString(workspaceId, "workspace ID"), requireString(sessionId, "session ID"), requireString(title, "session title")));
 ipcMain.handle("cloudcode:remove-session", (_event, workspaceId, sessionId) => host.removeSession(requireString(workspaceId, "workspace ID"), requireString(sessionId, "session ID")));
 ipcMain.handle("cloudcode:close-application", () => window?.close());
+ipcMain.handle("cloudcode:set-theme", (_event, name) => {
+  // Titlebar Theme menu (Enter on a previewed theme): persist via the
+  // backend so the choice survives restarts, then broadcast the theme event
+  // the renderer applies. Previews never reach here, so browsing stays free
+  // of persistence.
+  forwardChatLine(JSON.stringify({ kind: "theme-set", name }), `menu-theme-${Date.now()}`);
+});
 
 app.whenReady().then(createWindow);
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });

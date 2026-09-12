@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { buildRegistry } from "../../src/commands/builtins.js";
+import { confirmGuiTheme, loadStoredGuiTheme, parseThemeEvent } from "./themeState.js";
 
 // Slash parity (enforced by tests/desktop-chatParity.test.ts): every
 // GUI-visible command from buildRegistry must appear here as /name so the
 // static autocomplete check can find it. The runtime autocomplete source is
 // SLASH_NAMES below, derived from buildRegistry (not from this comment).
-// /help /clear /compact /config /context /init /model /new /permissions /provider /resume /set /cost /changes /diff /undo /review /effort /memory /statusline /mcp /skills /skill /theme
+// /help /clear /compact /config /context /init /model /new /permissions /provider /resume /set /cost /changes /diff /undo /review /effort /memory /statusline /mcp /skills /skill
+// (/theme is intentionally absent: desktop theme switching lives in the
+// titlebar Theme menu. Keep this list in sync with the registry above.)
 const SLASH_NAMES = [...buildRegistry({ ...globalThis.process?.env, CLOUDCODE_DESKTOP: "1" }).keys()].map(name => `/${name}`);
 
 type ChatMsg = { id: string; role: "user" | "assistant" | "notice" | "error"; text: string };
@@ -55,6 +58,15 @@ export function parseSessionIdEvent(event: { type: string; sessionId?: unknown }
   return typeof event.sessionId === "string" && event.sessionId !== "" ? event.sessionId : undefined;
 }
 
+// Re-apply the stored GUI theme on launch so a /theme choice survives
+// reloads without waiting for the next theme event.
+export function useStoredGuiTheme(): void {
+  useEffect(() => {
+    const stored = loadStoredGuiTheme();
+    if (stored) confirmGuiTheme(stored);
+  }, []);
+}
+
 // Text status for an in-flight LLM turn. Null means idle (hide the label).
 // The animated dots are a separate CSS span so this stays a pure function
 // that node-based unit tests can import (same pattern as lastSelection.ts).
@@ -93,6 +105,7 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
   // session-switch effect below keeps the on-screen transcript instead of
   // clearing and replaying the identical history.
   const adoptedRef = useRef<string>();
+  useStoredGuiTheme();
 
   // Session switch: drop the previous transcript, permission prompt, and
   // pending state, then ask the backend to replay the stored history.
@@ -112,6 +125,13 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
     return window.cloudcode.onChatEvent((event: { id: string; type: string; text?: string; toolName?: string; toolInput?: Record<string, unknown>; items?: Completion[]; sessionId?: unknown }) => {
       if (isNewSessionEvent(event)) {
         newSessionRef.current?.(workspaceId);
+        return;
+      }
+      const themeName = parseThemeEvent(event);
+      if (themeName !== undefined) {
+        // Backend-confirmed (persisted) theme: apply and remember as the
+        // titlebar menu's revert target.
+        confirmGuiTheme(themeName);
         return;
       }
       const adoptedId = parseSessionIdEvent(event);
@@ -322,14 +342,16 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
           onCompositionEnd={() => { composingRef.current = false; }}
           placeholder="Message, or / for commands (Shift+Enter for newline)"
         />
-        {busyLabel(pendingIds.length) !== null && (
-          <span className="chat-busy" role="status">
-            {busyLabel(pendingIds.length)}<span className="chat-busy-dots" aria-hidden="true" />
-          </span>
-        )}
         <button className="chat-send" onClick={send} disabled={pendingIds.length > 0}>Send</button>
         {pendingIds.length > 0 && <button className="chat-stop" aria-label="Abort turn" onClick={() => { const last = pendingIds[pendingIds.length - 1]; if (last) abort(last); }}>Stop</button>}
       </div>
+      {busyLabel(pendingIds.length) !== null && (
+        <div className="chat-busy-floating" aria-hidden="false">
+          <span className="chat-busy" role="status">
+            {busyLabel(pendingIds.length)}<span className="chat-busy-dots" aria-hidden="true" />
+          </span>
+        </div>
+      )}
     </section>
   );
 }

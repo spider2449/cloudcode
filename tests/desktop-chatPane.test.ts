@@ -13,17 +13,21 @@ describe("slash input classification", () => {
   });
   it("jumps to argument options once the command name is exact", () => {
     expect(describeSlashInput("/config")).toEqual({ kind: "args", prefix: "/config " });
-    expect(describeSlashInput("/theme")).toEqual({ kind: "args", prefix: "/theme " });
+    expect(describeSlashInput("/model")).toEqual({ kind: "args", prefix: "/model " });
+  });
+  it("treats menu-bar-only commands as plain command tokens in the input", () => {
+    // /theme is hidden from the desktop registry (View > Theme instead).
+    expect(describeSlashInput("/theme")).toEqual({ kind: "command", token: "/theme" });
   });
   it("keeps completing arguments after the first space", () => {
     expect(describeSlashInput("/config th")).toEqual({ kind: "args", prefix: "/config th" });
-    expect(describeSlashInput("/theme github")).toEqual({ kind: "args", prefix: "/theme github" });
+    expect(describeSlashInput("/model a-model")).toEqual({ kind: "args", prefix: "/model a-model" });
   });
 });
 
 describe("suggestion application", () => {
   it("replaces only the option token, preserving the command prefix", () => {
-    expect(applySuggestionText("/theme gi", { value: "github", replaceStart: 7, replaceEnd: 9 })).toBe("/theme github");
+    expect(applySuggestionText("/model a-m", { value: "a-model", replaceStart: 7, replaceEnd: 10 })).toBe("/model a-model");
     expect(applySuggestionText("/config ", { value: "provider", replaceStart: 8, replaceEnd: 8 })).toBe("/config provider");
   });
   it("detects pure echoes that should descend or hide", () => {

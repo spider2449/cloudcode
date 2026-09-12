@@ -7,7 +7,7 @@ export const MAX_CHAT_CWD_LENGTH = 4096;
 
 // Thinking deltas are intentionally not forwarded (renderer shows final text; see `toChatEvents` in the engine-wiring task).
 // user_text is user turn replay for history; live user messages are echoed locally by the renderer.
-export const CHAT_EVENT_TYPES = ["text_delta", "tool_use", "tool_result", "notice", "error", "permission_request", "user_text", "complete", "new_session", "session_id", "done"] as const;
+export const CHAT_EVENT_TYPES = ["text_delta", "tool_use", "tool_result", "notice", "error", "permission_request", "user_text", "complete", "new_session", "session_id", "theme", "done"] as const;
 export type ChatEventType = (typeof CHAT_EVENT_TYPES)[number];
 
 export interface ChatSendRequest {

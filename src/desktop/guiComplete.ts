@@ -14,8 +14,8 @@ export interface GuiCompleteDeps {
 // Argument (and command-name) suggestions for the GUI input box, using the
 // same getSuggestions machinery as the terminal input box so both surfaces
 // complete identically. Returned Suggestion values carry replaceStart/End so
-// applying one preserves the command prefix (clicking "github" for "/theme "
-// yields "/theme github", never a bare "github" prompt).
+// applying one preserves the command prefix (clicking "a-other" for "/model "
+// yields "/model a-other", never a bare "a-other" prompt).
 // File (@mention) suggestions are intentionally empty: the backend has no
 // file index; that stays a follow-up.
 export function suggestCompletions(text: string, deps: GuiCompleteDeps): Suggestion[] {

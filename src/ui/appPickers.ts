@@ -76,12 +76,30 @@ export function openStatusLinePicker(
 }
 
 /** Settings picker for bare /config: entries are computed by the caller
- * (configChoices) at open time; picks are applied by the caller's callback. */
+ * (configChoices) at open time; picks are applied by the caller's callback.
+ * onHighlight previews the browsed value without applying it (the overlay
+ * re-highlights the entry's original current when backing out, so callers
+ * only need to render the preview, never to track revert state). */
 export function openConfigPicker(
   deps: PickerDeps,
   entries: ConfigEntry[],
-  onPick: (key: string, value: string) => void
+  onPick: (key: string, value: string) => void,
+  onHighlight?: (key: string, value: string) => void
 ): void {
-  deps.overlay.openConfig(entries, onPick, cancel(deps));
+  deps.overlay.openConfig(entries, onPick, cancel(deps), onHighlight);
+  deps.recompute();
+}
+
+/** Standalone theme picker for bare /theme: same contract as the config
+ * values phase — onHighlight previews without applying, Esc restores the
+ * saved theme through the same channel, Enter goes through onPick. */
+export function openThemePicker(
+  deps: PickerDeps,
+  names: string[],
+  current: string,
+  onPick: (name: string) => void,
+  onHighlight?: (name: string) => void
+): void {
+  deps.overlay.openTheme(names, current, onPick, cancel(deps), onHighlight);
   deps.recompute();
 }

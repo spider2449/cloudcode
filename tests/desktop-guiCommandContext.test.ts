@@ -44,6 +44,7 @@ function fakeSession(): GuiCommandSession & { sent: string[] } {
 function setup() {
   const notices: string[] = [];
   const newSessionRequests: string[] = [];
+  const emittedThemes: string[] = [];
   const errors: unknown[] = [];
   const session = fakeSession();
   const store = new PermissionStore(mkdtempSync(join(tmpdir(), "gui-perm-")));
@@ -72,6 +73,7 @@ function setup() {
       return session;
     },
     requestNewSession: () => { newSessionRequests.push("new"); },
+    emitTheme: name => { emittedThemes.push(name); },
     mcpDisabled: () => new Set<string>(),
     permissionStore: () => store
   };
@@ -83,7 +85,7 @@ function setup() {
     });
   }
   const ctx: CommandContext = buildGuiCommandContext(deps);
-  return { notices, errors, session, slash, ctx, newSessionRequests };
+  return { notices, errors, session, slash, ctx, newSessionRequests, emittedThemes };
 }
 
 describe("gui command context against the real registry", () => {
@@ -135,5 +137,26 @@ describe("gui command context against the real registry", () => {
     await slash("/new");
     expect(errors).toEqual([]);
     expect(newSessionRequests).toEqual(["new"]);
+  });
+  it("emits a live theme event on /config theme (titlebar menu uses theme-set)", async () => {
+    const t = setup();
+    await t.slash("/config theme dracula");
+    expect(t.errors).toEqual([]);
+    expect(t.emittedThemes).toEqual(["dracula"]);
+    expect(t.notices).toContain("theme = dracula (saved)");
+  });
+  it("emits nothing for unknown theme names", async () => {
+    const t = setup();
+    await t.slash("/config theme nope");
+    expect(t.errors).toEqual([]);
+    expect(t.emittedThemes).toEqual([]);
+    expect(t.notices.some(n => n.includes("Unknown theme: nope"))).toBe(true);
+  });
+  it("rejects bare /theme in the GUI: switching lives in the menu bar", async () => {
+    const t = setup();
+    await t.slash("/theme dracula");
+    expect(t.errors).toEqual([]);
+    expect(t.emittedThemes).toEqual([]);
+    expect(t.notices.some(n => n.includes("Unknown command: /theme"))).toBe(true);
   });
 });

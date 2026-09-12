@@ -394,6 +394,71 @@ describe("OverlayManager config sub-mode", () => {
     expect(mgr.mode).toBe("config");       // still open in phase 1
   });
 
+  it("previews the highlighted value and restores current when backing out", () => {
+    const highlights: Array<[string, string]> = [];
+    const mgr = new OverlayManager();
+    mgr.openConfig(configEntries, () => {}, () => {}, (k, v) => highlights.push([k, v]));
+    mgr.handleKey({ t: "enter" });         // -> values for theme, current dark
+    expect(highlights).toEqual([["theme", "dark"]]);
+    mgr.handleKey({ t: "down" });          // browse light
+    expect(highlights).toEqual([["theme", "dark"], ["theme", "light"]]);
+    mgr.handleKey({ t: "up" });            // back to dark
+    expect(highlights.at(-1)).toEqual(["theme", "dark"]);
+    mgr.handleKey({ t: "down" });          // light again, then abandon
+    mgr.handleKey({ t: "esc" });           // back to keys: restore current
+    expect(highlights.at(-1)).toEqual(["theme", "dark"]);
+  });
+
+  it("works without a highlight callback (existing callers)", () => {
+    const mgr = new OverlayManager();
+    mgr.openConfig(configEntries, () => {}, () => {});
+    mgr.handleKey({ t: "enter" });
+    mgr.handleKey({ t: "down" });
+    mgr.handleKey({ t: "esc" });
+    expect(mgr.mode).toBe("config");
+  });
+
+  it("theme mode previews on navigation, applies on Enter, restores on Esc", () => {
+    const names = ["dark", "light", "dracula"];
+    const picks: string[] = [];
+    const highlights: string[] = [];
+    const onCancel = vi.fn();
+    const mgr = new OverlayManager();
+    mgr.openTheme(names, "dark", n => picks.push(n), onCancel, n => highlights.push(n));
+    expect(mgr.mode).toBe("theme");
+    // Renders the saved theme marked and the cursor on it.
+    expect(mgr.render(theme, 80).map(strip).join("\n")).toContain("● dark");
+    mgr.handleKey({ t: "down" }); // preview light
+    expect(highlights).toEqual(["light"]);
+    mgr.handleKey({ t: "down" }); // preview dracula
+    expect(highlights).toEqual(["light", "dracula"]);
+    mgr.handleKey({ t: "up" }); // back to light
+    expect(highlights.at(-1)).toBe("light");
+    expect(picks).toEqual([]);
+    mgr.handleKey({ t: "enter" }); // apply light
+    expect(picks).toEqual(["light"]);
+    expect(mgr.mode).toBe("none");
+  });
+
+  it("theme mode clamps at the ends and restores current only when moved", () => {
+    const highlights: string[] = [];
+    const onCancel = vi.fn();
+    const mgr = new OverlayManager();
+    mgr.openTheme(["dark", "light"], "dark", () => {}, onCancel, n => highlights.push(n));
+    mgr.handleKey({ t: "up" }); // already first: no preview
+    expect(highlights).toEqual([]);
+    mgr.handleKey({ t: "esc" }); // never moved: no restore, just cancel
+    expect(highlights).toEqual([]);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(mgr.mode).toBe("none");
+    mgr.openTheme(["dark", "light"], "dark", () => {}, onCancel, n => highlights.push(n));
+    mgr.handleKey({ t: "down" });
+    expect(highlights).toEqual(["light"]);
+    mgr.handleKey({ t: "esc" }); // moved: restore dark, then cancel
+    expect(highlights).toEqual(["light", "dark"]);
+    expect(onCancel).toHaveBeenCalledTimes(2);
+  });
+
   it("renders keys with current values in phase 1 and marks the current choice in phase 2", () => {
     const mgr = new OverlayManager();
     mgr.openConfig(configEntries, () => {}, () => {});

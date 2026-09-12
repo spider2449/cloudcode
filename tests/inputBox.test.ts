@@ -166,6 +166,37 @@ describe("InputBox", () => {
     expect(box.render(theme, 80, false).menuRows.length).toBe(0);
   });
 
+  it("Enter on an exactly-typed command submits instead of accepting the trailing-space completion", () => {
+    // Regression: "/theme" + Enter used to accept "/theme ", then swallow
+    // the first argument, so a bare command could never run ("/theme"
+    // always landed on "Theme: dark" instead of opening its picker).
+    const box = new InputBox(ctx({ registry: registryWithClear() }), new History());
+    const onSubmit = vi.fn();
+    box.onSubmit = onSubmit;
+    type(box, "/clear");
+    box.handleKey({ t: "enter" });
+    expect(onSubmit).toHaveBeenCalledWith("/clear");
+  });
+
+  it("Enter on a command with trailing space also submits bare", () => {
+    const box = new InputBox(ctx({ registry: registryWithClear() }), new History());
+    const onSubmit = vi.fn();
+    box.onSubmit = onSubmit;
+    type(box, "/clear ");
+    box.handleKey({ t: "enter" });
+    expect(onSubmit).toHaveBeenCalledWith("/clear");
+  });
+
+  it("Enter on a partial command name still accepts the completion", () => {
+    const box = new InputBox(ctx({ registry: registryWithClear() }), new History());
+    const onSubmit = vi.fn();
+    box.onSubmit = onSubmit;
+    type(box, "/cle");
+    box.handleKey({ t: "enter" });
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(box.render(theme, 80, false).contentRows.join("\n")).toContain("/clear ");
+  });
+
   it("render() shows the working hint while streaming", () => {
     const box = new InputBox(ctx(), new History());
     const r = box.render(theme, 80, true);

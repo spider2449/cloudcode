@@ -143,6 +143,88 @@ describe("App", () => {
     expect(all).not.toContain("hi there");
   });
 
+  it("/theme reprints the transcript immediately in the new theme", async () => {
+    const { app, terminal } = makeApp([textTurn("hi there")]);
+    void app.run();
+    app.submitForTest("hello");
+    await wait();
+    terminal.writes.length = 0;
+    app.submitForTest("/theme light");
+    await wait();
+    const all = terminal.writes.join("");
+    // Clear-and-reprint (same path as resize): without recommitAll the old
+    // rows would keep the previous theme's colors.
+    expect(all).toContain("\x1b[2J\x1b[H");
+    expect(all).toContain("hi there");
+    expect(all).toContain("Theme: light");
+    app.submitForTest("/theme dark");
+    await wait();
+  });
+
+  it("/config picker live-previews themes without saving until Enter", async () => {
+    vi.mocked(saveSetting).mockClear();
+    const { app, terminal } = makeApp([textTurn("hi there")]);
+    void app.run();
+    await wait();
+    terminal.writes.length = 0;
+    app.submitForTest("/config");
+    await wait();
+    for (let i = 0; i < 4; i++) app.handleKey({ t: "down" }); // onto theme
+    app.handleKey({ t: "enter" }); // values phase
+    await wait();
+    const clearsBefore = terminal.writes.join("").split("\x1b[2J").length;
+    app.handleKey({ t: "down" }); // preview light: clear-and-reprint
+    await wait();
+    expect(terminal.writes.join("").split("\x1b[2J").length).toBeGreaterThan(clearsBefore);
+    // Preview only: nothing persisted.
+    expect(vi.mocked(saveSetting).mock.calls.some(c => c[0] === "theme")).toBe(false);
+    app.handleKey({ t: "esc" }); // back out: restore the saved theme
+    await wait();
+    app.handleKey({ t: "esc" }); // close the picker
+    await wait();
+    expect(vi.mocked(saveSetting).mock.calls.some(c => c[0] === "theme")).toBe(false);
+  });
+
+  it("typing /theme through the real input box opens the picker (completion does not swallow Enter)", async () => {
+    const { app, terminal } = makeApp([textTurn("hi there")]);
+    void app.run();
+    await wait();
+    terminal.writes.length = 0;
+    for (const ch of "/theme") app.handleKey({ t: "printable", ch });
+    await wait();
+    app.handleKey({ t: "enter" });
+    await wait();
+    // Without the fix, Enter accepted the "/theme " completion instead of
+    // submitting, so the picker never opened.
+    expect(terminal.writes.join("")).toContain("Theme (");
+  });
+
+  it("bare /theme opens a live-preview picker: browse previews, Enter saves, Esc reverts", async () => {
+    vi.mocked(saveSetting).mockClear();
+    const { app, terminal } = makeApp([textTurn("hi there")]);
+    void app.run();
+    await wait();
+    terminal.writes.length = 0;
+    app.submitForTest("/theme");
+    await wait();
+    const clearsBefore = terminal.writes.join("").split("\x1b[2J").length;
+    app.handleKey({ t: "down" }); // preview light: clear-and-reprint
+    await wait();
+    expect(terminal.writes.join("").split("\x1b[2J").length).toBeGreaterThan(clearsBefore);
+    expect(vi.mocked(saveSetting).mock.calls.some(c => c[0] === "theme")).toBe(false);
+    app.handleKey({ t: "esc" }); // abandon: restore, never saved
+    await wait();
+    expect(vi.mocked(saveSetting).mock.calls.some(c => c[0] === "theme")).toBe(false);
+    app.submitForTest("/theme");
+    await wait();
+    app.handleKey({ t: "down" }); // preview light again
+    await wait();
+    app.handleKey({ t: "enter" }); // apply: persisted with a notice
+    await wait();
+    expect(vi.mocked(saveSetting).mock.calls.some(c => c[0] === "theme" && c[1] === "light")).toBe(true);
+    expect(terminal.writes.join("")).toContain("Theme: light");
+  });
+
   it("re-probes the context window when switching providers", async () => {
     vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("ok")]) as never);
     vi.mocked(applyContextWindow).mockClear();

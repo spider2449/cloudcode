@@ -62,6 +62,7 @@ function mockCtx(): CommandContext {
     openMemoryPicker: vi.fn(),
     openStatusLinePicker: vi.fn(),
     openConfigPicker: vi.fn(),
+    openThemePicker: vi.fn(),
     changeSummaries: vi.fn().mockReturnValue([]),
     changeDiff: vi.fn().mockReturnValue({ content: "No session-owned changes.", truncated: false }),
     previewUndo: vi.fn().mockReturnValue({ operations: [], conflicts: [] }),
@@ -288,11 +289,10 @@ describe("/skills", () => {
 });
 
 describe("/theme", () => {
-  it("lists themes when no arg is given", async () => {
+  it("opens the live-preview picker when no arg is given", async () => {
     const ctx = mockCtx();
     await buildRegistry().get("theme")!.run(ctx, "");
-    expect(ctx.listThemes).toHaveBeenCalled();
-    expect(ctx.notice).toHaveBeenCalledWith("● dark\n  light\n  mono");
+    expect(ctx.openThemePicker).toHaveBeenCalled();
     expect(ctx.setTheme).not.toHaveBeenCalled();
   });
 

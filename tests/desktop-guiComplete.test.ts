@@ -12,20 +12,25 @@ const deps = {
 };
 
 describe("gui completion parity with the terminal input", () => {
-  it("suggests argument values for commands (reported case: /theme github)", () => {
-    const labels = suggestCompletions("/theme ", deps).map(s => s.label);
-    expect(labels).toContain("github");
+  it("suggests argument values for commands (theme switching lives in the menu bar, so /model stands in)", () => {
+    const labels = suggestCompletions("/model ", deps).map(s => s.label);
+    expect(labels).toContain("a-model");
+    expect(labels).toContain("a-other");
   });
   it("filters argument values by the typed prefix", () => {
-    const labels = suggestCompletions("/theme gi", deps).map(s => s.label);
-    expect(labels).toContain("github");
-    expect(labels).not.toContain("dark");
+    const labels = suggestCompletions("/model a-o", deps).map(s => s.label);
+    expect(labels).toContain("a-other");
+    expect(labels).not.toContain("a-model");
   });
   it("suggests command names with the prefix preserved", () => {
-    const found = suggestCompletions("/the", deps);
-    expect(found.map(s => s.label)).toContain("/theme");
-    const theme = found.find(s => s.label === "/theme");
-    expect(theme?.value).toBe("/theme ");
+    const found = suggestCompletions("/mod", deps);
+    expect(found.map(s => s.label)).toContain("/model");
+    const model = found.find(s => s.label === "/model");
+    expect(model?.value).toBe("/model ");
+  });
+  it("offers no /theme in the input: switching lives in the menu bar", () => {
+    expect(suggestCompletions("/the", deps).map(s => s.label)).not.toContain("/theme");
+    expect(suggestCompletions("/theme ", deps)).toEqual([]);
   });
   it("returns nothing for plain prompts and unknown commands", () => {
     expect(suggestCompletions("github", deps)).toEqual([]);

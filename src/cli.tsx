@@ -8,7 +8,8 @@ import { loadSettings } from "./agent/settings.js";
 import { runMcpCommand } from "./commands/cli/mcp.js";
 import { SessionIndex } from "./agent/sessionIndex.js";
 import { VERSION } from "./version.js";
-import { loadCustomThemes } from "./ui/theme.js";
+import { loadCustomThemes, saveThemeName, THEMES } from "./ui/theme.js";
+import { resolveMenuThemeName } from "./desktop/appMenu.js";
 import { parseCli, HELP_TEXT, networkModeFromArgs } from "./cliArgs.js";
 import { configReport } from "./commands/cli/config.js";
 import { runDoctor, formatDoctor } from "./commands/cli/doctor.js";
@@ -209,6 +210,9 @@ if (parsed.kind === "guiserver") {
       requestNewSession: () => {
         emit({ id, type: "new_session" });
       },
+      emitTheme: name => {
+        emit({ id, type: "theme", text: name });
+      },
       mcpDisabled: () => state.mcpDisabled,
       permissionStore: () => permissionStoreFor(cwd)
     });
@@ -260,7 +264,7 @@ if (parsed.kind === "guiserver") {
     buffer = framed.rest;
     for (const line of framed.lines) {
       try {
-        const request = JSON.parse(line) as { id?: unknown; text?: unknown; cwd?: unknown; kind?: unknown; allow?: unknown; sessionId?: unknown; prefix?: unknown };
+          const request = JSON.parse(line) as { id?: unknown; text?: unknown; cwd?: unknown; kind?: unknown; allow?: unknown; sessionId?: unknown; prefix?: unknown; name?: unknown };
         if (request.kind === "complete") {
           // Input-box autocomplete: same getSuggestions machinery as the
           // terminal input box. Routed here (not through GuiServer) because
@@ -304,6 +308,25 @@ if (parsed.kind === "guiserver") {
               void disposeKey(sessionKey(historyCwd, undefined));
             }
             for (const event of loadHistoryEvents(replyId, request.sessionId)) emit(event);
+            emit({ id: replyId, type: "done" });
+          } catch (error) {
+            emit({ id: replyId, type: "error", text: error instanceof Error ? error.message : String(error) });
+            emit({ id: replyId, type: "done" });
+          }
+          continue;
+        }
+        if (request.kind === "theme-set") {
+          // Titlebar Theme menu (Enter on a previewed theme): persist the
+          // name and broadcast the same theme chat event the /theme slash
+          // path emits, so every renderer recolors immediately. Previews
+          // never reach the backend, so browsing stays unpersisted.
+          historySeq += 1;
+          const replyId = `theme-${Date.now()}-${historySeq}`;
+          try {
+            const name = resolveMenuThemeName(request.name, Object.keys(THEMES));
+            if (!name) throw new Error(`Unknown theme: ${String(request.name)}. Themes: ${Object.keys(THEMES).join(", ")}`);
+            saveThemeName(name);
+            emit({ id: replyId, type: "theme", text: name });
             emit({ id: replyId, type: "done" });
           } catch (error) {
             emit({ id: replyId, type: "error", text: error instanceof Error ? error.message : String(error) });

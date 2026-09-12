@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openResumePicker, openProjectPicker, openMemoryPicker, openStatusLinePicker, openConfigPicker, type PickerDeps } from "../src/ui/appPickers.js";
+import { openResumePicker, openProjectPicker, openMemoryPicker, openStatusLinePicker, openConfigPicker, openThemePicker, type PickerDeps } from "../src/ui/appPickers.js";
 import { OverlayManager } from "../src/ui/widgets/overlay.js";
 import { SessionIndex } from "../src/agent/sessionIndex.js";
 
@@ -85,6 +85,26 @@ describe("appPickers", () => {
     overlay.handleKey({ t: "enter" });   // -> values phase
     overlay.handleKey({ t: "enter" });   // pick current value
     expect(picks).toEqual([["theme", "dark"]]);
+    expect(overlay.mode).toBe("none");
+  });
+
+  it("openThemePicker previews on highlight, picks on Enter, restores on Esc", () => {
+    const { deps, overlay, repaints } = setup();
+    const picks: string[] = [];
+    const highlights: string[] = [];
+    openThemePicker(deps, ["dark", "light"], "dark", n => picks.push(n), n => highlights.push(n));
+    expect(overlay.mode).toBe("theme");
+    expect(repaints()).toBe(1);
+    overlay.handleKey({ t: "down" });
+    expect(highlights).toEqual(["light"]);
+    overlay.handleKey({ t: "esc" });
+    expect(highlights).toEqual(["light", "dark"]);
+    expect(picks).toEqual([]);
+    expect(overlay.mode).toBe("none");
+    openThemePicker(deps, ["dark", "light"], "dark", n => picks.push(n), n => highlights.push(n));
+    overlay.handleKey({ t: "down" });
+    overlay.handleKey({ t: "enter" });
+    expect(picks).toEqual(["light"]);
     expect(overlay.mode).toBe("none");
   });
 

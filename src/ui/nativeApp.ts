@@ -22,7 +22,7 @@ import { GitStatusPoller } from "./useGitStatus.js";
 import { PermissionController } from "./permissionController.js";
 import { KeyRouter, type KeyRouterHost } from "./keyRouter.js";
 import { UsageTracker, contextUsageForResult } from "./usageTracker.js";
-import { openConfigPicker, openMemoryPicker, openProjectPicker, openResumePicker, openStatusLinePicker, type PickerDeps } from "./appPickers.js";
+import { openConfigPicker, openMemoryPicker, openProjectPicker, openResumePicker, openStatusLinePicker, openThemePicker, type PickerDeps } from "./appPickers.js";
 import { DEFAULT_STATUS_LINE_ITEMS, type StatusLineItem } from "../statusLineItems.js";
 import { collectGitReview } from "../agent/gitReview.js";
 import { Buffer } from "./buffer.js";
@@ -181,6 +181,23 @@ export class App {
 
   private notice(text: string): void {
     this.buffer.append({ kind: "notice", text });
+  }
+
+  /** Switches the rendered theme without persisting it. Backs both the
+   * saved /theme command path and the /config picker's live preview; the
+   * preview relies on the overlay re-highlighting the saved value on
+   * back-out, so no revert bookkeeping is needed here. Unknown names are
+   * ignored so a stale highlight can never blank the UI. */
+  private applyThemeUnsaved(name: string): void {
+    if (!THEMES[name]) return;
+    this.theme = THEMES[name];
+    // Reprint the whole transcript in the new theme (same clear-and-reprint
+    // path as resize): committed rows are never re-laid-out, so recompute()
+    // alone would only recolor rows printed after the switch.
+    this.buffer.recommitAll();
+    this.terminal.write(CLEAR_AND_HOME);
+    this.renderer.invalidate();
+    this.recompute();
   }
 
   private pickerDeps(): PickerDeps {
@@ -418,7 +435,11 @@ export class App {
       sendPrompt: text => this.sendUserMessage(text),
       listSkills: () => formatSkillList(this.skills),
       reloadSkills: () => this.refreshSkills(),
-      setTheme: name => { this.theme = THEMES[name] ?? this.theme; saveThemeName(name); this.recompute(); },
+      setTheme: name => {
+        if (!THEMES[name]) return;
+        saveThemeName(name);
+        this.applyThemeUnsaved(name);
+      },
       listThemes: () => Object.keys(THEMES).map(n => `${n === loadThemeName() ? "●" : " "} ${n}`).join("\n"),
       switchProject: path => {
         if (!this.props.onSwitchProject) { this.notice("Project switching is not available."); return; }
@@ -435,9 +456,31 @@ export class App {
           this.statusLineItems = next; saveSetting("statusLineItems", next); this.recompute();
         }),
       openConfigPicker: () =>
-        openConfigPicker(this.pickerDeps(), configChoices(this.ctx), (key, value) => {
-          void applyConfigValue(this.ctx, key as ConfigKey, value);
-        }),
+        openConfigPicker(
+          this.pickerDeps(),
+          configChoices(this.ctx),
+          (key, value) => {
+            void applyConfigValue(this.ctx, key as ConfigKey, value);
+          },
+          (key, value) => {
+            // Live preview while browsing the picker's values: rendered
+            // without saving, so Esc restores the saved theme and only Enter
+            // persists. Other keys ignore the highlight and apply on Enter
+            // via applyConfigValue as before.
+            if (key === "theme") this.applyThemeUnsaved(value);
+          }
+        ),
+      openThemePicker: () =>
+        openThemePicker(
+          this.pickerDeps(),
+          Object.keys(THEMES),
+          loadThemeName(),
+          name => {
+            this.ctx.setTheme(name);
+            this.notice(`Theme: ${name}`);
+          },
+          name => this.applyThemeUnsaved(name)
+        ),
       currentCwd: () => this.props.cwd,
       changeSummaries: latestOnly => this.session?.changeSummaries(latestOnly) ?? [], changeDiff: path =>
         this.session?.changeDiff(path) ?? { content: "No session-owned changes.", truncated: false },

@@ -76,6 +76,13 @@ export class InputBox {
     return applySuggestion(this.value, s).text === this.value.trimEnd();
   }
 
+  /** True when the value is exactly a registered command with no arguments
+   * ("/theme" or "/theme "), so Enter runs it instead of completing it. */
+  private isExactCommand(): boolean {
+    const m = /^\/([\w-]+)\s*$/.exec(this.value);
+    return m !== null && this.completionCtx.registry.has(m[1]);
+  }
+
   handleKey(k: Key): void {
     if (k.t === "ctrl" || k.t === "alt") return;
     const menu = this.currentSuggestions();
@@ -113,7 +120,12 @@ export class InputBox {
       return;
     }
     if (k.t === "enter") {
-      if (menuOpen && !this.acceptIsNoop(menu)) this.accept(menu);
+      // An exactly-typed command runs as-is: accepting the trailing-space
+      // completion instead would make bare commands unsubmittable (Enter
+      // would append " ", then swallow the first argument, so "/theme"
+      // could never open its picker). Partial names still complete, and
+      // Tab always accepts.
+      if (menuOpen && !this.acceptIsNoop(menu) && !this.isExactCommand()) this.accept(menu);
       else this.submit();
       return;
     }
