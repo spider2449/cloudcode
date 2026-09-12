@@ -136,4 +136,23 @@ describe("completion dropdown shell", () => {
     expect(css).toContain("content: attr(data-title)");
     expect(css).toContain(".chat-pane.has-complete .chat-busy-floating");
   });
+  it("caps the list at header plus five rows, then scrolls", () => {
+    // Grows with the option count up to five rows; longer subcommand lists
+    // scroll inside the box instead of stretching it. flex-shrink: 0 keeps
+    // a long transcript from squishing the box below its content height
+    // (the squished one-row shell with a scrollbar from the bug report).
+    const css = readFileSync("desktop/renderer/style.css", "utf8");
+    expect(css).toContain("max-height: 208px");
+    expect(css).toContain("overflow-y: auto");
+    expect(css).toContain("flex-shrink: 0");
+  });
+  it("parks focus back in the composer after send and abort", () => {
+    // Send/Stop are mouse targets; without refocus the key handlers on the
+    // textarea (Up/Down history, Enter to send) go dead after clicking.
+    const pane = readFileSync("desktop/renderer/chatPane.tsx", "utf8");
+    const sendBlock = pane.slice(pane.indexOf("function send()"), pane.indexOf("function abort("));
+    expect(sendBlock).toContain("inputRef.current?.focus()");
+    const abortBlock = pane.slice(pane.indexOf("function abort("), pane.indexOf("function respond("));
+    expect(abortBlock).toContain("inputRef.current?.focus()");
+  });
 });

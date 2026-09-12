@@ -513,6 +513,9 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
     completeReq.current = undefined;
     nestedOnce.current = false;
     showCompletions([]);
+    // Mouse-clicking Send leaves focus on the button; park it back in the
+    // composer so Up/Down history recall keeps working without re-clicking.
+    requestAnimationFrame(() => inputRef.current?.focus());
     onSend?.({ id, sessionId, text, workspaceId });
     void window.cloudcode.chatSend({ id, sessionId, text, workspaceId });
   }
@@ -523,6 +526,9 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
     // the outstanding request on abort); drop it instead of stranding it.
     if (permissionRef.current?.id === id) setPermissionState(undefined);
     setMessages(current => [...current, { id, role: "notice", text: "Cancelled." }]);
+    // The Stop button unmounts once nothing is pending; without this, focus
+    // is lost to the page and composer shortcuts (Up/Down history) go dead.
+    requestAnimationFrame(() => inputRef.current?.focus());
     void window.cloudcode.chatAbort(id);
   }
 
