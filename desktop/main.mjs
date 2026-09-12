@@ -17,6 +17,9 @@ const projectRoot = process.resourcesPath && desktopDir.includes(".asar")
 const host = new DesktopShellHost();
 let window;
 let chatChild;
+// Set on before-quit so late renderer polls (e.g. the statusline footer)
+// never respawn the backend or write to a dying pipe during shutdown.
+let quitting = false;
 
 function send(channel, payload) {
   if (!window || window.isDestroyed() || window.webContents.isDestroyed()) return;
@@ -30,6 +33,12 @@ function startChatBackend() {
   const cliPath = resolveCliPath();
   const executable = resolveNodeExecutable();
   chatChild = spawn(executable, [cliPath, "--gui-server"], { cwd: projectRoot, stdio: ["pipe", "pipe", "inherit"] });
+  // Writes to a dead child's stdin surface as async EPIPE 'error' events,
+  // which Electron shows as an "Uncaught Exception" dialog (seen on app
+  // close when a status poll races the backend teardown). Swallow them and
+  // drop the reference so the next write restarts the backend instead.
+  chatChild.stdin.on("error", () => { stopChatBackend(); });
+  chatChild.on("error", () => { stopChatBackend(); });
   let buffer = "";
   chatChild.stdout.setEncoding("utf8");
   chatChild.stdout.on("data", (chunk) => {
@@ -60,14 +69,18 @@ function stopChatBackend() {
 // Writes to the backend never throw into Electron: a broken pipe means the
 // child died mid-write (its exit handler may not have run yet), so restart it
 // and tell the renderer the request was lost instead of crashing the app.
+// During shutdown writes are dropped outright: respawning here is what kept
+// the process alive long enough to hit the EPIPE dialog on close.
 function writeChatBackend(line) {
+  if (quitting) return false;
   try {
     if (!chatChild) startChatBackend();
-    chatChild?.stdin.write(`${line}\n`);
+    if (!chatChild) return false;
+    chatChild.stdin.write(`${line}\n`);
     return true;
   } catch {
     stopChatBackend();
-    startChatBackend();
+    if (!quitting) startChatBackend();
     return false;
   }
 }
@@ -186,6 +199,30 @@ ipcMain.handle("cloudcode:chat-complete", (_event, request) => {
   // sent completion keystrokes into the turn pipeline as text-less messages.
   forwardChatLine(JSON.stringify({ kind: "complete", ...(cwd === undefined ? rest : { ...rest, cwd }) }), id);
 });
+ipcMain.handle("cloudcode:chat-status", (_event, request) => {
+  if (typeof request !== "object" || request === null) return;
+  const { workspaceId, ...rest } = request;
+  let cwd;
+  try {
+    cwd = workspaceId === undefined ? undefined : host.cwd(requireString(workspaceId, "workspace ID"));
+  } catch {
+    cwd = undefined;
+  }
+  const id = typeof rest.id === "string" ? rest.id : "unknown";
+  forwardChatLine(JSON.stringify({ kind: "status", ...(cwd === undefined ? rest : { ...rest, cwd }) }), id);
+});
+ipcMain.handle("cloudcode:chat-statusline-set", (_event, request) => {
+  if (typeof request !== "object" || request === null) return;
+  const { workspaceId, ...rest } = request;
+  let cwd;
+  try {
+    cwd = workspaceId === undefined ? undefined : host.cwd(requireString(workspaceId, "workspace ID"));
+  } catch {
+    cwd = undefined;
+  }
+  const id = typeof rest.id === "string" ? rest.id : "unknown";
+  forwardChatLine(JSON.stringify({ kind: "statusline-set", ...(cwd === undefined ? rest : { ...rest, cwd }) }), id);
+});
 ipcMain.handle("cloudcode:rename-session", (_event, workspaceId, sessionId, title) => host.renameSession(requireString(workspaceId, "workspace ID"), requireString(sessionId, "session ID"), requireString(title, "session title")));
 ipcMain.handle("cloudcode:remove-session", (_event, workspaceId, sessionId) => host.removeSession(requireString(workspaceId, "workspace ID"), requireString(sessionId, "session ID")));
 ipcMain.handle("cloudcode:close-application", () => window?.close());
@@ -199,4 +236,4 @@ ipcMain.handle("cloudcode:set-theme", (_event, name) => {
 
 app.whenReady().then(createWindow);
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
-app.on("before-quit", () => stopChatBackend());
+app.on("before-quit", () => { quitting = true; stopChatBackend(); });

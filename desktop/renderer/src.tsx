@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import "./style.css";
 import { VERSION } from "../../src/version.js";
 import { ChatPane } from "./chatPane.js";
+import { StatusBar, StatuslinePicker } from "./statusBar.js";
+import type { DesktopStatusPayload } from "../../src/desktop/statusPayload.js";
 import { ThemeMenu } from "./themeMenu.js";
 import { LAST_SELECTION_KEY, loadStoredSelection, resolveRestoredSelection, serializeSelection } from "./lastSelection.js";
 
@@ -39,6 +41,8 @@ declare global {
       chatHistory(sessionId: string | undefined, workspaceId?: string): Promise<void>;
       chatRespond(response: { id: string; allow: boolean }): Promise<void>;
       chatComplete(request: { id: string; prefix: string; sessionId: string | undefined; workspaceId: string | undefined }): Promise<void>;
+      chatStatus(request: { id: string; sessionId: string | undefined; workspaceId: string | undefined }): Promise<void>;
+      chatStatusLineSet(request: { id: string; items: string[]; sessionId: string | undefined; workspaceId: string | undefined }): Promise<void>;
       renameSession(workspaceId: string, sessionId: string, title: string): Promise<Workspace>;
       removeSession(workspaceId: string, sessionId: string): Promise<Workspace>;
       onChatEvent(listener: (event: ChatBridgeEvent) => void): () => void;
@@ -83,6 +87,8 @@ function App() {
   const [sidebarWidth, setSidebarWidth] = useState(() => readStoredWidth("cloudcode.sidebarWidth", DEFAULT_SIDEBAR_WIDTH));
   const [inspectorWidth, setInspectorWidth] = useState(() => readStoredWidth("cloudcode.inspectorWidth", DEFAULT_INSPECTOR_WIDTH));
   const [dragging, setDragging] = useState<"left" | "right" | null>(null);
+  const [status, setStatus] = useState<DesktopStatusPayload | undefined>(undefined);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const dragState = useRef<{ side: "left" | "right"; startX: number; startSidebar: number; startInspector: number } | null>(null);
   const lastChat = useRef<ChatRequest | undefined>(undefined);
   // Set once the initial restore resolves; the persist effect below must not
@@ -99,6 +105,34 @@ function App() {
       else if (event.type === "text_delta" || event.type === "done") setBackendExit(undefined);
     });
   }, []);
+
+  // Global statusline: polls the gui-server backend for the active
+  // conversation (cost/tokens/model/mode) and repaints on every turn event.
+  // Git branch comes from the existing gitStates poll, overlaid at render.
+  const activeSessionId = active !== undefined ? activeSessions[active] : undefined;
+  useEffect(() => {
+    let disposed = false;
+    let timer: number | undefined;
+    let seq = 0;
+    const poll = () => {
+      const id = `status-${Date.now()}-${(seq += 1)}`;
+      void window.cloudcode.chatStatus({ id, sessionId: activeSessionId, workspaceId: active }).catch(() => {});
+      timer = window.setTimeout(poll, document.hidden ? 10_000 : 3_000);
+    };
+    poll();
+    const off = window.cloudcode.onChatEvent(event => {
+      const typed = event as { type: string; status?: DesktopStatusPayload };
+      if (typed.type === "status" && typed.status && !disposed) setStatus(typed.status);
+      else if (typed.type === "statusline_picker" && (typed as { status?: DesktopStatusPayload }).status && !disposed) {
+        setStatus((typed as { status: DesktopStatusPayload }).status);
+        setPickerOpen(true);
+      } else if (!disposed && (typed.type === "done" || typed.type === "text_delta")) {
+        const id = `status-${Date.now()}-${(seq += 1)}`;
+        void window.cloudcode.chatStatus({ id, sessionId: activeSessionId, workspaceId: active }).catch(() => {});
+      }
+    });
+    return () => { disposed = true; if (timer !== undefined) window.clearTimeout(timer); off(); };
+  }, [active, activeSessionId]);
 
   useEffect(() => {
     void window.cloudcode.restoreProjects().then(restored => {
@@ -294,6 +328,20 @@ function App() {
       const git = await window.cloudcode.gitState(activeWorkspace.id);
       setGitStates(current => ({ ...current, [activeWorkspace.id]: git }));
     }} onClose={() => setInspectorOpen(false)} />}
+    <StatusBar
+      status={status}
+      gitBranch={active !== undefined ? gitStates[active]?.branch : undefined}
+      gitDirty={active !== undefined ? (gitStates[active]?.files.length ?? 0) > 0 : undefined}
+      onOpenPicker={() => setPickerOpen(true)}
+    />
+    {pickerOpen && <StatuslinePicker
+      initial={status?.statusLineItems ?? []}
+      onSave={items => {
+        setPickerOpen(false);
+        void window.cloudcode.chatStatusLineSet({ id: `statusline-${Date.now()}`, items, sessionId: activeSessionId, workspaceId: active }).catch(() => {});
+      }}
+      onClose={() => setPickerOpen(false)}
+    />}
   </main>;
 }
 

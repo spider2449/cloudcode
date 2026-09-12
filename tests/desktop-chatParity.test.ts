@@ -20,8 +20,19 @@ describe("desktop shell split", () => {
   it("main never writes to the backend pipe unguarded", () => {
     const source = readFileSync("desktop/main.mjs", "utf8");
     expect(source).toContain("writeChatBackend");
-    const bare = source.split("\n").filter(line => line.includes("chatChild?.stdin.write"));
+    const bare = source.split("\n").filter(line => line.includes("chatChild?.stdin.write") || line.includes("chatChild.stdin.write"));
     expect(bare).toHaveLength(1);
+  });
+  it("main survives backend death on close without an EPIPE dialog", () => {
+    const source = readFileSync("desktop/main.mjs", "utf8");
+    // Async EPIPE from a dead child's stdin is an 'error' event, not a sync
+    // throw: without a listener Electron shows an Uncaught Exception dialog.
+    expect(source).toContain('stdin.on("error"');
+    expect(source).toContain('chatChild.on("error"');
+    // Late renderer polls (statusline footer) must not respawn the backend
+    // or write to a dying pipe during shutdown.
+    expect(source).toContain("quitting");
+    expect(source).toContain("before-quit");
   });
 });
 
@@ -104,6 +115,29 @@ describe("slash parity", () => {
     const css = readFileSync("desktop/renderer/style.css", "utf8");
     expect(css).toContain(".chat-input .chat-send");
     expect(css).toContain(".chat-input .chat-stop");
+  });
+  it("statusline footer mirrors the TUI segments with backend polling", () => {
+    const bar = readFileSync("desktop/renderer/statusBar.tsx", "utf8");
+    expect(bar).toContain("formatStatusSegments");
+    expect(bar).toContain("StatuslinePicker");
+    const shell = readFileSync("desktop/renderer/src.tsx", "utf8");
+    expect(shell).toContain("chatStatus");
+    expect(shell).toContain("chatStatusLineSet");
+    expect(shell).toContain("statusline_picker");
+    expect(shell).toContain("<StatusBar");
+    const main = readFileSync("desktop/main.mjs", "utf8");
+    expect(main).toContain("chat-status");
+    expect(main).toContain('kind: "status"');
+    expect(main).toContain('kind: "statusline-set"');
+    const preload = readFileSync("desktop/preload.cjs", "utf8");
+    expect(preload).toContain("chatStatus");
+    expect(preload).toContain("chatStatusLineSet");
+    const cli = readFileSync("src/cli.tsx", "utf8");
+    expect(cli).toContain('kind === "status"');
+    expect(cli).toContain('kind === "statusline-set"');
+    expect(cli).toContain("emitStatusLinePicker");
+    const css = readFileSync("desktop/renderer/style.css", "utf8");
+    expect(css).toContain(".statusline");
   });
   it("message roles are visually distinct", () => {
     const css = readFileSync("desktop/renderer/style.css", "utf8");

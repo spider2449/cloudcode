@@ -4,7 +4,9 @@ import { App } from "./ui/nativeApp.js";
 import { Terminal } from "./ui/term/terminal.js";
 import { loadProviders } from "./agent/providers.js";
 import { applyContextWindow } from "./agent/contextProbe.js";
-import { loadSettings } from "./agent/settings.js";
+import { loadSettings, saveSetting } from "./agent/settings.js";
+import { DEFAULT_STATUS_LINE_ITEMS, normalizeStatusLineItems } from "./statusLineItems.js";
+import type { DesktopStatusPayload } from "./desktop/statusPayload.js";
 import { runMcpCommand } from "./commands/cli/mcp.js";
 import { SessionIndex } from "./agent/sessionIndex.js";
 import { VERSION } from "./version.js";
@@ -91,6 +93,9 @@ if (parsed.kind === "guiserver") {
     networkMode: NetworkMode;
     costUsd: number;
     turns: number;
+    tokens: number;
+    contextPct: number | undefined;
+    startedAt: number;
     models: string[];
     mcpDisabled: Set<string>;
   }
@@ -115,7 +120,8 @@ if (parsed.kind === "guiserver") {
       effort: guiSettings.effort ?? "off",
       mode: guiSettings.permissionMode ?? "default",
       networkMode: guiSettings.networkMode ?? "providerOnly",
-      costUsd: 0, turns: 0, models: [], mcpDisabled: new Set<string>()
+      costUsd: 0, turns: 0, tokens: 0, contextPct: undefined,
+      startedAt: Date.now(), models: [], mcpDisabled: new Set<string>()
     };
     keyStates.set(key, state);
     return state;
@@ -141,7 +147,17 @@ if (parsed.kind === "guiserver") {
       mcpServers: loadMcpServers(state.cwd),
       lspRegistry: loadRegistry(undefined, join(state.cwd, ".cloudcode", "lsp.json"), false),
       onMessage: (msg) => {
-        if (msg.type === "result" && msg.subtype === "success" && typeof msg.total_cost_usd === "number") state.costUsd += msg.total_cost_usd;
+        if (msg.type === "result" && msg.subtype === "success") {
+          if (typeof msg.total_cost_usd === "number") state.costUsd += msg.total_cost_usd;
+          const usage = (msg.last_usage ?? msg.usage) as Record<string, number> | undefined;
+          if (usage) {
+            const input = (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
+            const output = usage.output_tokens ?? 0;
+            state.tokens = input + output;
+            const window = guiProviders[state.providerName]?.model_context_window ?? 200_000;
+            state.contextPct = Math.min(100, Math.round((input / window) * 100));
+          }
+        }
         const id = inFlight.get(key);
         if (!id) return;
         for (const event of toChatEvents(id, msg)) emit(event);
@@ -187,6 +203,24 @@ if (parsed.kind === "guiserver") {
     permissionStores.set(cwd, store);
     return store;
   }
+  // Snapshot for the desktop statusline footer. Mirrors nativeApp's
+  // statusBarProps: same fields, same settings-backed item list, so /statusline
+  // choices apply live in both shells.
+  function statusFor(state: GuiKeyState): DesktopStatusPayload {
+    return {
+      provider: state.providerName,
+      model: state.model,
+      effort: state.effort,
+      mode: state.mode,
+      networkMode: state.networkMode,
+      cwd: state.cwd,
+      costUsd: state.costUsd,
+      tokens: state.tokens > 0 ? state.tokens : undefined,
+      contextPct: state.contextPct,
+      elapsedMs: Date.now() - state.startedAt,
+      statusLineItems: loadSettings().statusLineItems ?? DEFAULT_STATUS_LINE_ITEMS,
+    };
+  }
   function buildContext(cwd: string, id: string, key: string, state: GuiKeyState): import("./commands/types.js").CommandContext {
     return buildGuiCommandContext({
       cwd,
@@ -212,6 +246,9 @@ if (parsed.kind === "guiserver") {
       },
       emitTheme: name => {
         emit({ id, type: "theme", text: name });
+      },
+      emitStatusLinePicker: () => {
+        emit({ id, type: "statusline_picker", status: statusFor(state) });
       },
       mcpDisabled: () => state.mcpDisabled,
       permissionStore: () => permissionStoreFor(cwd)
@@ -264,7 +301,7 @@ if (parsed.kind === "guiserver") {
     buffer = framed.rest;
     for (const line of framed.lines) {
       try {
-          const request = JSON.parse(line) as { id?: unknown; text?: unknown; cwd?: unknown; kind?: unknown; allow?: unknown; sessionId?: unknown; prefix?: unknown; name?: unknown };
+          const request = JSON.parse(line) as { id?: unknown; text?: unknown; cwd?: unknown; kind?: unknown; allow?: unknown; sessionId?: unknown; prefix?: unknown; name?: unknown; items?: unknown };
         if (request.kind === "complete") {
           // Input-box autocomplete: same getSuggestions machinery as the
           // terminal input box. Routed here (not through GuiServer) because
@@ -327,6 +364,42 @@ if (parsed.kind === "guiserver") {
             if (!name) throw new Error(`Unknown theme: ${String(request.name)}. Themes: ${Object.keys(THEMES).join(", ")}`);
             saveThemeName(name);
             emit({ id: replyId, type: "theme", text: name });
+            emit({ id: replyId, type: "done" });
+          } catch (error) {
+            emit({ id: replyId, type: "error", text: error instanceof Error ? error.message : String(error) });
+            emit({ id: replyId, type: "done" });
+          }
+          continue;
+        }
+        if (request.kind === "status") {
+          // Statusline footer polling: same correlation pattern as "complete".
+          // Never touches session state beyond reading the per-key snapshot.
+          historySeq += 1;
+          const replyId = typeof request.id === "string" && request.id !== "" ? request.id : `status-${Date.now()}-${historySeq}`;
+          try {
+            const statusCwd = typeof request.cwd === "string" && request.cwd !== "" ? request.cwd : process.cwd();
+            const statusSession = typeof request.sessionId === "string" ? request.sessionId : undefined;
+            emit({ id: replyId, type: "status", status: statusFor(keyState(statusCwd, statusSession)) });
+            emit({ id: replyId, type: "done" });
+          } catch (error) {
+            emit({ id: replyId, type: "error", text: error instanceof Error ? error.message : String(error) });
+            emit({ id: replyId, type: "done" });
+          }
+          continue;
+        }
+        if (request.kind === "statusline-set") {
+          // Picker dialog save: validates like settings.loadSettings, persists
+          // to settings.json, then broadcasts the fresh snapshot so the footer
+          // repaints without waiting for the next poll.
+          historySeq += 1;
+          const replyId = typeof request.id === "string" && request.id !== "" ? request.id : `statusline-${Date.now()}-${historySeq}`;
+          try {
+            const next = normalizeStatusLineItems(request.items);
+            if (!next) throw new Error("Invalid statusline items.");
+            saveSetting("statusLineItems", next);
+            const statusCwd = typeof request.cwd === "string" && request.cwd !== "" ? request.cwd : process.cwd();
+            const statusSession = typeof request.sessionId === "string" ? request.sessionId : undefined;
+            emit({ id: replyId, type: "status", status: statusFor(keyState(statusCwd, statusSession)) });
             emit({ id: replyId, type: "done" });
           } catch (error) {
             emit({ id: replyId, type: "error", text: error instanceof Error ? error.message : String(error) });

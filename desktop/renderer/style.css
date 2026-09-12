@@ -51,6 +51,13 @@ kbd { padding: 1px 5px; border: 1px solid var(--gui-border-strong, #3a3d43); bor
 .theme-menu button { display: block; width: 100%; padding: 8px 10px; border: 0; border-radius: 5px; background: transparent; color: var(--gui-text, #d5d8dd); text-align: left; cursor: pointer; }
 .theme-menu button.active, .theme-menu button:hover { background: var(--gui-hover, #343840); }
 .title-actions .theme-button { padding: 5px 9px; }
+.app-shell { grid-template-rows: minmax(0, 1fr) auto; }
+.statusline { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 3px 12px; border-top: 1px solid var(--gui-border, #2a2d33); background: var(--gui-panel, #181a1f); color: var(--gui-muted, #9ba1ab); font-size: 11px; white-space: nowrap; overflow: hidden; }
+.statusline-segments { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
+.statusline-empty { color: var(--gui-muted, #6f7580); }
+.statusline-option { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 5px; cursor: pointer; }
+.statusline-option:hover { background: var(--gui-hover, #343840); }
+.statusline-option small { margin-left: auto; color: var(--gui-muted, #858b95); font-family: ui-monospace, monospace; }
 .app-shell, .conversation, .chat-main { background: var(--gui-bg, #15171b); }
 .sidebar, .inspector, .titlebar { background: var(--gui-panel, #181a1f); }
 .conversation, .chat-main, .transcript .message-body, .chat-list .bubble pre, .title-copy strong { color: var(--gui-text, #e7e9ed); }

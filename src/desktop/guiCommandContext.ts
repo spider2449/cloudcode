@@ -15,7 +15,8 @@ import type { EffortLevel } from "../engine/effort.js";
 import type { CommandContext } from "../commands/types.js";
 import { missingMentions } from "../commands/mentions.js";
 import { THEMES, loadThemeName, saveThemeName } from "../ui/theme.js";
-import { saveSetting } from "../agent/settings.js";
+import { loadSettings, saveSetting } from "../agent/settings.js";
+import { DEFAULT_STATUS_LINE_ITEMS } from "../statusLineItems.js";
 
 // Structural subset of AgentSession consumed by slash commands. AgentSession
 // satisfies this interface; tests substitute fakes.
@@ -61,6 +62,10 @@ export interface GuiCommandDeps {
   emitTheme(name: string): void;
   mcpDisabled(): Set<string>;
   permissionStore(): PermissionStore;
+  // Opens the desktop statusline picker (a renderer dialog). The TUI calls
+  // openStatusLinePicker on the terminal overlay; headless backends emit a
+  // "statusline_picker" chat event the shell renders instead.
+  emitStatusLinePicker(): void;
 }
 
 function guiOnly(feature: string, hint: string): string {
@@ -186,7 +191,13 @@ export function buildGuiCommandContext(deps: GuiCommandDeps): CommandContext {
     switchProject: () => deps.notice("Switch projects from the desktop sidebar."),
     openProjectPicker: () => deps.notice(guiOnly("Project", "Use the desktop sidebar instead.")),
     openMemoryPicker: () => deps.notice(guiOnly("Memory", "Memory management UI is not available yet.")),
-    openStatusLinePicker: () => deps.notice(guiOnly("Status line", "Status line UI is not available yet.")),
+    openStatusLinePicker: () => {
+      // Persist the current selection first so a fresh install writes the
+      // default set to settings.json (mirrors the TUI toggle path).
+      const current = loadSettings().statusLineItems ?? DEFAULT_STATUS_LINE_ITEMS;
+      saveSetting("statusLineItems", current);
+      deps.emitStatusLinePicker();
+    },
     openConfigPicker: () => deps.notice(guiOnly("Config", "Use /config <key> <value> instead.")),
     openThemePicker: () => deps.notice(guiOnly("Theme", "Use the titlebar Theme menu instead.")),
     currentCwd: () => deps.cwd,

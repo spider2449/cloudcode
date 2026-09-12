@@ -1,5 +1,7 @@
 import { requireString } from "./ipcContract.js";
 import type { Suggestion } from "../commands/completion.js";
+import type { StatusLineItem } from "../statusLineItems.js";
+import type { DesktopStatusPayload } from "./statusPayload.js";
 
 export const MAX_CHAT_ID_LENGTH = 200;
 export const MAX_CHAT_TEXT_LENGTH = 200_000;
@@ -7,7 +9,7 @@ export const MAX_CHAT_CWD_LENGTH = 4096;
 
 // Thinking deltas are intentionally not forwarded (renderer shows final text; see `toChatEvents` in the engine-wiring task).
 // user_text is user turn replay for history; live user messages are echoed locally by the renderer.
-export const CHAT_EVENT_TYPES = ["text_delta", "tool_use", "tool_result", "notice", "error", "permission_request", "user_text", "complete", "new_session", "session_id", "theme", "done"] as const;
+export const CHAT_EVENT_TYPES = ["text_delta", "tool_use", "tool_result", "notice", "error", "permission_request", "user_text", "complete", "new_session", "session_id", "theme", "status", "statusline_picker", "done"] as const;
 export type ChatEventType = (typeof CHAT_EVENT_TYPES)[number];
 
 export interface ChatSendRequest {
@@ -28,6 +30,12 @@ export interface ChatEvent {
   // Backend session id carried by "session_id" events so the GUI can adopt
   // an anonymous conversation once it has content.
   sessionId?: string;
+  // Raw status snapshot for "status" events and for "statusline_picker"
+  // events (the picker dialog reads status.statusLineItems as its checklist).
+  status?: DesktopStatusPayload;
+  // Canonical registry order for the picker checklist; the renderer imports
+  // STATUS_LINE_ITEMS itself, this is only a convenience for tests.
+  statusItems?: StatusLineItem[];
 }
 
 export function requireChatId(value: unknown): string {

@@ -74,6 +74,7 @@ function setup() {
     },
     requestNewSession: () => { newSessionRequests.push("new"); },
     emitTheme: name => { emittedThemes.push(name); },
+    emitStatusLinePicker: () => { notices.push("statusline-picker"); },
     mcpDisabled: () => new Set<string>(),
     permissionStore: () => store
   };
@@ -151,6 +152,13 @@ describe("gui command context against the real registry", () => {
     expect(t.errors).toEqual([]);
     expect(t.emittedThemes).toEqual([]);
     expect(t.notices.some(n => n.includes("Unknown theme: nope"))).toBe(true);
+  });
+  it("/statusline emits a picker event instead of a not-available notice", async () => {
+    const t = setup();
+    await t.slash("/statusline");
+    expect(t.errors).toEqual([]);
+    expect(t.notices).toContain("statusline-picker");
+    expect(t.notices.some(n => n.includes("not available"))).toBe(false);
   });
   it("rejects bare /theme in the GUI: switching lives in the menu bar", async () => {
     const t = setup();

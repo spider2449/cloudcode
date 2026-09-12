@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld("cloudcode", {
   chatHistory: (sessionId, workspaceId) => ipcRenderer.invoke("cloudcode:chat-history", sessionId, workspaceId),
   chatRespond: (response) => ipcRenderer.invoke("cloudcode:chat-respond", response),
   chatComplete: (request) => ipcRenderer.invoke("cloudcode:chat-complete", request),
+  chatStatus: (request) => ipcRenderer.invoke("cloudcode:chat-status", request),
+  chatStatusLineSet: (request) => ipcRenderer.invoke("cloudcode:chat-statusline-set", request),
   renameSession: (workspaceId, sessionId, title) => ipcRenderer.invoke("cloudcode:rename-session", workspaceId, sessionId, title),
   removeSession: (workspaceId, sessionId) => ipcRenderer.invoke("cloudcode:remove-session", workspaceId, sessionId),
   setTheme: name => ipcRenderer.invoke("cloudcode:set-theme", name),
