@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { applySuggestionText, busyLabel, describeSlashInput, echoUserBubble, isLiveTurnEvent, isNewSessionEvent, parseSessionIdEvent, shouldStickToBottom, STICK_THRESHOLD_PX } from "../desktop/renderer/chatPane.js";
+import { readFileSync } from "node:fs";
+import { applySuggestionText, busyLabel, describeSlashInput, echoUserBubble, isLiveTurnEvent, isNewSessionEvent, parseSessionIdEvent, shouldStickToBottom, STICK_THRESHOLD_PX, titleForCompletionPrefix, visibleCompletions } from "../desktop/renderer/chatPane.js";
 
 describe("slash input classification", () => {
   it("treats plain text as non-slash", () => {
@@ -86,5 +87,53 @@ describe("busy label", () => {
     expect(busyLabel(0)).toBeNull();
     expect(busyLabel(1)).toBe("Thinking");
     expect(busyLabel(3)).toBe("Thinking");
+  });
+});
+
+describe("completion visibility", () => {
+  it("drops blank rows that would render as empty buttons", () => {
+    const items = [
+      { label: "/config", value: "/config ", replaceStart: 0, replaceEnd: 7 },
+      { label: "   ", value: "x", replaceStart: 8, replaceEnd: 8 },
+      { label: "", value: "", replaceStart: 8, replaceEnd: 8 },
+    ];
+    expect(visibleCompletions(items)).toEqual([items[0]]);
+  });
+  it("keeps every well-formed option", () => {
+    const items = [
+      { label: "theme", value: "theme", replaceStart: 8, replaceEnd: 8 },
+      { label: "provider", value: "provider", replaceStart: 8, replaceEnd: 8 },
+    ];
+    expect(visibleCompletions(items)).toEqual(items);
+  });
+});
+
+describe("completion title", () => {
+  it("titles argument options with their command", () => {
+    expect(titleForCompletionPrefix("/config ")).toBe("/config");
+    expect(titleForCompletionPrefix("/model a")).toBe("/model");
+  });
+  it("keeps the generic title for command-name lists and plain text", () => {
+    expect(titleForCompletionPrefix("/con")).toBe("Commands");
+    expect(titleForCompletionPrefix("/")).toBe("Commands");
+    expect(titleForCompletionPrefix("hello")).toBe("Commands");
+    expect(titleForCompletionPrefix("")).toBe("Commands");
+  });
+});
+
+describe("completion dropdown shell", () => {
+  it("clears the stale command list when entering argument mode", () => {
+    // Typing "/config" exactly normalizes to "/config " and asks the backend
+    // for args; the stale "/config" self-suggestion must be dropped now,
+    // not left flashing until the slower backend answers.
+    const pane = readFileSync("desktop/renderer/chatPane.tsx", "utf8");
+    const argsBlock = pane.slice(pane.indexOf('completionSource.current === "commands"'));
+    expect(argsBlock).toContain("showCompletions([])");
+    expect(pane).toContain("data-title={completionTitle}");
+  });
+  it("renders the header from state and keeps Thinking clear of the list", () => {
+    const css = readFileSync("desktop/renderer/style.css", "utf8");
+    expect(css).toContain("content: attr(data-title)");
+    expect(css).toContain(".chat-pane.has-complete .chat-busy-floating");
   });
 });

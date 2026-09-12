@@ -1,6 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { buildRegistry } from "../../src/commands/builtins.js";
 import { confirmGuiTheme, loadStoredGuiTheme, parseThemeEvent } from "./themeState.js";
+import {
+  emptyHistoryNav,
+  loadInputHistoryEntries,
+  pushInputHistoryEntry,
+  recallHistoryBack,
+  recallHistoryForward,
+  resetHistoryNav,
+  shouldRecallHistory,
+  storeInputHistoryEntries,
+  type HistoryNav,
+} from "./inputHistory.js";
 
 // Slash parity (enforced by tests/desktop-chatParity.test.ts): every
 // GUI-visible command from buildRegistry must appear here as /name so the
@@ -45,6 +56,23 @@ export function describeSlashInput(value: string): SlashInputKind {
     return { kind: "command", token: value };
   }
   return { kind: "args", prefix: value };
+}
+
+// Drops backend completion rows that would render as blank buttons (empty
+// label/value) under the dropdown header. An empty result hides the dropdown
+// instead of leaving an empty bordered "Commands" shell on screen.
+export function visibleCompletions(items: Completion[]): Completion[] {
+  return items.filter(item => item.label.trim() !== "" && item.value !== "");
+}
+
+// Header for the dropdown: command-name lists keep the generic "Commands",
+// while backend argument options are titled with the command they belong to
+// ("/config " -> "/config") so the header never mislabels option rows.
+export function titleForCompletionPrefix(prefix: string): string {
+  if (!prefix.startsWith("/")) return "Commands";
+  const token = prefix.split(/\s+/, 1)[0] ?? "";
+  if (token === "" || token === "/") return "Commands";
+  return prefix.length > token.length ? token : "Commands";
 }
 
 // True when the backend asks the shell to start a fresh anonymous session
@@ -107,6 +135,7 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [completions, setCompletions] = useState<Completion[]>([]);
+  const [completionTitle, setCompletionTitle] = useState("Commands");
   const [highlight, setHighlight] = useState(0);
   const [permission, setPermission] = useState<{ id: string; toolName: string; toolInput?: Record<string, unknown> } | undefined>(undefined);
   const [pendingIds, setPendingIds] = useState<string[]>([]);
@@ -125,6 +154,11 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
   // One-shot guard for nested descent (below): prevents "/provider anthropic"
   // style dead-ends from appending spaces forever.
   const nestedOnce = useRef(false);
+  // Which list the open dropdown currently shows. Entering argument mode
+  // clears a stale command-name list (e.g. "/config" suggesting itself while
+  // the backend args load); arg-to-arg typing keeps the current options to
+  // avoid flicker between backend roundtrips.
+  const completionSource = useRef<"commands" | "args">("commands");
   // Latest new-session callback; stored in a ref so the chat-event
   // subscription below never goes stale when the parent re-renders.
   const newSessionRef = useRef(onRequestNewSession);
@@ -146,6 +180,14 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
   // background-session deltas against this, not the render-time state.
   const pendingRef = useRef<string[]>([]);
   pendingRef.current = pendingIds;
+  // Composer input history (Up/Down recall, TUI parity). Entries persist to
+  // localStorage; cursor/draft track the in-progress recall. Lazily loaded
+  // so node-based unit tests can import this module without a window.
+  const historyNavRef = useRef<HistoryNav | null>(null);
+  if (historyNavRef.current === null) {
+    const entries = loadInputHistoryEntries();
+    historyNavRef.current = { ...emptyHistoryNav(), entries, cursor: entries.length };
+  }
   // Outstanding session-switch status seed (see below); only a status
   // response bearing this exact id may reseed pending state.
   const seedReq = useRef<string>();
@@ -206,8 +248,9 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
         const pending = completeReq.current;
         if (pending && event.id === pending.id && inputRef.current?.value === pending.prefix && event.items) {
           const current = inputRef.current?.value ?? "";
-          const [only] = event.items;
-          if (event.items.length === 1 && only && applySuggestionText(current, only) === current) {
+          const items = visibleCompletions(event.items);
+          const [only] = items;
+          if (items.length === 1 && only && applySuggestionText(current, only) === current) {
             // Pure echo: the option adds nothing (e.g. "/config theme" answered
             // with ["theme"]). Descend one nesting level automatically so the
             // next options appear; hide the dropdown if there is nothing deeper.
@@ -218,7 +261,8 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
               showCompletions([]);
             }
           } else {
-            showCompletions(event.items);
+            completionSource.current = "args";
+            showCompletions(items, titleForCompletionPrefix(pending.prefix));
           }
         }
         return;
@@ -272,8 +316,9 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
     });
   }, [sessionId, workspaceId]);
 
-  function showCompletions(items: Completion[]) {
+  function showCompletions(items: Completion[], title = "Commands") {
     setCompletions(items);
+    setCompletionTitle(title);
     setHighlight(0);
   }
 
@@ -286,7 +331,14 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
   }
 
   function onChange(value: string, auto = false) {
-    if (!auto) nestedOnce.current = false;
+    if (!auto) {
+      nestedOnce.current = false;
+      // Any manual edit abandons the in-progress history recall.
+      const nav = historyNavRef.current;
+      if (nav && (nav.cursor !== nav.entries.length || nav.draft !== undefined)) {
+        historyNavRef.current = resetHistoryNav(nav);
+      }
+    }
     setInput(value);
     const kind = describeSlashInput(value);
     if (kind.kind === "plain") {
@@ -297,6 +349,7 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
     if (kind.kind === "command") {
       // Command names complete instantly from the local registry copy.
       completeReq.current = undefined;
+      completionSource.current = "commands";
       showCompletions(SLASH_NAMES.filter(name => name.startsWith(kind.token)).map(name => ({
         label: name,
         value: `${name} `,
@@ -304,6 +357,14 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
         replaceEnd: value.length
       })));
       return;
+    }
+    if (completionSource.current === "commands") {
+      // Leaving the command-name list for backend argument options: drop the
+      // stale command rows now (an exactly-typed "/config" would otherwise
+      // keep suggesting itself until the slower backend answers, which is
+      // what stranded the empty-looking "Commands" shell on screen).
+      completionSource.current = "args";
+      showCompletions([]);
     }
     if (kind.prefix !== value) {
       // Exactly-typed command ("/config"): the backend offsets assume the
@@ -368,6 +429,30 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
     return () => window.removeEventListener("keydown", onWindowKeyDown);
   }, [completions.length, pendingIds]);
 
+  // History recall behind Up/Down (TUI parity): replaces the whole composer
+  // value, suppresses the slash dropdown (like the TUI's suppressed flag),
+  // and parks the caret at the end. Returns true when a recall happened.
+  function recallInputHistory(direction: "up" | "down"): boolean {
+    const el = inputRef.current;
+    const value = el?.value ?? input;
+    const start = el?.selectionStart ?? value.length;
+    const end = el?.selectionEnd ?? value.length;
+    if (!shouldRecallHistory(value, start, end, direction)) return false;
+    const nav = historyNavRef.current;
+    if (!nav) return false;
+    const recalled = direction === "up" ? recallHistoryBack(nav, value) : recallHistoryForward(nav);
+    if (!recalled) return false;
+    historyNavRef.current = recalled.nav;
+    setInput(recalled.text);
+    completeReq.current = undefined;
+    showCompletions([]);
+    requestAnimationFrame(() => {
+      const ta = inputRef.current;
+      if (ta) ta.selectionStart = ta.selectionEnd = ta.value.length;
+    });
+    return true;
+  }
+
   function onInputKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "ArrowDown" && completions.length > 0) {
       event.preventDefault();
@@ -377,6 +462,14 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
     if (event.key === "ArrowUp" && completions.length > 0) {
       event.preventDefault();
       setHighlight(current => (current - 1 + completions.length) % completions.length);
+      return;
+    }
+    if (event.key === "ArrowUp" && completions.length === 0) {
+      if (recallInputHistory("up")) event.preventDefault();
+      return;
+    }
+    if (event.key === "ArrowDown" && completions.length === 0) {
+      if (recallInputHistory("down")) event.preventDefault();
       return;
     }
     if (event.key === "Tab" && completions.length > 0) {
@@ -408,6 +501,14 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
     if (echoUserBubble(text)) {
       setMessages(current => [...current, { id, role: "user", text }]);
     }
+    // Record every sent prompt (including slash commands, like the TUI) so
+    // Up/Down can re-run it later.
+    const nav = historyNavRef.current;
+    if (nav) {
+      const entries = pushInputHistoryEntry(nav.entries, text);
+      storeInputHistoryEntries(entries);
+      historyNavRef.current = { entries, cursor: entries.length, draft: undefined };
+    }
     setInput("");
     completeReq.current = undefined;
     nestedOnce.current = false;
@@ -432,7 +533,7 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
   }
 
   return (
-    <section className="chat-pane">
+    <section className={completions.length > 0 ? "chat-pane has-complete" : "chat-pane"}>
       {permission && (
         <div className="permission-overlay" role="alertdialog" aria-label="Permission request">
           <strong>Allow {permission.toolName}?</strong>
@@ -449,7 +550,7 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
         ))}
       </div>
       {completions.length > 0 && (
-        <ul className="slash-complete" aria-label="Slash commands">
+        <ul className="slash-complete" aria-label="Slash commands" data-title={completionTitle}>
           {completions.map((option, index) => <li key={option.label}><button className={index === highlight ? "active" : ""} onClick={() => applyCompletion(option)}>{option.label}</button></li>)}
         </ul>
       )}
