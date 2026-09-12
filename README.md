@@ -332,6 +332,42 @@ toggled without editing config files:
 A toggle takes effect on restart or `/clear`. Pack-contributed servers cannot
 be disabled.
 
+## Hooks
+
+Hooks run local shell commands on six agent lifecycle events. Configure them
+in two files, merged at startup (user entries run before project entries):
+
+- User: `~/.cloudcode/hooks.json` — trusted by definition.
+- Project: `<cwd>/.cloudcode/hooks.json` — shareable, but executable project
+  configuration: it loads only after the same content-bound project-trust
+  approval as MCP/LSP entries, otherwise a warning is shown and it is ignored.
+
+    {
+      "hooks": {
+        "PreToolUse": [{ "command": "node scripts/guard.js", "timeoutMs": 10000 }],
+        "PostToolUse": [{ "command": "node scripts/log-tool.js" }]
+      }
+    }
+
+| Event | Fires | Stdin payload | On failure |
+|---|---|---|---|
+| `SessionStart` | session starts | `{ event }` | notice only |
+| `UserPromptSubmit` | before each turn | `{ event, promptLength }` | notice only |
+| `PreToolUse` | before each tool call, after the permission decision | `{ event, tool, input }` | **blocks the call** (fail-closed) |
+| `PostToolUse` | after each tool result | `{ event, tool, isError }` | notice only |
+| `Stop` | when a turn ends | `{ event }` | ignored |
+| `SessionEnd` | session disposes | `{ event }` | notice only |
+
+Each entry runs with the event JSON on stdin and `CLOUDCODE_HOOK_EVENT` in
+the environment (PowerShell on Windows, `/bin/sh` elsewhere). The default
+timeout is 10 seconds (`timeoutMs` overrides per entry); a non-zero exit,
+spawn error, or timeout fails that entry, and stderr becomes the failure
+notice. Only `PreToolUse` blocks: the tool call is denied with `Blocked by
+PreToolUse hook: <stderr>` fed back to the model and the turn continues.
+Invalid entries are skipped with a warning at startup, never silently
+merged. Hook stdout is not fed back to the model, and packs cannot
+contribute hooks.
+
 ## Commands
 
 /help /new /clear /compact /config /context /init /model /permissions /provider
