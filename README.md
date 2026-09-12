@@ -322,12 +322,21 @@ contribute no servers.
       }
     }
 
-Check loaded servers and their tools with `/mcp` at runtime.
+Check loaded servers and their tools with `/mcp` at runtime. Servers can be
+toggled without editing config files:
+
+    cloudcode mcp                        # list servers by scope
+    cloudcode mcp disable <name> [--scope user|project]
+    cloudcode mcp enable <name> [--scope user|project]
+
+A toggle takes effect on restart or `/clear`. Pack-contributed servers cannot
+be disabled.
 
 ## Commands
 
-/help /clear /compact /config /init /model /permissions /provider /resume /set
-/cost /changes /diff /undo /review /mcp /skills /skill /theme /memory /exit
+/help /new /clear /compact /config /context /init /model /permissions /provider
+/resume /set /cost /changes /diff /undo /review /effort /statusline /mcp
+/skills /skill /theme /memory /exit
 Shift+Tab cycles permission modes. Esc interrupts. Ctrl+C twice exits.
 
 ## Change checkpoints and review
@@ -369,7 +378,13 @@ Everything under `~/.cloudcode/` (sessions, skills, memory, tasks, etc.) counts 
 
 ## Themes
 
-`/theme <name>` switches the color theme (no argument lists all available themes). Built in: `dark`, `light`, `mono`, `dracula`, `catppuccin`, `gruvbox`, `tokyonight`, `nord`, `one-dark`, `solarized`, `rosepine`, `github`, `monokai`. Drop your own theme JSON files into `~/.cloudcode/themes/*.json` — the filename (without `.json`) becomes the theme name, and a custom theme overrides a built-in of the same name.
+`/theme <name>` switches the color theme (no argument opens a picker that
+previews themes live, including light/dark color-scheme variants). Built in:
+`dark`, `light`, `mono`, `dracula`, `catppuccin`, `gruvbox`, `tokyonight`,
+`nord`, `one-dark`, `solarized`, `rosepine`, `github`, `monokai`. Drop your own
+theme JSON files into `~/.cloudcode/themes/*.json` — the filename (without
+`.json`) becomes the theme name, and a custom theme overrides a built-in of the
+same name. The desktop app also offers theme switching from the title bar menu.
 
 ## UX
 
@@ -386,23 +401,33 @@ Input supports cursor movement (←/→), command history (↑/↓, persisted to
 
 ## Desktop app
 
-An optional Electron shell that embeds the existing terminal UI: project and
-session navigation on the left, the TUI streamed over a PTY in the center,
-Git status and local Git actions on the right. The panel previews staged and
-unstaged diffs, stages or unstages individual files or all changes, creates and
-switches local branches, and commits staged changes. Destructive discard/reset
-actions and remote fetch/pull/push operations are intentionally unavailable.
-All agent execution, permissions, and project-trust
-decisions stay in the existing Node codebase; the renderer has no Node, shell,
-or filesystem access outside a closed preload API.
+An optional Electron shell with a native chat UI: project and session
+navigation on the left, a React chat pane in the center, Git status and local
+Git actions on the right. The renderer talks to a headless
+`cloudcode --gui-server` backend over newline-delimited JSON; all agent
+execution, permissions, and project-trust decisions stay in the existing Node
+codebase, and the renderer has no Node, shell, or filesystem access outside a
+closed preload API.
+
+The chat pane mirrors the terminal experience: slash commands with a
+discoverable dropdown and backend-driven argument completion, session
+rename/delete with `/new` parity, last project+session restore on launch, busy
+indicators on sessions with a turn in flight, and a global statusline footer
+mirroring the TUI segments. The composer supports multi-line input and live
+theme switching from the title bar menu.
+
+The Git panel shows branch status, the current commit, and recent history,
+previews staged and unstaged diffs, stages or unstages individual files or all
+changes, creates and switches local branches, commits staged changes, and runs
+fetch/pull/push. Destructive discard/reset actions are intentionally
+unavailable.
 
     npm run desktop:start   # build (tsc + vite) and launch Electron
     npm run desktop:build   # build only, no launch
 
-The shell spawns `dist/cli.js` in a PTY using `node.exe` from `PATH` (or the
-`CLOUDCODE_NODE_EXECUTABLE` absolute-path override). Selecting a session
-restarts the PTY with that session ID; generation-scoped events prevent output
-from the previous PTY leaking into it.
+The shell spawns `dist/cli.js --gui-server` as a child process using the Node
+executable from `PATH` (or the `CLOUDCODE_NODE_EXECUTABLE` absolute-path
+override).
 
 ## Release
 
