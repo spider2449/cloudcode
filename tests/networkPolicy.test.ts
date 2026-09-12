@@ -71,3 +71,17 @@ describe("webFetch capability", () => {
     expect(decideNetwork("unrestricted", request).allowed).toBe(true);
   });
 });
+
+describe("webSearch capability", () => {
+  const request = { capability: "webSearch", destination: "https://html.duckduckgo.com/html/" };
+
+  it("is denied under offlineStrict", () => {
+    expect(decideNetwork("offlineStrict", request).allowed).toBe(false);
+  });
+  it("is denied under providerOnly", () => {
+    expect(decideNetwork("providerOnly", request).allowed).toBe(false);
+  });
+  it("is allowed under unrestricted", () => {
+    expect(decideNetwork("unrestricted", request).allowed).toBe(true);
+  });
+});

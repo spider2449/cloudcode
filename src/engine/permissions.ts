@@ -39,11 +39,13 @@ export function ruleScope(toolName: string, input: Record<string, unknown>): Rul
 }
 
 /**
- * The host a remembered WebFetch rule would be matched against, or undefined
- * for anything else. Kept separate from RuleScope because hosts have no path
- * component: the controller stores them via rememberHost, not rememberDir.
+ * The host a remembered WebFetch/WebSearch rule would be matched against,
+ * or undefined for anything else. Kept separate from RuleScope because hosts
+ * have no path component: the controller stores them via rememberHost,
+ * not rememberDir. WebSearch always scopes to the search endpoint host.
  */
 export function hostScope(toolName: string, input: Record<string, unknown>): string | undefined {
+  if (toolName === "WebSearch") return "html.duckduckgo.com";
   if (toolName !== "WebFetch" || typeof input.url !== "string") return undefined;
   try {
     const url = new URL(input.url);
@@ -244,9 +246,9 @@ export function decidePermission(
   // existing fallthrough, in bypassPermissions it closes the escape hatch.
   // A prefix deny already returned "deny" above and is never softened here.
   if (toolName === "Bash" && bashOutside) return "ask";
-  // Remembered host rules for WebFetch (deny beats allow), then always ask —
-  // fetching is outbound network access, so it is never unconditionally allowed.
-  if (toolName === "WebFetch") {
+  // Remembered host rules for WebFetch/WebSearch (deny beats allow), then
+  // always ask — both are outbound network access, never unconditionally allowed.
+  if (toolName === "WebFetch" || toolName === "WebSearch") {
     const host = hostScope(toolName, input);
     if (host) {
       const ruling = store.checkHost(toolName, host);

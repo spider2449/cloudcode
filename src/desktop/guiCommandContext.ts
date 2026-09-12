@@ -27,6 +27,10 @@ export interface GuiCommandSession {
   setModel(model: string): Promise<void>;
   setEffort(level: EffortLevel): Promise<void>;
   setPermissionMode(mode: PermissionMode): Promise<void>;
+  // Flips the running session's network policy in place (no restart). Needed
+  // for session-only modes like unrestricted, which are never persisted and
+  // therefore never flow through restartSession.
+  setNetworkMode(mode: NetworkMode): Promise<void>;
   mcpStatus(): Promise<McpServerStatusEntry[]>;
   changeSummaries(latestOnly?: boolean): ChangeSummary[];
   changeDiff(path?: string): { content: string; truncated: boolean };
@@ -114,6 +118,10 @@ export function buildGuiCommandContext(deps: GuiCommandDeps): CommandContext {
     },
     setSessionNetworkMode: async mode => {
       deps.setCurrentNetworkMode(mode, false);
+      // The status footer reads the state string, but tools enforce the live
+      // session's own NetworkPolicy object — flip both, otherwise the footer
+      // shows unrestricted while denials still report the startup mode.
+      await deps.getSession().setNetworkMode(mode);
     },
     networkPolicy: () => new NetworkPolicy(deps.currentNetworkMode(), providerEndpoint(provider())),
     switchProvider: async name => {

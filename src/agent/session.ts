@@ -99,6 +99,10 @@ export class AgentSession {
   private runDeadline: number | undefined;
   private timeoutTimer: ReturnType<typeof setTimeout> | undefined;
   private clientAuth: { authToken: string; betaHeader?: string } | undefined;
+  // The live policy handed to the loop and task tools in start(). Stored so
+  // session-only mode changes (e.g. desktop /config networkMode unrestricted)
+  // can flip the running session instead of only the display string.
+  private networkPolicy: NetworkPolicy | undefined;
 
   constructor(private opts: AgentSessionOptions) {
     this.lsp = new LspManager(opts.lspRegistry);
@@ -129,6 +133,7 @@ export class AgentSession {
       this.opts.networkMode ?? "providerOnly", endpoint
     );
     networkPolicy.require({ capability: "provider", destination: endpoint });
+    this.networkPolicy = networkPolicy;
     const probe = (this.opts.sandboxProbe ?? probeSandboxCached)();
     // Wrapping applies ONLY under offlineStrict: in providerOnly/unrestricted
     // children legitimately need the network and must not be confined.
@@ -385,6 +390,18 @@ export class AgentSession {
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {
     this.loop?.setPermissionMode(mode);
+  }
+
+  /** Flip the running session's network policy in place. The loop and task
+   * tools hold the same NetworkPolicy object, so setMode propagates without
+   * a session restart (mirrors NetworkController.setMode in the TUI). */
+  async setNetworkMode(mode: NetworkMode): Promise<void> {
+    this.networkPolicy?.setMode(mode);
+  }
+
+  /** The live policy's current mode (undefined before start()). */
+  currentNetworkMode(): NetworkMode | undefined {
+    return this.networkPolicy?.mode;
   }
 
   async refreshSystemPrompt(): Promise<void> {

@@ -11,6 +11,7 @@ export type NetworkCapability =
   | "gitRemote"
   | "packInstaller"
   | "webFetch"
+  | "webSearch"
   | "oauth";
 
 export type NetworkDenialReason =

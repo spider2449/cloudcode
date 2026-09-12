@@ -58,6 +58,20 @@ describe("AgentSession", () => {
     expect(makeClient).not.toHaveBeenCalled();
   });
 
+  it("flips the live network policy via setNetworkMode without a restart", async () => {
+    vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("ok")]));
+    const session = new AgentSession({
+      providerName: "local", provider: { kind: "openai", baseUrl: "http://127.0.0.1:8080" },
+      permissionMode: "default", networkMode: "providerOnly", cwd: "/p",
+      onMessage: () => {}, onPermissionRequest: () => {}, onSessionId: () => {}
+    });
+    session.start();
+    expect(session.currentNetworkMode()).toBe("providerOnly");
+    await session.setNetworkMode("unrestricted");
+    expect(session.currentNetworkMode()).toBe("unrestricted");
+    await session.dispose();
+  });
+
   it("removes ordinary Bash from strict loopback sessions", async () => {
     vi.mocked(makeClient).mockReturnValue(fakeClient([textTurn("ok")]));
     const session = new AgentSession({

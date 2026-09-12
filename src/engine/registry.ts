@@ -6,6 +6,7 @@ import { bashTool } from "./tools/bash.js";
 import { globTool } from "./tools/glob.js";
 import { grepTool } from "./tools/grep.js";
 import { webfetchTool } from "./tools/webfetch.js";
+import { websearchTool } from "./tools/websearch.js";
 import { createTaskTool, type TaskToolDeps } from "./tools/task.js";
 import { createTodoTool, type TodoStore } from "./tools/todo.js";
 import { createBashOutputTool, createKillShellTool } from "./tools/bashOut.js";
@@ -19,7 +20,7 @@ export function builtinTools(options: {
   bgShells?: BackgroundShellManager;
 } = {}): ToolDef[] {
   const tools = [
-    readTool, writeTool, editTool, bashTool, globTool, grepTool, webfetchTool,
+    readTool, writeTool, editTool, bashTool, globTool, grepTool, webfetchTool, websearchTool,
     definitionTool, referencesTool, hoverTool, symbolsTool, diagnosticsTool,
     ...(options.task ? [createTaskTool(options.task)] : []),
     createTodoTool(options.todoStore),

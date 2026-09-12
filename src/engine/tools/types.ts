@@ -19,10 +19,10 @@ export interface ToolContext {
   fileMutations?: FileMutationObserver;
   /** Session-owned background shell manager (for Bash run_in_background). */
   bgShells?: import("./backgroundShells.js").BackgroundShellManager;
-  /** Outbound-network gate for tools like WebFetch. Structural on purpose:
+  /** Outbound-network gate for tools like WebFetch/WebSearch. Structural on purpose:
    * engine code must not depend on the agent-layer NetworkPolicy class. */
   networkPolicy?: {
-    require(request: { capability: "webFetch"; destination: string }): void;
+    require(request: { capability: "webFetch" | "webSearch"; destination: string }): void;
   };
   /** Verified no-network wrapper for child commands. Present only when a
    * sandbox adapter is active (offlineStrict + verified probe). Shell-spawning

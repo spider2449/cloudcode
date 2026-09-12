@@ -21,16 +21,19 @@ vi.mock("../src/ui/theme.js", async importOriginal => ({
   loadThemeName: vi.fn().mockReturnValue("dark")
 }));
 
-function fakeSession(): GuiCommandSession & { sent: string[] } {
+function fakeSession(): GuiCommandSession & { sent: string[]; networkModes: string[] } {
   const sent: string[] = [];
+  const networkModes: string[] = [];
   return {
     sent,
+    networkModes,
     tools: [],
     sessionId: "sess-1",
     send: (text: string) => { sent.push(text); },
     setModel: async () => {},
     setEffort: async () => {},
     setPermissionMode: async () => {},
+    setNetworkMode: async (mode: string) => { networkModes.push(mode); },
     mcpStatus: async () => [],
     changeSummaries: () => [],
     changeDiff: () => ({ content: "No session-owned changes.", truncated: false }),
@@ -177,5 +180,14 @@ describe("gui command context against the real registry", () => {
     expect(t.errors).toEqual([]);
     expect(t.emittedThemes).toEqual([]);
     expect(t.notices.some(n => n.includes("Unknown command: /theme"))).toBe(true);
+  });
+  it("/config networkMode unrestricted flips the live session, not just state", async () => {
+    // Regression: the footer read the state string while tools enforced the
+    // session's frozen startup policy, so denials still said providerOnly.
+    const t = setup();
+    await t.slash("/config networkMode unrestricted");
+    expect(t.errors).toEqual([]);
+    expect(t.session.networkModes).toEqual(["unrestricted"]);
+    expect(t.notices).toContain("networkMode = unrestricted (session only, not saved)");
   });
 });
