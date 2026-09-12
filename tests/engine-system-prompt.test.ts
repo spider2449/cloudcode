@@ -64,6 +64,7 @@ describe("skills section", () => {
     const p = buildSystemPrompt(cwd, { configBase: tmp(), autoMemory: false });
     expect(p).toContain("# Available skills");
     expect(p).toContain("- commit: Write a commit");
+    expect(p).toContain("load its full instructions with the Skill tool");
     expect(p).not.toContain("third-party");
   });
 

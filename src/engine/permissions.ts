@@ -264,6 +264,11 @@ export function decidePermission(
   // TodoWrite only mutates the session's internal checklist — nothing on
   // disk, nothing outbound — so it never needs a prompt in any mode.
   if (toolName === "TodoWrite") return "allow";
+  // Skill loads a user-installed SKILL.md (project, user, pack, or repo dir).
+  // Descriptions already ship in the system prompt unconditionally, so the
+  // content is no new trust level — and prompting per load would push the
+  // model back to guessing instead of reading the instructions.
+  if (toolName === "Skill") return "allow";
   // BashOutput/KillShell only touch state from an already-approved background
   // command, so they never prompt in any mode.
   if (toolName === "BashOutput" || toolName === "KillShell") return "allow";

@@ -53,7 +53,7 @@ export function buildSystemPrompt(cwd: string, opts: SystemPromptOptions = {}): 
       const origin = s.source.startsWith("repo:") ? ` (third-party skill from ${s.source.slice(5)})` : "";
       return `- ${s.name}: ${s.description}${origin}`;
     }).join("\n");
-    prompt += `\n\n# Available skills\nWhen a task matches a skill, follow that skill's instructions.\n${list}`;
+    prompt += `\n\n# Available skills\nWhen a task matches a skill, load its full instructions with the Skill tool, then follow them.\n${list}`;
   }
 
   if (autoMemory) {

@@ -220,6 +220,15 @@ describe("Task permissions", () => {
   });
 });
 
+describe("Skill permissions", () => {
+  it("is always allowed: skill files are user-installed config already listed in the prompt", () => {
+    const store = freshStore();
+    expect(decidePermission("Skill", { skill: "commit" }, "default", store, CWD)).toBe("allow");
+    expect(decidePermission("Skill", { skill: "commit" }, "acceptEdits", store, CWD)).toBe("allow");
+    expect(decidePermission("Skill", { skill: "commit" }, "bypassPermissions", store, CWD)).toBe("allow");
+  });
+});
+
 describe("memory file permissions", () => {
   const MEM = memoryDir(CWD);
   const USER_MD = userMemoryFile();

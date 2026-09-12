@@ -7,6 +7,7 @@ import { globTool } from "./tools/glob.js";
 import { grepTool } from "./tools/grep.js";
 import { webfetchTool } from "./tools/webfetch.js";
 import { websearchTool } from "./tools/websearch.js";
+import { createSkillTool, type SkillLoader } from "./tools/skill.js";
 import { createTaskTool, type TaskToolDeps } from "./tools/task.js";
 import { createTodoTool, type TodoStore } from "./tools/todo.js";
 import { createBashOutputTool, createKillShellTool } from "./tools/bashOut.js";
@@ -18,9 +19,11 @@ export function builtinTools(options: {
   task?: TaskToolDeps;
   todoStore?: TodoStore;
   bgShells?: BackgroundShellManager;
+  skillLoader?: SkillLoader;
 } = {}): ToolDef[] {
   const tools = [
     readTool, writeTool, editTool, bashTool, globTool, grepTool, webfetchTool, websearchTool,
+    createSkillTool(options.skillLoader),
     definitionTool, referencesTool, hoverTool, symbolsTool, diagnosticsTool,
     ...(options.task ? [createTaskTool(options.task)] : []),
     createTodoTool(options.todoStore),
