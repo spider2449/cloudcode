@@ -14,10 +14,10 @@ function project(hooksJson?: string) {
   return cwd;
 }
 
-function fakeExecutor(result: { code: number; stderr?: string }, calls: Array<{ command: string; input: string }> = []) {
+function fakeExecutor(result: { code: number; stdout?: string; stderr?: string }, calls: Array<{ command: string; input: string }> = []) {
   return async (command: string, options: { input: string }) => {
     calls.push({ command, input: options.input });
-    return { code: result.code, stderr: result.stderr ?? "" };
+    return { code: result.code, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
   };
 }
 
@@ -92,10 +92,44 @@ describe("HooksRunner", () => {
 
   it("returns success without executing anything when no entries exist", async () => {
     let executed = 0;
-    const runner = new HooksRunner({}, "/tmp", async () => { executed += 1; return { code: 0 }; });
+    const runner = new HooksRunner({}, "/tmp", async () => { executed += 1; return { code: 0, stdout: "", stderr: "" }; });
     const outcome = await runner.run("Stop", {});
     expect(outcome.blocked).toBe(false);
+    expect(outcome.context).toBe("");
     expect(executed).toBe(0);
+  });
+
+  it("collects successful stdout as context and drops empty output", async () => {
+    const runner = new HooksRunner(
+      { PostToolUse: [{ command: "a" }, { command: "b" }, { command: "c" }] },
+      "/tmp",
+      async command => ({ code: 0, stdout: command === "a" ? "  first  " : command === "b" ? "   " : "second", stderr: "" })
+    );
+    const outcome = await runner.run("PostToolUse", { tool: "Edit" });
+    expect(outcome.blocked).toBe(false);
+    expect(outcome.notices).toEqual([]);
+    expect(outcome.context).toBe("first\nsecond");
+  });
+
+  it("excludes failed-entry stdout in favor of the stderr notice", async () => {
+    const runner = new HooksRunner({ PreToolUse: [{ command: "guard" }] }, "/tmp",
+      async () => ({ code: 1, stdout: "should not surface", stderr: "denied" }));
+    const outcome = await runner.run("PreToolUse", { tool: "Edit" });
+    expect(outcome.blocked).toBe(true);
+    expect(outcome.context).toBe("");
+    expect(outcome.notices.join(" ")).toContain("denied");
+  });
+
+  it("caps per-entry and total context", async () => {
+    const big = "x".repeat(3000);
+    const runner = new HooksRunner(
+      { PostToolUse: [{ command: "a" }, { command: "b" }, { command: "c" }] },
+      "/tmp",
+      async () => ({ code: 0, stdout: big, stderr: "" })
+    );
+    const outcome = await runner.run("PostToolUse", {});
+    expect(outcome.context.length).toBeLessThan(3000 * 3);
+    expect(outcome.context).toContain("[truncated]");
   });
 });
 

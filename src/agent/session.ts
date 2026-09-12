@@ -205,10 +205,11 @@ export class AgentSession {
       hooks: {
         guard: async (toolName, input) => {
           const outcome = await hooksRunner.run("PreToolUse", { tool: toolName, input });
-          return { blocked: outcome.blocked, reason: outcome.notices.join("; ") || undefined };
+          return { blocked: outcome.blocked, reason: outcome.notices.join("; ") || undefined, context: outcome.context || undefined };
         },
         observe: async (event, payload) => {
-          await hooksRunner.run(event, payload);
+          const outcome = await hooksRunner.run(event, payload);
+          return outcome.context;
         }
       },
       onMessage: this.opts.onMessage,

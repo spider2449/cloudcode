@@ -29,9 +29,14 @@ export interface HooksConfig {
 export type HookExecutor = (
   command: string,
   options: { input: string; timeoutMs: number }
-) => Promise<{ code: number; stderr: string }>;
+) => Promise<{ code: number; stdout: string; stderr: string }>;
 
-export interface HookOutcome { blocked: boolean; notices: string[] }
+export interface HookOutcome { blocked: boolean; notices: string[]; context: string }
+
+// Model-visible hook output is bounded: a chatty hook must not crowd the
+// tool result it annotates out of the context window.
+export const MAX_HOOK_ENTRY_CONTEXT_CHARS = 2000;
+export const MAX_HOOK_OUTCOME_CONTEXT_CHARS = 4000;
 
 function isHookEntry(value: unknown): value is HookEntry {
   if (!value || typeof value !== "object") return false;
@@ -140,7 +145,7 @@ const defaultExecutor: HookExecutor = (command, options) =>
       timeout: options.timeoutMs,
       windowsHide: true,
       env: { ...process.env, CLOUDCODE_HOOK_EVENT: eventName }
-    }, (err, _stdout, stderr) => {
+    }, (err, stdout, stderr) => {
       // execFile passes err === null on success; guard before reading fields.
       const killed = err !== null && (err as { killed?: boolean }).killed === true;
       const code = err === null
@@ -148,6 +153,7 @@ const defaultExecutor: HookExecutor = (command, options) =>
         : typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : 1;
       resolvePromise({
         code,
+        stdout,
         stderr: `${killed ? `[hook timed out after ${options.timeoutMs}ms]\n` : ""}${stderr}`
       });
     });
@@ -161,7 +167,9 @@ const defaultExecutor: HookExecutor = (command, options) =>
 /**
  * Runs every registered entry for an event sequentially. Failures are always
  * isolated to their entry; whether a failure blocks depends on the event
- * (only PreToolUse is fail-closed).
+ * (only PreToolUse is fail-closed). Successful stdout becomes outcome
+ * context (model-visible); failed-entry stdout is discarded in favor of the
+ * stderr notice.
  */
 export class HooksRunner {
   constructor(
@@ -180,6 +188,7 @@ export class HooksRunner {
     payload: Record<string, unknown>
   ): Promise<HookOutcome> {
     const notices: string[] = [];
+    const contexts: string[] = [];
     let blocked = false;
     for (const entry of entries) {
       const timeoutMs = entry.timeoutMs ?? DEFAULT_HOOK_TIMEOUT_MS;
@@ -190,12 +199,28 @@ export class HooksRunner {
           const detail = result.stderr.trim() || `exit code ${result.code}`;
           notices.push(`hook "${entry.command}" failed: ${detail}`);
           if (event === "PreToolUse") blocked = true;
+        } else {
+          const trimmed = result.stdout.trim();
+          if (trimmed !== "") {
+            contexts.push(
+              trimmed.length > MAX_HOOK_ENTRY_CONTEXT_CHARS
+                ? trimmed.slice(0, MAX_HOOK_ENTRY_CONTEXT_CHARS) + "\n[truncated]"
+                : trimmed
+            );
+          }
         }
       } catch (err) {
         notices.push(`hook "${entry.command}" failed: ${err instanceof Error ? err.message : String(err)}`);
         if (event === "PreToolUse") blocked = true;
       }
     }
-    return { blocked, notices };
+    const joined = contexts.join("\n");
+    return {
+      blocked,
+      notices,
+      context: joined.length > MAX_HOOK_OUTCOME_CONTEXT_CHARS
+        ? joined.slice(0, MAX_HOOK_OUTCOME_CONTEXT_CHARS) + "\n[truncated]"
+        : joined
+    };
   }
 }

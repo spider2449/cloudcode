@@ -365,8 +365,16 @@ spawn error, or timeout fails that entry, and stderr becomes the failure
 notice. Only `PreToolUse` blocks: the tool call is denied with `Blocked by
 PreToolUse hook: <stderr>` fed back to the model and the turn continues.
 Invalid entries are skipped with a warning at startup, never silently
-merged. Hook stdout is not fed back to the model, and packs cannot
-contribute hooks.
+merged.
+
+Successful stdout from `PreToolUse`/`PostToolUse` hooks is fed back into the
+model as context: the PreToolUse output is prepended to the tool result as
+`[PreToolUse hook output]`, the PostToolUse output appended as
+`[PostToolUse hook output]`. Failed-entry stdout is discarded in favor of the
+stderr notice, and stdout from the other four events is discarded (there is
+no turn context to attach it to). Output is hook-script data, so treat it as
+untrusted; each entry is capped at 2000 characters and each event outcome at
+4000. Packs cannot contribute hooks.
 
 ## Commands
 

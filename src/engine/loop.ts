@@ -14,6 +14,7 @@ import { EFFORT_HEADROOM, clampEffortHeadroom, allowsDisabledThinking, type Effo
 import { DEFAULT_CONTEXT_WINDOW } from "../agent/providers.js";
 import type { LspManager } from "./lsp/manager.js";
 import { appendDiagnostics } from "./lsp/autoInject.js";
+import { withHookContext, hookContextBlock } from "./hookContext.js";
 import { RunLimitError, validateRunLimits, type RunLimitKind, type RunLimits } from "./runLimits.js";
 
 const MAX_TOKENS = 8192;
@@ -59,9 +60,9 @@ export interface EngineOptions {
    * engine code never reads hook config or spawns processes itself. */
   hooks?: {
     /** Runs before an approved tool executes; blocked=true rejects the call. */
-    guard(toolName: string, input: Record<string, unknown>): Promise<{ blocked: boolean; reason?: string }>;
-    /** Observational; failures inside implementations are not the loop's concern. */
-    observe(event: "PostToolUse" | "Stop", payload: Record<string, unknown>): Promise<void>;
+    guard(toolName: string, input: Record<string, unknown>): Promise<{ blocked: boolean; reason?: string; context?: string }>;
+    /** Observational; returns model-visible context appended to the tool result. */
+    observe(event: "PostToolUse" | "Stop", payload: Record<string, unknown>): Promise<string>;
   };
   effort?: EffortLevel;
   contextWindow?: number;
@@ -561,12 +562,10 @@ export class EngineLoop {
       decision = (await this.opts.requestPermission(block.name, block.input)) ? "allow" : "deny";
     }
     if (decision === "deny") return deniedResult("User denied this tool use");
-    if (this.opts.hooks) {
-      const verdict = await this.opts.hooks.guard(block.name, block.input);
-      if (verdict.blocked) {
-        return deniedResult(`Blocked by PreToolUse hook${verdict.reason ? `: ${verdict.reason}` : ""}`);
-      }
-    }
+    const verdict = this.opts.hooks ? await this.opts.hooks.guard(block.name, block.input) : undefined;
+    if (verdict?.blocked) return deniedResult(`Blocked by PreToolUse hook${verdict.reason ? `: ${verdict.reason}` : ""}`);
+    const preContext = verdict?.context ?? "";
+    let postContext = "";
     try {
       const out = await tool.execute(block.input, {
         cwd: this.opts.cwd,
@@ -578,19 +577,20 @@ export class EngineLoop {
         sandbox: this.opts.sandbox
       });
       if (out.images && out.images.length > 0) {
-        const blocks: unknown[] = [{ type: "text", text: out.content }];
+        const blocks: unknown[] = [{ type: "text", text: withHookContext(out.content, preContext, "") }];
         for (const im of out.images) {
           blocks.push({
             type: "image",
             source: { type: "base64", media_type: im.mediaType, data: im.base64 }
           });
         }
+        if (postContext) blocks.push({ type: "text", text: hookContextBlock("PostToolUse", postContext) });
         return { type: "tool_result", tool_use_id: block.id, content: blocks, is_error: out.isError === true };
       }
       if (this.opts.hooks) {
-        await this.opts.hooks.observe("PostToolUse", { tool: block.name, isError: out.isError === true });
+        postContext = await this.opts.hooks.observe("PostToolUse", { tool: block.name, isError: out.isError === true });
       }
-      const content = await appendDiagnostics(block.name, block.input, out.content, this.opts.lsp, this.opts.cwd);
+      const content = withHookContext(await appendDiagnostics(block.name, block.input, out.content, this.opts.lsp, this.opts.cwd), preContext, postContext);
       return { type: "tool_result", tool_use_id: block.id, content, is_error: out.isError === true };
     } catch (err) {
       return deniedResult(`Tool failed: ${err instanceof Error ? err.message : String(err)}`);

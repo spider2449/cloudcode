@@ -91,7 +91,7 @@ describe("EngineLoop knobs", () => {
 describe("EngineLoop hooks", () => {
   const blockingGuard = (blocked: boolean) => ({
     guard: async () => ({ blocked, reason: blocked ? "policy says no" : undefined }),
-    observe: async () => {}
+    observe: async () => ""
   });
 
   it("a blocked PreToolUse becomes an error tool_result and the turn continues", async () => {
@@ -129,11 +129,60 @@ describe("EngineLoop hooks", () => {
       requestPermission: async () => true,
       hooks: {
         guard: async () => ({ blocked: false }),
-        observe: async event => { seenEvents.push(event); }
+        observe: async event => { seenEvents.push(event); return ""; }
       }
     });
     await loop.runTurn("go", new AbortController().signal);
     expect(seenEvents).toEqual(["PostToolUse", "Stop"]);
+  });
+
+  it("prepends PreToolUse stdout and appends PostToolUse stdout to the tool result", async () => {
+    const received: unknown[] = [];
+    const loop = new EngineLoop({
+      client: fakeClient([toolUseTurn(), textTurn("done")]),
+      model: "test-model",
+      systemPrompt: "sys",
+      tools: [echoTool],
+      cwd: process.cwd(),
+      permissionMode: "bypassPermissions",
+      store: new PermissionStore(mkdtempSync(join(tmpdir(), "cc-loop-hc-"))),
+      onMessage: m => received.push(m),
+      requestPermission: async () => true,
+      hooks: {
+        guard: async () => ({ blocked: false, context: "check the style guide" }),
+        observe: async () => "format with prettier"
+      }
+    });
+    await loop.runTurn("go", new AbortController().signal);
+    const toolResults = received.filter(m => (m as { type?: string }).type === "tool_result");
+    expect(toolResults).toHaveLength(1);
+    const content = (toolResults[0] as { content: string }).content;
+    expect(content).toContain("[PreToolUse hook output]\ncheck the style guide");
+    expect(content).toContain("[PostToolUse hook output]\nformat with prettier");
+    expect(content.indexOf("[PreToolUse hook output]")).toBeLessThan(content.indexOf("[PostToolUse hook output]"));
+  });
+
+  it("leaves the tool result untouched when hooks emit no stdout", async () => {
+    const received: unknown[] = [];
+    const loop = new EngineLoop({
+      client: fakeClient([toolUseTurn(), textTurn("done")]),
+      model: "test-model",
+      systemPrompt: "sys",
+      tools: [echoTool],
+      cwd: process.cwd(),
+      permissionMode: "bypassPermissions",
+      store: new PermissionStore(mkdtempSync(join(tmpdir(), "cc-loop-hn-"))),
+      onMessage: m => received.push(m),
+      requestPermission: async () => true,
+      hooks: {
+        guard: async () => ({ blocked: false }),
+        observe: async () => ""
+      }
+    });
+    await loop.runTurn("go", new AbortController().signal);
+    const toolResults = received.filter(m => (m as { type?: string }).type === "tool_result");
+    expect(toolResults).toHaveLength(1);
+    expect((toolResults[0] as { content: string }).content).not.toContain("hook output");
   });
 });
 
