@@ -92,6 +92,10 @@ function setThemeVars(resolved: string, vars: GuiThemeVars): void {
   style.setProperty("--gui-accent", vars.accent);
   style.setProperty("--gui-border", vars.border);
   style.setProperty("--gui-error", vars.error);
+  // Native controls (scrollbars, selects, inputs) follow the theme too;
+  // without this a light theme keeps dark scrollbars. The stylesheet also
+  // carries a :root[data-theme="light"] rule as a second layer.
+  style.setProperty("color-scheme", resolved === "light" ? "light" : "dark");
 }
 
 // Previews a theme without persisting anything: the in-app menu calls this
