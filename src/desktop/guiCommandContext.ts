@@ -52,6 +52,10 @@ export interface GuiCommandDeps {
   setCurrentNetworkMode(mode: NetworkMode, persist: boolean): void;
   sessionCost(): number;
   getSession(): GuiCommandSession;
+  // Runs a slash-initiated prompt as a tracked turn (output streams,
+  // permission can pop, overlap is reported). The TUI equivalent is
+  // sendUserMessage; headless shells must not call session.send directly.
+  runSlashPrompt(text: string): void;
   // Disposes the live session and creates a fresh one (same or new provider).
   restartSession(provider?: string): Promise<GuiCommandSession>;
   // Switches the GUI shell to a fresh anonymous session (the New Session
@@ -172,7 +176,7 @@ export function buildGuiCommandContext(deps: GuiCommandDeps): CommandContext {
     },
     sendPrompt: text => {
       for (const path of missingMentions(text, deps.cwd)) deps.notice(`Note: ${path} does not exist (yet)`);
-      deps.getSession().send(text);
+      deps.runSlashPrompt(text);
     },
     listSkills: () => formatSkillList(loadSkills(deps.cwd)),
     // No-op: the headless registry is rebuilt from disk on every slash

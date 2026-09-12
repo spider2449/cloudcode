@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applySuggestionText, busyLabel, describeSlashInput, isNewSessionEvent, parseSessionIdEvent } from "../desktop/renderer/chatPane.js";
+import { applySuggestionText, busyLabel, describeSlashInput, echoUserBubble, isLiveTurnEvent, isNewSessionEvent, parseSessionIdEvent, shouldStickToBottom, STICK_THRESHOLD_PX } from "../desktop/renderer/chatPane.js";
 
 describe("slash input classification", () => {
   it("treats plain text as non-slash", () => {
@@ -22,6 +22,31 @@ describe("slash input classification", () => {
   it("keeps completing arguments after the first space", () => {
     expect(describeSlashInput("/config th")).toEqual({ kind: "args", prefix: "/config th" });
     expect(describeSlashInput("/model a-model")).toEqual({ kind: "args", prefix: "/model a-model" });
+  });
+});
+
+describe("user bubble echo", () => {
+  it("echoes plain prompts but not executed slash commands", () => {
+    expect(echoUserBubble("hello")).toBe(true);
+    expect(echoUserBubble("/permissions bypassPermissions")).toBe(false);
+    expect(echoUserBubble("/cost")).toBe(false);
+  });
+});
+
+describe("transcript stickiness", () => {
+  it("sticks only near the bottom", () => {
+    expect(shouldStickToBottom(1000, 960, 100)).toBe(true);
+    expect(shouldStickToBottom(1000, 500, 100)).toBe(false);
+    expect(STICK_THRESHOLD_PX).toBeGreaterThan(0);
+  });
+});
+
+describe("turn event ownership", () => {
+  it("applies own and history deltas, drops background-session deltas", () => {
+    expect(isLiveTurnEvent("turn-1", ["turn-1"])).toBe(true);
+    expect(isLiveTurnEvent("history-1-2", [])).toBe(true);
+    expect(isLiveTurnEvent("other-turn", ["turn-1"])).toBe(false);
+    expect(isLiveTurnEvent("other-turn", [])).toBe(false);
   });
 });
 

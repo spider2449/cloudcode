@@ -219,7 +219,34 @@ if (parsed.kind === "guiserver") {
       contextPct: state.contextPct,
       elapsedMs: Date.now() - state.startedAt,
       statusLineItems: loadSettings().statusLineItems ?? DEFAULT_STATUS_LINE_ITEMS,
+      inFlightId: inFlight.get(sessionKey(state.cwd, state.sessionId)),
     };
+  }
+  // Slash-initiated turns (/init, /review, skill prompts): same tracking as
+  // runTurn so their output streams to the shell and their permission
+  // requests can pop. Previously sendPrompt bypassed inFlight entirely, so
+  // its text_deltas were swallowed, its prompts auto-denied, and its
+  // turnActive wedged the session. Fire-and-forget like the TUI (the slash
+  // request's own done still comes from GuiServer.handle's finally).
+  function runSlashPrompt(key: string, state: GuiKeyState, id: string, text: string): void {
+    if (inFlight.has(key)) {
+      emit({ id, type: "error", text: "A turn is already running for this session." });
+      return;
+    }
+    const session = getSession(key, state);
+    state.turns += 1;
+    recordGuiTurn(guiSessionIndex, {
+      cwd: state.cwd, provider: state.providerName, sessionId: session.sessionId, text
+    });
+    inFlight.set(key, id);
+    void new Promise<void>((resolve) => {
+      turnDone.set(key, resolve);
+      session.send(text);
+    }).then(() => {
+      if (state.sessionId === undefined && session.sessionId !== undefined) {
+        emit({ id, type: "session_id", sessionId: session.sessionId });
+      }
+    });
   }
   function buildContext(cwd: string, id: string, key: string, state: GuiKeyState): import("./commands/types.js").CommandContext {
     return buildGuiCommandContext({
@@ -236,6 +263,7 @@ if (parsed.kind === "guiserver") {
       setCurrentNetworkMode: mode => { state.networkMode = mode; },
       sessionCost: () => state.costUsd,
       getSession: () => getSession(key, state),
+      runSlashPrompt: text => runSlashPrompt(key, state, id, text),
       restartSession: async provider => {
         if (provider) state.providerName = provider;
         await disposeKey(key);
@@ -416,15 +444,22 @@ if (parsed.kind === "guiserver") {
         }
         if (request.kind === "abort") {
           if (typeof request.id === "string") {
-            let cwd: string | undefined;
-            for (const [key, value] of inFlight) {
+            let key: string | undefined;
+            for (const [candidate, value] of inFlight) {
               if (value === request.id) {
-                cwd = key;
+                key = candidate;
                 break;
               }
             }
             // Unknown ids no-op: never fall back to another session.
-            if (cwd !== undefined) void sessions.get(cwd)?.interrupt();
+            if (key !== undefined) {
+              // Deny an outstanding permission prompt first: the loop awaits
+              // requestPermission with no abort awareness, so interrupt()
+              // alone would leave the turn (and inFlight) wedged forever.
+              pendingPermission.get(request.id)?.(false);
+              pendingPermission.delete(request.id);
+              void sessions.get(key)?.interrupt();
+            }
           }
           continue;
         }

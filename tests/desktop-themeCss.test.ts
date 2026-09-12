@@ -49,6 +49,7 @@ describe("desktop theme css follows gui vars", () => {
       ".slash-complete",
       ".desktop-dialog",
       ".session-card.active",
+      ".session-busy",
       ".git-diff pre",
       ".new-session",
       ".inspector"

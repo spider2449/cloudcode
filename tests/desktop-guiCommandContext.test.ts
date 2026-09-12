@@ -45,6 +45,7 @@ function setup() {
   const notices: string[] = [];
   const newSessionRequests: string[] = [];
   const emittedThemes: string[] = [];
+  const slashPrompts: string[] = [];
   const errors: unknown[] = [];
   const session = fakeSession();
   const store = new PermissionStore(mkdtempSync(join(tmpdir(), "gui-perm-")));
@@ -68,6 +69,7 @@ function setup() {
     setCurrentNetworkMode: () => {},
     sessionCost: () => 0.0123,
     getSession: () => session,
+    runSlashPrompt: text => { slashPrompts.push(text); session.send(text); },
     restartSession: async (name?: string) => {
       if (name) providerName = name;
       return session;
@@ -86,7 +88,7 @@ function setup() {
     });
   }
   const ctx: CommandContext = buildGuiCommandContext(deps);
-  return { notices, errors, session, slash, ctx, newSessionRequests, emittedThemes };
+  return { notices, errors, session, slash, ctx, newSessionRequests, emittedThemes, slashPrompts };
 }
 
 describe("gui command context against the real registry", () => {
@@ -128,6 +130,15 @@ describe("gui command context against the real registry", () => {
     await slash("/init");
     expect(errors).toEqual([]);
     expect(session.sent).toEqual(["/init"]);
+  });
+  it("routes slash prompts through runSlashPrompt so turns are tracked", async () => {
+    const t = setup();
+    await t.slash("/init");
+    expect(t.errors).toEqual([]);
+    // Tracked (streams output, can pop permission) instead of a bare
+    // session.send whose events were swallowed and prompts auto-denied.
+    expect(t.slashPrompts).toEqual(["/init"]);
+    expect(t.session.sent).toEqual(["/init"]);
   });
   it("reports current working directory", () => {
     const { ctx } = setup();

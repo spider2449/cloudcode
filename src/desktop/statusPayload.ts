@@ -20,6 +20,10 @@ export interface DesktopStatusPayload {
   // Renderer-only overlay: the gui-server backend never sets this (it has no
   // git view); the shell fills it from its gitState poll before formatting.
   branchInfo?: { name: string; dirty: boolean };
+  // Request id of the turn currently running on this session, if any. Lets
+  // the shell resurface busy state (Thinking + Stop) after a session switch
+  // instead of failing the next send with "already running".
+  inFlightId?: string;
 }
 
 export function formatDesktopTokens(n: number): string {

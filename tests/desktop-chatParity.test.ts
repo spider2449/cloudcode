@@ -138,6 +138,53 @@ describe("slash parity", () => {
     expect(cli).toContain("emitStatusLinePicker");
     const css = readFileSync("desktop/renderer/style.css", "utf8");
     expect(css).toContain(".statusline");
+    // The footer is a second app-shell grid row: row-1 children must not
+    // carry a fixed 100vh height or they cover the footer (input overlap).
+    const chatMain = css.match(/\.chat-main \{[^}]*\}/)?.[0] ?? "";
+    expect(chatMain).not.toContain("height: 100vh");
+    expect(chatMain).toContain("min-height: 0");
+  });
+  it("interrupted turns always settle: ESC aborts, abort denies prompts, backend death resets", () => {
+    const pane = readFileSync("desktop/renderer/chatPane.tsx", "utf8");
+    // TUI parity: Esc interrupts the running turn (IME-composing exempt).
+    // Window-level (not textarea-level): focus is usually on Send or the
+    // transcript while a turn runs, so a textarea handler never fires.
+    expect(pane).toContain('"Escape"');
+    expect(pane).toContain("pendingIds[pendingIds.length - 1]");
+    expect(pane).toContain('addEventListener("keydown"');
+    expect(pane).toContain('closest?.(".chat-pane")');
+    // Backend death must clear local pending/prompt state, or later Sends
+    // are silently swallowed with no response and no error.
+    expect(pane).toContain('event.id === "backend"');
+    // Aborting drops the dead prompt for that turn.
+    expect(pane).toContain("permissionRef");
+    const cli = readFileSync("src/cli.tsx", "utf8");
+    // Abort denies the outstanding permission first: the loop awaits
+    // requestPermission with no abort awareness, so interrupt() alone wedges.
+    expect(cli).toContain("pendingPermission.get(request.id)?.(false)");
+    // Slash-initiated turns are tracked (streamed, can pop permission).
+    expect(cli).toContain("runSlashPrompt");
+  });
+  it("session switches resurface background turns instead of erroring", () => {
+    // Backend tags status with the running turn id; the pane reseeds its
+    // pending state from it, so a switch-back shows Thinking + Stop rather
+    // than failing the next send with "already running".
+    const cli = readFileSync("src/cli.tsx", "utf8");
+    expect(cli).toContain("inFlightId");
+    const pane = readFileSync("desktop/renderer/chatPane.tsx", "utf8");
+    expect(pane).toContain("chatStatus");
+    expect(pane).toContain("inFlightId");
+    // Background-session deltas must not pollute the transcript on screen.
+    expect(pane).toContain("isLiveTurnEvent");
+  });
+  it("busy sessions are marked and repo switches warn (repo isolation)", () => {
+    const shell = readFileSync("desktop/renderer/src.tsx", "utf8");
+    expect(shell).toContain("busyTurns");
+    expect(shell).toContain("isSessionBusy");
+    expect(shell).toContain("session-busy");
+    expect(shell).toContain("Switch projects anyway?");
+    const css = readFileSync("desktop/renderer/style.css", "utf8");
+    expect(css).toContain(".session-busy");
   });
   it("message roles are visually distinct", () => {
     const css = readFileSync("desktop/renderer/style.css", "utf8");

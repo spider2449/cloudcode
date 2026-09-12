@@ -3,6 +3,10 @@ import { createRoot } from "react-dom/client";
 import "./style.css";
 import { VERSION } from "../../src/version.js";
 import { ChatPane } from "./chatPane.js";
+import {
+  countBusyInWorkspace, isSessionBusy, migrateAdoptedSession,
+  trackTurnEnd, trackTurnStart, type BusyTurns
+} from "./busySessions.js";
 import { StatusBar, StatuslinePicker } from "./statusBar.js";
 import type { DesktopStatusPayload } from "../../src/desktop/statusPayload.js";
 import { ThemeMenu } from "./themeMenu.js";
@@ -89,6 +93,10 @@ function App() {
   const [dragging, setDragging] = useState<"left" | "right" | null>(null);
   const [status, setStatus] = useState<DesktopStatusPayload | undefined>(undefined);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // In-flight turns by request id (recorded on send, released on turn end).
+  // Background sessions keep running across switches; the sidebar marks
+  // them busy and leaving their repo asks for confirmation.
+  const [busyTurns, setBusyTurns] = useState<BusyTurns>({});
   const dragState = useRef<{ side: "left" | "right"; startX: number; startSidebar: number; startInspector: number } | null>(null);
   const lastChat = useRef<ChatRequest | undefined>(undefined);
   // Set once the initial restore resolves; the persist effect below must not
@@ -101,8 +109,16 @@ function App() {
   // stream (text delta or turn completion) clears the banner again.
   useEffect(() => {
     return window.cloudcode.onChatEvent(event => {
-      if (event.id === "backend" && event.type === "error") setBackendExit(event.text ?? "Backend exited");
-      else if (event.type === "text_delta" || event.type === "done") setBackendExit(undefined);
+      if (event.id === "backend" && event.type === "error") {
+        setBackendExit(event.text ?? "Backend exited");
+        // Backend death drops all of its in-memory turn state with it.
+        setBusyTurns({});
+      } else if (event.type === "text_delta" || event.type === "done") setBackendExit(undefined);
+      // Turn end releases the sidebar busy mark, including turns running in
+      // background sessions (their done arrives here, not in ChatPane).
+      if (event.type === "done" || event.type === "error") {
+        setBusyTurns(current => trackTurnEnd(current, event.id));
+      }
     });
   }, []);
 
@@ -264,14 +280,27 @@ function App() {
     setActive(nextId);
   }
 
+  // Repo isolation: leaving a project with running turns abandons them
+  // out of sight, so it asks for confirmation. Same-repo session switches
+  // stay silent (turns keep running, marked busy in the list).
+  function confirmLeaveBusyRepo(): boolean {
+    const leaving = countBusyInWorkspace(busyTurns, active);
+    if (leaving === 0) return true;
+    const name = activeWorkspace?.name ?? "this project";
+    const turns = leaving === 1 ? "1 turn is" : `${leaving} turns are`;
+    return window.confirm(`${turns} still running in "${name}". Switch projects anyway?`);
+  }
+
   function switchWorkspace(nextId: string) {
     if (nextId === active) return;
+    if (!confirmLeaveBusyRepo()) return;
     applyWorkspaceSwitch(nextId);
   }
 
   async function openProject() {
     const workspace = await window.cloudcode.openProject();
     if (!workspace) return;
+    if (workspace.id !== active && !confirmLeaveBusyRepo()) return;
     setWorkspaces(current => current.some(item => item.id === workspace.id) ? current : [...current, workspace]);
     setActiveSessions(current => ({ ...current, [workspace.id]: workspace.sessions[0]?.id }));
     setActive(workspace.id);
@@ -314,14 +343,15 @@ function App() {
       <button className="new-session" disabled={!active} onClick={() => active && selectSession(active, undefined)}><span>＋</span> New session <kbd>Ctrl N</kbd></button>
       <div className="project-switcher"><span>⌘</span><select aria-label="Active project" value={active ?? ""} onChange={event => switchWorkspace(event.target.value)}>{workspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select><button className="bare-button" title="Open project" onClick={openProject}>＋</button></div>
       <div className="section-heading"><span>SESSIONS</span><span>{activeWorkspace?.sessions.length ?? 0}</span></div>
-      <nav className="workspace-list" aria-label="Sessions">{activeWorkspace?.sessions.map(session => <div key={session.id} className="session-item">{editingId === session.id ? <input className="session-edit-input" autoFocus value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter") void submitRename(activeWorkspace.id, session.id, draft); else if (event.key === "Escape") setEditingId(undefined); }} onBlur={() => void submitRename(activeWorkspace.id, session.id, draft)} aria-label="Rename session" /> : <><button className={activeSessions[activeWorkspace.id] === session.id ? "session-card active" : "session-card"} onClick={() => selectSession(activeWorkspace.id, session.id)}><span className="session-title">{session.firstMessage || "Untitled session"}</span><span className="session-meta">{formatSessionDate(session.timestamp)} · {session.provider}</span></button><span className="session-actions"><button title="Rename session" aria-label={`Rename ${session.firstMessage || "Untitled session"}`} onClick={() => { setEditingId(session.id); setDraft(session.firstMessage); }}>✎</button><button title="Delete session" aria-label={`Delete ${session.firstMessage || "Untitled session"}`} onClick={() => void deleteSession(activeWorkspace.id, session.id)}>🗑</button></span></>}</div>)}{activeWorkspace && activeWorkspace.sessions.length === 0 && <p className="no-sessions">Your first message will name this session.</p>}</nav>
+      <nav className="workspace-list" aria-label="Sessions">{activeWorkspace?.sessions.map(session => <div key={session.id} className="session-item">{editingId === session.id ? <input className="session-edit-input" autoFocus value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter") void submitRename(activeWorkspace.id, session.id, draft); else if (event.key === "Escape") setEditingId(undefined); }} onBlur={() => void submitRename(activeWorkspace.id, session.id, draft)} aria-label="Rename session" /> : <><button className={activeSessions[activeWorkspace.id] === session.id ? "session-card active" : "session-card"} onClick={() => selectSession(activeWorkspace.id, session.id)}><span className="session-title">{isSessionBusy(busyTurns, activeWorkspace.id, session.id) && <><span className="session-busy" title="Turn running" /> </>}{session.firstMessage || "Untitled session"}</span><span className="session-meta">{formatSessionDate(session.timestamp)} · {session.provider}</span></button><span className="session-actions"><button title="Rename session" aria-label={`Rename ${session.firstMessage || "Untitled session"}`} onClick={() => { setEditingId(session.id); setDraft(session.firstMessage); }}>✎</button><button title="Delete session" aria-label={`Delete ${session.firstMessage || "Untitled session"}`} onClick={() => void deleteSession(activeWorkspace.id, session.id)}>🗑</button></span></>}</div>)}{activeWorkspace && activeWorkspace.sessions.length === 0 && <p className="no-sessions">Your first message will name this session.</p>}</nav>
       <div className="sidebar-footer"><span className="status-dot" /> Native chat<br /><small>One engine, one interaction model</small></div>
     </aside>}
     {!sidebarOpen && <button className="sidebar-reveal icon-button" onClick={() => setSidebarOpen(true)}>☰</button>}
     {sidebarOpen && <div className="resizer resizer-left" role="separator" tabIndex={0} aria-orientation="vertical" aria-label="Resize sidebar" title="Drag to resize sidebar (double-click to reset)" onKeyDown={event => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") setSidebarWidth(value => clamp(value + (event.key === "ArrowLeft" ? -10 : 10), MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH)); }} onMouseDown={event => beginResize("left", event)} onDoubleClick={() => resetResize("left")} />}
-    <section className="chat-main"><header className="titlebar"><div className="title-copy"><strong>{activeWorkspace?.sessions.find(session => session.id === activeSessions[activeWorkspace.id])?.firstMessage || "New session"}</strong><span><b>{activeWorkspace?.name ?? "No project"}</b><i /> Chat v{VERSION}</span></div><div className="title-actions">{backendExit !== undefined && <span className="backend-exit">Backend exited <button className="bare-button" onClick={retryLastChat}>Retry</button></span>}<ThemeMenu /><button className="icon-button" title="Toggle Git" onClick={() => setInspectorOpen(value => !value)}>◫</button></div></header><ChatPane workspaceId={active} sessionId={activeSessions[active ?? ""]} onSend={request => { lastChat.current = request; }} onRequestNewSession={workspaceId => { if (workspaceId) selectSession(workspaceId, undefined); }} onAdoptSession={(workspaceId, sessionId) => {
+    <section className="chat-main"><header className="titlebar"><div className="title-copy"><strong>{activeWorkspace?.sessions.find(session => session.id === activeSessions[activeWorkspace.id])?.firstMessage || "New session"}</strong><span><b>{activeWorkspace?.name ?? "No project"}</b><i /> Chat v{VERSION}</span></div><div className="title-actions">{backendExit !== undefined && <span className="backend-exit">Backend exited <button className="bare-button" onClick={retryLastChat}>Retry</button></span>}<ThemeMenu /><button className="icon-button" title="Toggle Git" onClick={() => setInspectorOpen(value => !value)}>◫</button></div></header><ChatPane workspaceId={active} sessionId={activeSessions[active ?? ""]} onSend={request => { lastChat.current = request; setBusyTurns(current => trackTurnStart(current, request.id, { workspaceId: request.workspaceId, sessionId: request.sessionId })); }} onRequestNewSession={workspaceId => { if (workspaceId) selectSession(workspaceId, undefined); }} onAdoptSession={(workspaceId, sessionId) => {
         if (workspaceId === undefined) return;
         setActiveSessions(current => current[workspaceId] === undefined ? { ...current, [workspaceId]: sessionId } : current);
+        setBusyTurns(current => migrateAdoptedSession(current, workspaceId, sessionId));
       }} /></section>
     {inspectorVisible && <div className="resizer resizer-right" role="separator" tabIndex={0} aria-orientation="vertical" aria-label="Resize git panel" title="Drag to resize git panel (double-click to reset)" onKeyDown={event => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") setInspectorWidth(value => clamp(value + (event.key === "ArrowLeft" ? 10 : -10), MIN_INSPECTOR_WIDTH, MAX_INSPECTOR_WIDTH)); }} onMouseDown={event => beginResize("right", event)} onDoubleClick={() => resetResize("right")} />}
     {activeWorkspace && inspectorVisible && <GitInspector workspaceId={activeWorkspace.id} state={gitStates[activeWorkspace.id]} onRefresh={async () => {

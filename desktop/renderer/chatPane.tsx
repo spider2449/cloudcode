@@ -15,6 +15,9 @@ type ChatMsg = { id: string; role: "user" | "assistant" | "notice" | "error"; te
 
 // Per-module counter suffix keeps ids unique across rapid sends within the same millisecond.
 let sendSeq = 0;
+// Separate counter for session-switch status seeds (must never collide with
+// turn ids: a seed response is only honored when its id matches exactly).
+let seedSeq = 0;
 
 type Completion = { label: string; value: string; replaceStart: number; replaceEnd: number };
 
@@ -67,6 +70,32 @@ export function useStoredGuiTheme(): void {
   }, []);
 }
 
+// Distance (px) from the bottom within which the transcript still counts
+// as "at the bottom" for scroll-following purposes.
+export const STICK_THRESHOLD_PX = 40;
+
+// Pure stickiness decision behind the transcript auto-scroll: follow new
+// messages only while the user is already near the bottom, so reading
+// history never gets yanked away by an incoming delta.
+export function shouldStickToBottom(scrollHeight: number, scrollTop: number, clientHeight: number): boolean {
+  return scrollHeight - scrollTop - clientHeight < STICK_THRESHOLD_PX;
+}
+
+// Whether a turn-scoped stream event belongs to the conversation on screen.
+// Background sessions keep running after a switch; their late deltas must
+// not pollute the transcript being viewed. History replay uses history-*
+// ids and always applies.
+export function isLiveTurnEvent(id: string, pendingIds: readonly string[]): boolean {
+  return id.startsWith("history-") || pendingIds.includes(id);
+}
+
+// Slash commands execute backend-side and report via notice/error events,
+// so echoing them as user bubbles doubles the transcript. Plain prompts
+// still echo (they have no other visible record until the turn streams).
+export function echoUserBubble(text: string): boolean {
+  return !text.startsWith("/");
+}
+
 // Text status for an in-flight LLM turn. Null means idle (hide the label).
 // The animated dots are a separate CSS span so this stays a pure function
 // that node-based unit tests can import (same pattern as lastSelection.ts).
@@ -82,6 +111,11 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
   const [permission, setPermission] = useState<{ id: string; toolName: string; toolInput?: Record<string, unknown> } | undefined>(undefined);
   const [pendingIds, setPendingIds] = useState<string[]>([]);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+  // Whether the transcript is currently pinned to the bottom. Reset on
+  // every session switch (fresh transcript replays to the latest message);
+  // cleared by the scroll handler when the user scrolls up to read history.
+  const stickRef = useRef(true);
   // IME composition flag: Enter while composing confirms the candidate and
   // must not send the message (critical for CJK input).
   const composingRef = useRef(false);
@@ -105,6 +139,20 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
   // session-switch effect below keeps the on-screen transcript instead of
   // clearing and replaying the identical history.
   const adoptedRef = useRef<string>();
+  // Synchronous mirror of the permission prompt for the chat-event
+  // subscription below (closures capture stale state; the ref is current).
+  const permissionRef = useRef<{ id: string } | undefined>(undefined);
+  // Latest pending turn ids for the same reason: the subscription filters
+  // background-session deltas against this, not the render-time state.
+  const pendingRef = useRef<string[]>([]);
+  pendingRef.current = pendingIds;
+  // Outstanding session-switch status seed (see below); only a status
+  // response bearing this exact id may reseed pending state.
+  const seedReq = useRef<string>();
+  function setPermissionState(next: { id: string; toolName: string; toolInput?: Record<string, unknown> } | undefined) {
+    permissionRef.current = next;
+    setPermission(next);
+  }
   useStoredGuiTheme();
 
   // Session switch: drop the previous transcript, permission prompt, and
@@ -117,12 +165,21 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
     if (!adopted) {
       setMessages([]);
       setPendingIds([]);
-      setPermission(undefined);
+      setPermissionState(undefined);
+      stickRef.current = true;
       nestedOnce.current = false;
       completeReq.current = undefined;
       void window.cloudcode.chatHistory(sessionId, workspaceId);
+      // Resync busy state: a turn left running in the background survives
+      // the switch (per-session backend), but local pending was just reset.
+      // Without reseeding, the next send fails with "already running" while
+      // nothing looks busy. The footer polls use different ids and are
+      // owned by src.tsx; only this exact seed id is honored below.
+      const seedId = `seed-${Date.now()}-${++seedSeq}`;
+      seedReq.current = seedId;
+      void window.cloudcode.chatStatus({ id: seedId, sessionId, workspaceId });
     }
-    return window.cloudcode.onChatEvent((event: { id: string; type: string; text?: string; toolName?: string; toolInput?: Record<string, unknown>; items?: Completion[]; sessionId?: unknown }) => {
+    return window.cloudcode.onChatEvent((event: { id: string; type: string; text?: string; toolName?: string; toolInput?: Record<string, unknown>; items?: Completion[]; sessionId?: unknown; status?: { inFlightId?: unknown } }) => {
       if (isNewSessionEvent(event)) {
         newSessionRef.current?.(workspaceId);
         return;
@@ -166,9 +223,32 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
         }
         return;
       }
-      if (event.type === "permission_request") {
-        setPermission({ id: event.id, toolName: event.toolName ?? "tool", toolInput: event.toolInput });
+      if (event.id === "backend" && event.type === "error") {
+        // Backend died mid-turn: its in-memory turn/permission state is gone
+        // with it. Drop the local pending ids and prompt too, or every later
+        // Send is silently swallowed (send() early-returns while pending)
+        // with no response and no error. The error branch below still posts
+        // the "backend exited" bubble; src.tsx raises the retry banner.
+        setPendingIds([]);
+        setPermissionState(undefined);
+      }
+      if (event.type === "status") {
+        if (event.id === seedReq.current) {
+          seedReq.current = undefined;
+          const resumed = event.status?.inFlightId;
+          if (typeof resumed === "string" && resumed !== "") {
+            setPendingIds(current => current.includes(resumed) ? current : [...current, resumed]);
+          }
+        }
         return;
+      }
+      if (event.type === "permission_request") {
+        setPermissionState({ id: event.id, toolName: event.toolName ?? "tool", toolInput: event.toolInput });
+        return;
+      }
+      if ((event.type === "done" || event.type === "error") && permissionRef.current?.id === event.id) {
+        // Turn over: a stale prompt for it can never resolve anymore.
+        setPermissionState(undefined);
       }
       if (event.type === "done" || event.type === "error") {
         setPendingIds(current => current.includes(event.id) ? current.filter(id => id !== event.id) : current);
@@ -176,6 +256,9 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
       if (event.type === "user_text" && event.text) {
         setMessages(current => [...current, { id: event.id, role: "user", text: event.text ?? "" }]);
       } else if (event.type === "text_delta" && event.text) {
+        // Drop background-session deltas: without this, a turn left running
+        // on another session streams into the transcript being viewed.
+        if (!isLiveTurnEvent(event.id, pendingRef.current)) return;
         setMessages(current => {
           const last = current[current.length - 1];
           if (last?.id === event.id && last.role === "assistant") {
@@ -242,6 +325,19 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
     requestAnimationFrame(() => inputRef.current?.focus());
   }
 
+  // Transcript scroll-following: after every message update, pin to the
+  // bottom only while stuck (session switch replays to the latest message;
+  // reading history is never yanked by an incoming delta).
+  function onChatListScroll() {
+    const el = listRef.current;
+    if (!el) return;
+    stickRef.current = shouldStickToBottom(el.scrollHeight, el.scrollTop, el.clientHeight);
+  }
+  useEffect(() => {
+    const el = listRef.current;
+    if (el && stickRef.current) el.scrollTop = el.scrollHeight;
+  }, [messages]);
+
   // Auto-grow the composer up to a cap, then scroll internally.
   useEffect(() => {
     const el = inputRef.current;
@@ -249,6 +345,28 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
   }, [input]);
+
+  // TUI parity: Esc interrupts the running turn (same path as Stop). A
+  // textarea-level handler is not enough: after mouse-clicking Send the
+  // focus sits on the button, and clicks into the transcript move it out
+  // of the composer entirely, so Esc never reaches the input. The window
+  // listener covers the whole chat pane; the dropdown keeps its own
+  // Esc-to-dismiss (no listener while it is open, so the first Esc only
+  // closes it). Scoped out of sidebar/inspector/dialogs, and skipped
+  // while IME-composing so confirming a CJK candidate never kills a turn.
+  useEffect(() => {
+    if (completions.length > 0 || pendingIds.length === 0) return;
+    function onWindowKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape" || event.isComposing) return;
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest?.(".chat-pane")) return;
+      event.preventDefault();
+      const last = pendingIds[pendingIds.length - 1];
+      if (last) abort(last);
+    }
+    window.addEventListener("keydown", onWindowKeyDown);
+    return () => window.removeEventListener("keydown", onWindowKeyDown);
+  }, [completions.length, pendingIds]);
 
   function onInputKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "ArrowDown" && completions.length > 0) {
@@ -287,7 +405,9 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
     if (pendingIds.length > 0) return;
     const id = `${Date.now()}-${++sendSeq}`;
     setPendingIds(current => [...current, id]);
-    setMessages(current => [...current, { id, role: "user", text }]);
+    if (echoUserBubble(text)) {
+      setMessages(current => [...current, { id, role: "user", text }]);
+    }
     setInput("");
     completeReq.current = undefined;
     nestedOnce.current = false;
@@ -298,6 +418,9 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
 
   function abort(id: string) {
     setPendingIds(current => current.filter(pending => pending !== id));
+    // A prompt for the aborted turn can never resolve (the backend denies
+    // the outstanding request on abort); drop it instead of stranding it.
+    if (permissionRef.current?.id === id) setPermissionState(undefined);
     setMessages(current => [...current, { id, role: "notice", text: "Cancelled." }]);
     void window.cloudcode.chatAbort(id);
   }
@@ -305,7 +428,7 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
   function respond(allow: boolean) {
     if (!permission) return;
     void window.cloudcode.chatRespond({ id: permission.id, allow });
-    setPermission(undefined);
+    setPermissionState(undefined);
   }
 
   return (
@@ -318,7 +441,7 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
           <button onClick={() => respond(false)}>Deny</button>
         </div>
       )}
-      <div className="chat-list" role="log" aria-label="Conversation">
+      <div className="chat-list" role="log" aria-label="Conversation" ref={listRef} onScroll={onChatListScroll}>
         {messages.map((message, index) => (
           <article key={`${message.id}-${message.role}-${index}`} className={`bubble ${message.role}`}>
             <pre>{message.text}</pre>
