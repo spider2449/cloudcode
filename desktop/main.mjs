@@ -124,10 +124,15 @@ function createWindow() {
 }
 
 ipcMain.handle("cloudcode:open-project", async () => {
-  const result = await dialog.showOpenDialog(window, {
-    properties: ["openDirectory", "openFile"],
-    filters: [{ name: "Workspace", extensions: ["code-workspace"] }]
-  });
+  const result = await dialog.showOpenDialog(window, { properties: ["openDirectory"] });
+  if (result.canceled || result.filePaths.length !== 1) return undefined;
+  return host.openProject(result.filePaths[0]);
+});
+ipcMain.handle("cloudcode:open-workspace-file", async () => {
+  // Separate file-only dialog: on Windows/Linux one dialog cannot be both a
+  // file and a directory selector (a directory selector is shown instead),
+  // so workspace files get their own picker with a .code-workspace filter.
+  const result = await dialog.showOpenDialog(window, { properties: ["openFile"], filters: [{ name: "Workspace", extensions: ["code-workspace"] }] });
   if (result.canceled || result.filePaths.length !== 1) return undefined;
   return host.openProject(result.filePaths[0]);
 });

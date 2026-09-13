@@ -106,7 +106,10 @@ can reuse it).
     existing `gitDiff/gitStage/...` channels with an extra `repoId` argument
     convention: for `multi`, renderer passes `(workspaceId, repoId, ...)` and main
     resolves cwd via `repoCwd`. Validation via existing `requireString` helpers.
-  - `openProject` dialog filter adds `*.code-workspace` alongside directories.
+  - `openProject` dialog stays folder-only; a separate `open-workspace-file`
+    file-only dialog (with the `*.code-workspace` filter) opens workspace files.
+    One dialog cannot do both: on Windows/Linux `['openFile','openDirectory']`
+    degrades to a directory selector (Electron platform limitation).
 
 ### 4.3 Renderer (`desktop/renderer/src.tsx`, `style.css`)
 

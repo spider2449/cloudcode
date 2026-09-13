@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("cloudcode", {
   openProject: () => ipcRenderer.invoke("cloudcode:open-project"),
+  openWorkspaceFile: () => ipcRenderer.invoke("cloudcode:open-workspace-file"),
   restoreProjects: () => ipcRenderer.invoke("cloudcode:restore-projects"),
   refreshWorkspace: workspaceId => ipcRenderer.invoke("cloudcode:refresh-workspace", workspaceId),
   gitState: workspaceId => ipcRenderer.invoke("cloudcode:git-state", workspaceId),

@@ -294,7 +294,11 @@ Bump all four version locations to `0.1.109` first.
   - `cloudcode:git-states (workspaceId) -> Record<repoId, GitState>`
   - All existing `cloudcode:git-*` handlers accept an optional `repoId` as the SECOND argument after `workspaceId` (e.g. `gitStage(workspaceId, repoId?, paths)`); when omitted, behavior is exactly today's.
   - `cloudcode:chat-send` / `chat-history` / `chat-complete` / `chat-status` / `chat-statusline-set` accept optional `repoId` on the request object and resolve cwd via `repoCwd(workspaceId, repoId)` when present, else `cwd(workspaceId)` as today.
-  - `cloudcode:open-project` dialog adds a `*.code-workspace` file filter.
+  - `cloudcode:open-project` dialog stays folder-only; add
+    `cloudcode:open-workspace-file` with `properties: ["openFile"]` plus the
+    `*.code-workspace` filter (Windows/Linux degrade a combined
+    `['openFile','openDirectory']` dialog to folder-only, so the two flows stay
+    separate).
 
 - [ ] **Step 1: Write the failing check (no new unit test — main.mjs is untested JS)**
 

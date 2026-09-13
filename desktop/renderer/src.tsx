@@ -27,6 +27,7 @@ declare global {
   interface Window {
     cloudcode: {
       openProject(): Promise<Workspace | undefined>;
+      openWorkspaceFile(): Promise<Workspace | undefined>;
       restoreProjects(): Promise<Workspace[]>;
       refreshWorkspace(workspaceId: string): Promise<Workspace>;
       gitState(workspaceId: string): Promise<GitState>;
@@ -472,6 +473,16 @@ function App() {
   async function openProject() {
     const workspace = await window.cloudcode.openProject();
     if (!workspace) return;
+    adoptWorkspace(workspace);
+  }
+
+  async function openWorkspaceFile() {
+    const workspace = await window.cloudcode.openWorkspaceFile();
+    if (!workspace) return;
+    adoptWorkspace(workspace);
+  }
+
+  function adoptWorkspace(workspace: Workspace) {
     if (workspace.id !== active && !confirmLeaveBusyRepo()) return;
     setWorkspaces(current => current.some(item => item.id === workspace.id) ? current : [...current, workspace]);
     setActiveSessions(current => ({ ...current, [workspace.id]: workspace.sessions[0]?.id }));
@@ -523,7 +534,7 @@ function App() {
     {sidebarOpen && <aside className="sidebar">
       <div className="sidebar-top"><div className="brand"><span className="brand-mark">C</span><span>CloudCode</span><span className="brand-version">v{VERSION}</span></div><button className="icon-button" title="Collapse sidebar" onClick={() => setSidebarOpen(false)}>‹</button></div>
       <button className="new-session" disabled={!active} onClick={() => active && selectSession(active, undefined, chatRepoId)}><span>＋</span> New session <kbd>Ctrl N</kbd></button>
-      <div className="project-switcher"><span>⌘</span><select aria-label="Active project" value={active ?? ""} onChange={event => switchWorkspace(event.target.value)}>{workspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select><button className="bare-button" title="Open project" onClick={openProject}>＋</button></div>
+      <div className="project-switcher"><span>⌘</span><select aria-label="Active project" value={active ?? ""} onChange={event => switchWorkspace(event.target.value)}>{workspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select><button className="bare-button" title="Open project" onClick={openProject}>＋</button><button className="bare-button" title="Open workspace file (.code-workspace)" onClick={openWorkspaceFile}>🗂</button></div>
       <div className="section-heading"><span>SESSIONS</span><span>{activeWorkspace?.sessions.length ?? 0}</span></div>
       <nav className="workspace-list" aria-label="Sessions">{activeWorkspace?.kind === "multi" ? groupSessionsByRepo(activeWorkspace.repos, activeWorkspace.sessions).map(group => <div key={group.repoId} className="repo-group"><div className="repo-header"><strong>{group.repoName}</strong><span>{group.sessions.length}</span></div>{activeWorkspace && group.sessions.map(session => renderSessionCard(activeWorkspace, session))}{group.sessions.length === 0 && <p className="no-sessions">No sessions yet.</p>}</div>) : activeWorkspace?.sessions.map(session => renderSessionCard(activeWorkspace, session))}{activeWorkspace && activeWorkspace.sessions.length === 0 && activeWorkspace.kind !== "multi" && <p className="no-sessions">Your first message will name this session.</p>}</nav>
       <div className="sidebar-footer"><span className="status-dot" /> Native chat<br /><small>One engine, one interaction model</small></div>
