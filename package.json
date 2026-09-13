@@ -1,6 +1,6 @@
 {
   "name": "cloudcode",
-  "version": "0.1.127",
+  "version": "0.1.128",
   "description": "Terminal AI coding agent with its own native agent engine talking directly to the Anthropic Messages API",
   "author": {
     "name": "spider2449",
@@ -30,11 +30,11 @@
     "dev": "tsx src/cli.tsx",
     "build": "tsc -p tsconfig.json",
     "typecheck:desktop": "tsc -p tsconfig.desktop.json --noEmit",
-    "lint": "oxlint src tests desktop",
+    "lint": "oxlint src tests",
     "lint:size": "node scripts/check-file-size.mjs",
     "test": "vitest run",
-    "desktop:build": "npm run build && vite build --config desktop/vite.config.ts",
-    "desktop:start": "npm run desktop:build && electron desktop/main.mjs",
+    "desktop:build": "npm run build && vite build --config src/desktop/vite.config.ts",
+    "desktop:start": "npm run desktop:build && electron src/desktop/shell/main.mjs",
     "desktop:dist": "node scripts/desktop-package.mjs --dist-only",
     "desktop:package": "node scripts/desktop-package.mjs",
     "package:all": "npm run package && npm run desktop:package",
@@ -44,7 +44,7 @@
     "package:installer": "powershell -ExecutionPolicy Bypass -File scripts/build-installer.ps1",
     "package": "npm run package:npm && npm run package:bin"
   },
-  "main": "desktop/main.mjs",
+  "main": "src/desktop/shell/main.mjs",
   "build": {
     "appId": "app.cloudcode",
     "productName": "CloudCode",
@@ -60,9 +60,9 @@
     },
     "files": [
       "dist/**",
-      "desktop/dist/**",
-      "desktop/preload.cjs",
-      "desktop/main.mjs",
+      "src/desktop/dist/**",
+      "src/desktop/shell/preload.cjs",
+      "src/desktop/shell/main.mjs",
       "package.json",
       "welcome.txt"
     ],

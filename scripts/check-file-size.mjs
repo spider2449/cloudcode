@@ -8,7 +8,7 @@ import { join } from "node:path";
 
 const SOFT_LIMIT = 600;
 const HARD_LIMIT = 1000;
-const ROOTS = ["src", "tests", "desktop"];
+const ROOTS = ["src", "tests"];
 const EXTENSIONS = [".ts", ".tsx", ".mjs", ".cjs"];
 const inActions = process.env.GITHUB_ACTIONS === "true";
 

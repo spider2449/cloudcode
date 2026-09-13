@@ -11,14 +11,14 @@ function run(cmd) {
 }
 
 run("npx tsc -p tsconfig.json");
-run("npx vite build --config desktop/vite.config.ts");
+run("npx vite build --config src/desktop/vite.config.ts");
 
 if (!existsSync("dist/cli.js")) {
   console.error("Missing dist/cli.js after build. Aborting desktop package.");
   process.exit(1);
 }
-if (!existsSync("desktop/dist/index.html")) {
-  console.error("Missing desktop/dist/index.html after vite build. Aborting desktop package.");
+if (!existsSync("src/desktop/dist/index.html")) {
+  console.error("Missing src/desktop/dist/index.html after vite build. Aborting desktop package.");
   process.exit(1);
 }
 if (distOnly) process.exit(0);

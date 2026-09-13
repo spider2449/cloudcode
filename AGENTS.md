@@ -23,15 +23,15 @@ project grows. Written 2026-07-19; revisit as the codebase matures.
 - **`src/ui/`** — the hand-rolled terminal renderer: ANSI/terminal
   primitives (`term/`), widgets, themes, layout, markdown rendering. No
   provider/network calls belong here.
-- **`src/desktop/`** — the GUI backend (TypeScript, compiled into `dist/`
-  by the main `tsconfig.json`): the `--gui-server` logic, shell host, git
-  service, IPC contract. It stays UI-framework-free (no DOM/React) so the
-  TUI build and node-based unit tests keep working.
-- **`desktop/`** — the Electron shell and web UI, outside the main
-  `tsconfig.json`: `main.mjs` + `preload.cjs` (plain JS, covered by oxlint)
-  and `desktop/renderer/` (Vite+React DOM code, typechecked by
-  `tsconfig.desktop.json` via `npm run typecheck:desktop`). Cross-root
-  imports into `src/` (`../../src/*.js`) are allowed only for leaf modules
+- **`src/desktop/`** — everything desktop, in three areas: the GUI
+  backend flat at the top (TypeScript, compiled into `dist/` by the main
+  `tsconfig.json`: the `--gui-server` logic, shell host, git service,
+  IPC contract — stays UI-framework-free, no DOM/React, so the TUI
+  build and node-based unit tests keep working), `renderer/` (Vite+React
+  DOM code, typechecked by `tsconfig.desktop.json` via
+  `npm run typecheck:desktop`), and `shell/` (`main.mjs` + `preload.cjs`,
+  plain JS covered by oxlint). Cross-root imports into `src/`
+  (`../../*.js` from `renderer/`) are allowed only for leaf modules
   (version, theme data, status payloads, slash-name lists) — never for
   `engine/` or `agent/` state.
 

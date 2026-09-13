@@ -3,17 +3,17 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
-import { DesktopShellHost } from "../dist/desktop/shellHost.js";
-import { requireBranchName, requirePaths, requireString } from "../dist/desktop/ipcContract.js";
-import { resolveNodeExecutable } from "../dist/desktop/runtime.js";
-import { VERSION } from "../dist/version.js";
+import { DesktopShellHost } from "../../../dist/desktop/shellHost.js";
+import { requireBranchName, requirePaths, requireString } from "../../../dist/desktop/ipcContract.js";
+import { resolveNodeExecutable } from "../../../dist/desktop/runtime.js";
+import { VERSION } from "../../../dist/version.js";
 
 const desktopDir = fileURLToPath(new URL(".", import.meta.url));
-// Packaged layout: desktop/main.mjs lives inside app.asar, resources at process.resourcesPath.
-// Dev layout: repo root is one level above desktop/.
+// Packaged layout: src/desktop/shell/main.mjs lives inside app.asar, resources at process.resourcesPath.
+// Dev layout: repo root is three levels above src/desktop/shell/.
 const projectRoot = process.resourcesPath && desktopDir.includes(".asar")
   ? join(process.resourcesPath, "app")
-  : join(desktopDir, "..");
+  : join(desktopDir, "..", "..", "..");
 const host = new DesktopShellHost();
 let window;
 let chatChild;
@@ -104,7 +104,7 @@ function resolveCliPath() {
     candidates.push(join(process.resourcesPath, "app.asar.unpacked", "dist", "cli.js"));
     candidates.push(join(process.resourcesPath, "app", "dist", "cli.js"));
   }
-  candidates.push(join(desktopDir, "..", "dist", "cli.js"));
+  candidates.push(join(desktopDir, "..", "..", "..", "dist", "cli.js"));
   candidates.push(join(projectRoot, "dist", "cli.js"));
   for (const candidate of candidates) {
     if (existsSync(candidate)) return candidate;
@@ -135,7 +135,7 @@ function createWindow() {
   ]));
   const devServer = process.env.CLOUDCODE_DESKTOP_DEV_SERVER;
   if (devServer) void window.loadURL(devServer);
-  else void window.loadFile(join(desktopDir, "dist", "index.html"));
+  else void window.loadFile(join(desktopDir, "..", "dist", "index.html"));
 }
 
 ipcMain.handle("cloudcode:open-project", async () => {
