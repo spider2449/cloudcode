@@ -10,5 +10,5 @@
     "skipLibCheck": true
   },
   "include": ["src"],
-  "exclude": ["src/desktop/renderer", "src/desktop/vite.config.ts", "src/desktop/dist"]
+  "exclude": ["src/desktop/renderer", "src/desktop/vite.config.ts"]
 }

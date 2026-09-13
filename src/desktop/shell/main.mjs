@@ -135,7 +135,7 @@ function createWindow() {
   ]));
   const devServer = process.env.CLOUDCODE_DESKTOP_DEV_SERVER;
   if (devServer) void window.loadURL(devServer);
-  else void window.loadFile(join(desktopDir, "..", "dist", "index.html"));
+  else void window.loadFile(join(desktopDir, "..", "..", "..", "dist", "renderer", "index.html"));
 }
 
 ipcMain.handle("cloudcode:open-project", async () => {

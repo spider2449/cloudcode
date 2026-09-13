@@ -1,6 +1,6 @@
 {
   "name": "cloudcode",
-  "version": "0.1.129",
+  "version": "0.1.130",
   "description": "Terminal AI coding agent with its own native agent engine talking directly to the Anthropic Messages API",
   "author": {
     "name": "spider2449",
@@ -60,7 +60,6 @@
     },
     "files": [
       "dist/**",
-      "src/desktop/dist/**",
       "src/desktop/shell/preload.cjs",
       "src/desktop/shell/main.mjs",
       "package.json",

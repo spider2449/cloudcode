@@ -28,7 +28,8 @@ src/desktop/
 ```
 
 Root `desktop/` is deleted (including the gitignored build output; the
-new gitignored output is `src/desktop/dist/`). Backend files stay flat
+new gitignored output is `dist/renderer/` — amended 2026-09-13, see
+"Build and packaging wiring"). Backend files stay flat
 in `src/desktop/` — no new `backend/` directory — so their import depth,
 `cli.tsx`'s `./desktop/*` imports, backend test paths, and tsc output
 all hold without edits.
@@ -49,17 +50,20 @@ all hold without edits.
   (no relative paths).
 - `desktop/vite.config.ts` → `src/desktop/vite.config.ts`:
   `root: "desktop/renderer"` becomes `"src/desktop/renderer"`;
-  `outDir: "../dist"` keeps its relative meaning, landing at
-  `src/desktop/dist/`.
+  `outDir` becomes `"../../../dist/renderer"` (amended 2026-09-13;
+  originally `"../dist"` landing at `src/desktop/dist/`).
 
 ## Build and packaging wiring
 
-- Vite output: `src/desktop/dist/` (gitignored). Mirrors today's
-  `main.mjs ↔ desktop/dist` sibling relationship as
-  `shell/main.mjs ↔ ../dist`; `loadFile` becomes
-  `join(desktopDir, "..", "dist", "index.html")`. The `dist/renderer/`
-  alternative (merging both build outputs under `dist/`) is rejected:
-  it muddies rollback and debug for one fewer line in `files`.
+- Vite output: `dist/renderer/` (gitignored; `dist/` was already fully
+  ignored, so no gitignore entry is needed). All build output now lives
+  under root `dist/`; `loadFile` becomes
+  `join(desktopDir, "..", "..", "..", "dist", "renderer", "index.html")`,
+  which resolves correctly in both dev and packaged (`.asar`) layouts
+  since `dist/**` is bundled either way. Amended 2026-09-13: the
+  original `src/desktop/dist/` placement put build output inside `src/`
+  and was moved out on review. The `src/desktop/dist/` sibling-mirror
+  alternative is rejected for that reason.
 - `package.json`: `main` → `src/desktop/shell/main.mjs`;
   `desktop:build` vite config path updated; `desktop:start` electron
   entry updated; `build.files` entries `desktop/dist/**`,
@@ -68,9 +72,14 @@ all hold without edits.
   smoke-test globs are untouched.
 - `scripts/desktop-package.mjs`: vite config path plus the
   `desktop/dist/index.html` existence check and message → new path.
-- `.gitignore`: `desktop/dist/` → `src/desktop/dist/`.
+- `.gitignore`: `desktop/dist/` entry removed (`dist/` was already
+  ignored wholesale).
 - `tsconfig.desktop.json`: `include` → `["src/desktop/renderer"]`,
-  nothing else. Main `tsconfig.json` untouched.
+  nothing else. Main `tsconfig.json` gains an `exclude` for
+  `src/desktop/renderer`, `src/desktop/vite.config.ts` (and the
+  then-planned `src/desktop/dist`) — without it the main `tsc` build
+  chokes on the moved `.tsx` (no `--jsx`) and emits stray files into
+  `dist/`; discovered during implementation, not in the original design.
 - `scripts/check-file-size.mjs`: `ROOTS` drops `"desktop"`
   (renderer stays covered under `src`).
 - CI: no changes (it only invokes npm scripts).
@@ -106,7 +115,7 @@ all hold without edits.
 ## Verification gate (all green before any commit lands)
 
 1. `npm run build`, `npm run typecheck:desktop`,
-   `npm run desktop:build` (vite emits `src/desktop/dist/index.html`),
+   `npm run desktop:build` (vite emits `dist/renderer/index.html`),
    `npm run lint`, `npm run lint:size` (zero warnings), `npm test`.
 2. `node --check` on both shell JS files.
 3. Repo-root `desktop/` fully gone (`git status` shows renames only,

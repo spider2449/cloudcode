@@ -1,6 +1,5 @@
 node_modules/
 dist/
-src/desktop/dist/
 release/
 .cloudcode/
 .superpowers/

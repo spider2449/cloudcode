@@ -5,5 +5,5 @@ export default defineConfig({
   root: "src/desktop/renderer",
   plugins: [react()],
   base: "./",
-  build: { outDir: "../dist", emptyOutDir: true }
+  build: { outDir: "../../../dist/renderer", emptyOutDir: true }
 });

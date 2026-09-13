@@ -132,7 +132,9 @@ describe("desktop packaging", () => {
     expect(pkg.devDependencies["electron-builder"]).toBeDefined();
     expect(pkg.build.appId).toBe("app.cloudcode");
     expect(pkg.build.directories.output).toBe("release/desktop");
-    for (const pattern of ["dist/**", "src/desktop/dist/**", "src/desktop/shell/preload.cjs"]) {
+    // dist/** ships the whole build output including the renderer bundle
+    // (vite emits dist/renderer/); the shell files are listed explicitly.
+    for (const pattern of ["dist/**", "src/desktop/shell/preload.cjs"]) {
       expect(pkg.build.files).toContain(pattern);
     }
     // The desktop terminal spawns a plain node.exe child, which cannot read
@@ -151,6 +153,6 @@ describe("desktop packaging", () => {
 
   it("the desktop orchestrator script exists and guards build output", () => {
     expect(existsSync(join(root, "scripts/desktop-package.mjs"))).toBe(true);
-    expect(read("scripts/desktop-package.mjs")).toContain("src/desktop/dist");
+    expect(read("scripts/desktop-package.mjs")).toContain("dist/renderer");
   });
 });

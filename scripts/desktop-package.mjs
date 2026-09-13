@@ -17,8 +17,8 @@ if (!existsSync("dist/cli.js")) {
   console.error("Missing dist/cli.js after build. Aborting desktop package.");
   process.exit(1);
 }
-if (!existsSync("src/desktop/dist/index.html")) {
-  console.error("Missing src/desktop/dist/index.html after vite build. Aborting desktop package.");
+if (!existsSync("dist/renderer/index.html")) {
+  console.error("Missing dist/renderer/index.html after vite build. Aborting desktop package.");
   process.exit(1);
 }
 if (distOnly) process.exit(0);
