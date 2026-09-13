@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { SessionIndex } from "../src/agent/sessionIndex.js";
 import { SessionFile } from "../src/engine/sessions.js";
 import { DesktopShellHost, parseDesktopGitStatus } from "../src/desktop/shellHost.js";
+import { loadUntitledWorkspaces } from "../src/desktop/untitledWorkspaces.js";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -219,5 +220,98 @@ describe("DesktopShellHost multi-repo workspaces", () => {
     expect(Object.keys(states)).toHaveLength(2);
     expect(states[workspace.repos[0].id].isGitRepo).toBe(true);
     expect(states[workspace.repos[1].id].isGitRepo).toBe(false);
+  });
+});
+
+describe("DesktopShellHost attach/save workspace", () => {
+  function setup() {
+    const root = mkdtempSync(join(tmpdir(), "cloudcode-attach-"));
+    roots.push(root);
+    const dirA = join(root, "api");
+    const dirB = join(root, "web");
+    mkdirSync(dirA);
+    mkdirSync(dirB);
+    const removedRecent: string[] = [];
+    const options = {
+      sessionIndex: new SessionIndex(join(root, "sessions.json")),
+      recentProjects: { load: () => [] as string[], save: () => {}, remove: (path: string) => { removedRecent.push(path); } },
+      workspaceIdsFile: join(root, "ids.json"),
+      untitledWorkspacesFile: join(root, "untitled.json") as string | undefined,
+      written: {} as Record<string, string>,
+    };
+    const host = new DesktopShellHost({ ...options, writeWorkspaceFile: (path, text) => { options.written[path] = text; } });
+    return { root, dirA, dirB, removedRecent, options, host };
+  }
+
+  function canonical(dir: string): string {
+    return process.platform === "win32" ? dir.toLowerCase() : dir;
+  }
+
+  it("converts a single workspace to an unsaved multi in place, keeping its id", () => {
+    const { dirA, dirB, removedRecent, host } = setup();
+    const single = host.openProject(dirA);
+    expect(single.kind).toBe("single");
+
+    const multi = host.attachRepo(single.id, dirB);
+    expect(multi.id).toBe(single.id);
+    expect(multi.kind).toBe("multi");
+    expect(multi.saved).toBe(false);
+    expect(multi.repos.map(repo => repo.cwd)).toEqual([canonical(dirA), canonical(dirB)]);
+    // The absorbed single must not resurrect as a duplicate on restore.
+    expect(removedRecent).toEqual([canonical(dirA)]);
+  });
+
+  it("dedupes already-attached directories", () => {
+    const { dirA, dirB, host } = setup();
+    const single = host.openProject(dirA);
+    const multi = host.attachRepo(single.id, dirB);
+    expect(host.attachRepo(single.id, dirA).repos).toHaveLength(2);
+    expect(multi.repos).toHaveLength(2);
+  });
+
+  it("rejects unknown workspace ids", () => {
+    const { dirB, host } = setup();
+    expect(() => host.attachRepo("missing", dirB)).toThrow("Unknown workspace.");
+    expect(() => host.saveWorkspaceAs("missing", join("somewhere", "shop.code-workspace"))).toThrow("Unknown workspace.");
+  });
+
+  it("saveWorkspaceAs writes relative folders and marks the workspace saved", () => {
+    const { root, dirA, dirB, options, host } = setup();
+    const single = host.openProject(dirA);
+    const multi = host.attachRepo(single.id, dirB);
+    const file = join(root, "shop.code-workspace");
+
+    const saved = host.saveWorkspaceAs(multi.id, file);
+    expect(saved.saved).toBe(true);
+    expect(JSON.parse(options.written[canonical(file)] as string)).toEqual({
+      folders: [{ path: "api" }, { path: "web" }],
+      settings: {},
+    });
+    // The untitled entry is gone: restores now replay the file instead.
+    expect(loadUntitledWorkspaces(options.untitledWorkspacesFile as string)).toEqual({});
+  });
+
+  it("restoreProjects rebuilds unsaved multis with stable ids", () => {
+    const { root, dirA, dirB, host, options } = setup();
+    const single = host.openProject(dirA);
+    const multi = host.attachRepo(single.id, dirB);
+
+    const revived = new DesktopShellHost({
+      sessionIndex: new SessionIndex(join(root, "sessions.json")),
+      recentProjects: { load: () => [] as string[], save: () => {} },
+      workspaceIdsFile: join(root, "ids.json"),
+      untitledWorkspacesFile: options.untitledWorkspacesFile,
+    });
+    const restored = revived.restoreProjects().find(workspace => workspace.id === multi.id);
+    expect(restored?.kind).toBe("multi");
+    expect(restored?.saved).toBe(false);
+    expect(restored?.repos.map(repo => repo.cwd)).toEqual([canonical(dirA), canonical(dirB)]);
+  });
+
+  it("persists untitled members on attach", () => {
+    const { dirA, dirB, host, options } = setup();
+    const single = host.openProject(dirA);
+    host.attachRepo(single.id, dirB);
+    expect(loadUntitledWorkspaces(options.untitledWorkspacesFile as string)[single.id]).toEqual([canonical(dirA), canonical(dirB)]);
   });
 });

@@ -36,3 +36,17 @@ export function saveWorkspaceId(
   mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(filePath, JSON.stringify(pruned, null, 2));
 }
+
+// Drops a stale mapping without throwing. Used when a single directory is
+// absorbed into an unsaved multi-repo workspace: reopening that directory
+// later must mint a fresh single workspace instead of reusing the multi's id.
+export function removeWorkspaceId(
+  cwd: string,
+  filePath: string = join(configDir(), FILE_NAME)
+): void {
+  const ids = loadWorkspaceIds(filePath);
+  if (!(cwd in ids)) return;
+  delete ids[cwd];
+  mkdirSync(dirname(filePath), { recursive: true });
+  writeFileSync(filePath, JSON.stringify(ids, null, 2));
+}

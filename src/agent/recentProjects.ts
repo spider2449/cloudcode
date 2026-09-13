@@ -20,3 +20,12 @@ export function saveRecentProject(path: string, filePath: string = join(configDi
   mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(filePath, JSON.stringify(recent, null, 2));
 }
+
+// Drops an entry without throwing. Used when a single directory is absorbed
+// into an unsaved multi-repo workspace: without this, restores would replay
+// the directory as a duplicate single workspace next to the rebuilt multi.
+export function removeRecentProject(path: string, filePath: string = join(configDir(), FILE_NAME)): void {
+  const recent = loadRecentProjects(filePath).filter(item => item !== path);
+  mkdirSync(dirname(filePath), { recursive: true });
+  writeFileSync(filePath, JSON.stringify(recent, null, 2));
+}

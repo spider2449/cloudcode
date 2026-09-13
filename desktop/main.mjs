@@ -137,6 +137,20 @@ ipcMain.handle("cloudcode:open-workspace-file", async () => {
   return host.openProject(result.filePaths[0]);
 });
 ipcMain.handle("cloudcode:restore-projects", () => host.restoreProjects());
+ipcMain.handle("cloudcode:attach-repo", async (_event, workspaceId) => {
+  const result = await dialog.showOpenDialog(window, { properties: ["openDirectory"] });
+  if (result.canceled || result.filePaths.length !== 1) return undefined;
+  return host.attachRepo(requireString(workspaceId, "workspace ID"), result.filePaths[0]);
+});
+ipcMain.handle("cloudcode:save-workspace", async (_event, workspaceId, suggestedName) => {
+  const name = typeof suggestedName === "string" && suggestedName !== "" ? suggestedName : "workspace";
+  const result = await dialog.showSaveDialog(window, {
+    defaultPath: `${name}.code-workspace`,
+    filters: [{ name: "Workspace", extensions: ["code-workspace"] }]
+  });
+  if (result.canceled || !result.filePath) return undefined;
+  return host.saveWorkspaceAs(requireString(workspaceId, "workspace ID"), result.filePath);
+});
 ipcMain.handle("cloudcode:refresh-workspace", (_event, workspaceId) => host.refresh(requireString(workspaceId, "workspace ID")));
 ipcMain.handle("cloudcode:git-state", (_event, workspaceId) => host.gitState(requireString(workspaceId, "workspace ID")));
 ipcMain.handle("cloudcode:git-diff", (_event, workspaceId, path, staged) => host.gitService().diff(host.cwd(requireString(workspaceId, "workspace ID")), requireString(path, "Git path"), staged === true));

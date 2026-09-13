@@ -2,22 +2,24 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadRecentProjects, saveRecentProject } from "../src/agent/recentProjects.js";
+import { loadRecentProjects, removeRecentProject, saveRecentProject } from "../src/agent/recentProjects.js";
 
-const dirs: string[] = [];
+const roots: string[] = [];
+afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
-afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
+function tempFile(): string {
+  const root = mkdtempSync(join(tmpdir(), "cc-recent-"));
+  roots.push(root);
+  return join(root, "recent.json");
+}
 
-describe("recentProjects", () => {
-  it("moves a reopened project to the front without duplicates", () => {
-    const dir = mkdtempSync(join(tmpdir(), "cloudcode-recent-"));
-    dirs.push(dir);
-    const file = join(dir, "recent.json");
-
-    saveRecentProject("C:/one", file);
-    saveRecentProject("C:/two", file);
-    saveRecentProject("C:/one", file);
-
-    expect(loadRecentProjects(file)).toEqual(["C:/one", "C:/two"]);
+describe("recent projects", () => {
+  it("removes entries and ignores unknown paths", () => {
+    const file = tempFile();
+    saveRecentProject("D:/work/api", file);
+    saveRecentProject("D:/work/web", file);
+    expect(() => removeRecentProject("D:/missing", file)).not.toThrow();
+    removeRecentProject("D:/work/web", file);
+    expect(loadRecentProjects(file)).toEqual(["D:/work/api"]);
   });
 });

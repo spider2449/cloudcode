@@ -15,7 +15,7 @@ import { LAST_SELECTION_KEY, loadStoredSelection, resolveRestoredSelection, seri
 
 type Repo = { id: string; name: string; cwd: string; missing?: boolean };
 type Session = { id: string; firstMessage: string; timestamp: string; provider: string; repoId: string };
-type Workspace = { id: string; name: string; kind: "single" | "multi"; root: string; repos: Repo[]; sessions: Session[] };
+type Workspace = { id: string; name: string; kind: "single" | "multi"; root: string; repos: Repo[]; sessions: Session[]; saved: boolean };
 type GitFile = { path: string; originalPath?: string; index: string; workingTree: string };
 type GitCommit = { hash: string; shortHash: string; author: string; date: string; subject: string };
 type GitState = { isGitRepo: boolean; branch?: string; upstream?: string; ahead: number; behind: number; files: GitFile[]; truncated: boolean; error?: string; lastCommit?: GitCommit; recent: GitCommit[]; lastFetchedAt?: number };
@@ -28,6 +28,8 @@ declare global {
     cloudcode: {
       openProject(): Promise<Workspace | undefined>;
       openWorkspaceFile(): Promise<Workspace | undefined>;
+      attachRepo(workspaceId: string): Promise<Workspace | undefined>;
+      saveWorkspace(workspaceId: string, suggestedName: string): Promise<Workspace | undefined>;
       restoreProjects(): Promise<Workspace[]>;
       refreshWorkspace(workspaceId: string): Promise<Workspace>;
       gitState(workspaceId: string): Promise<GitState>;
@@ -489,6 +491,22 @@ function App() {
     setActive(workspace.id);
   }
 
+  // Attach a folder to the active workspace (single converts to an unsaved
+  // multi in place). The backend returns the refreshed same-id workspace.
+  async function attachRepo() {
+    if (!active) return;
+    const workspace = await window.cloudcode.attachRepo(active);
+    if (!workspace) return;
+    setWorkspaces(current => current.map(item => item.id === workspace.id ? workspace : item));
+  }
+
+  async function saveWorkspaceAs() {
+    if (!activeWorkspace || activeWorkspace.kind !== "multi" || activeWorkspace.saved) return;
+    const workspace = await window.cloudcode.saveWorkspace(activeWorkspace.id, activeWorkspace.name);
+    if (!workspace) return;
+    setWorkspaces(current => current.map(item => item.id === workspace.id ? workspace : item));
+  }
+
   // Session switching no longer kills a live PTY, so no busy confirmation is needed.
   // Multi workspaces also remember the containing repo so chat, polling, and
   // Git stay scoped together (single workspaces pass no repoId).
@@ -534,7 +552,8 @@ function App() {
     {sidebarOpen && <aside className="sidebar">
       <div className="sidebar-top"><div className="brand"><span className="brand-mark">C</span><span>CloudCode</span><span className="brand-version">v{VERSION}</span></div><button className="icon-button" title="Collapse sidebar" onClick={() => setSidebarOpen(false)}>‹</button></div>
       <button className="new-session" disabled={!active} onClick={() => active && selectSession(active, undefined, chatRepoId)}><span>＋</span> New session <kbd>Ctrl N</kbd></button>
-      <div className="project-switcher"><span>⌘</span><select aria-label="Active project" value={active ?? ""} onChange={event => switchWorkspace(event.target.value)}>{workspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select><button className="bare-button" title="Open project" onClick={openProject}>＋</button><button className="bare-button" title="Open workspace file (.code-workspace)" onClick={openWorkspaceFile}>🗂</button></div>
+      <div className="project-switcher"><span>⌘</span><select aria-label="Active project" value={active ?? ""} onChange={event => switchWorkspace(event.target.value)}>{workspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select><button className="bare-button" title="Open project" onClick={openProject}>＋</button><button className="bare-button" title="Open workspace file (.code-workspace)" onClick={openWorkspaceFile}>🗂</button><button className="bare-button" title="Attach folder to this workspace" disabled={!active} onClick={attachRepo}>📎</button></div>
+      {activeWorkspace?.kind === "multi" && !activeWorkspace.saved && <div className="workspace-unsaved"><span>Workspace not saved</span><button className="bare-button" onClick={saveWorkspaceAs}>Save As…</button></div>}
       <div className="section-heading"><span>SESSIONS</span><span>{activeWorkspace?.sessions.length ?? 0}</span></div>
       <nav className="workspace-list" aria-label="Sessions">{activeWorkspace?.kind === "multi" ? groupSessionsByRepo(activeWorkspace.repos, activeWorkspace.sessions).map(group => <div key={group.repoId} className="repo-group"><div className="repo-header"><strong>{group.repoName}</strong><span>{group.sessions.length}</span></div>{activeWorkspace && group.sessions.map(session => renderSessionCard(activeWorkspace, session))}{group.sessions.length === 0 && <p className="no-sessions">No sessions yet.</p>}</div>) : activeWorkspace?.sessions.map(session => renderSessionCard(activeWorkspace, session))}{activeWorkspace && activeWorkspace.sessions.length === 0 && activeWorkspace.kind !== "multi" && <p className="no-sessions">Your first message will name this session.</p>}</nav>
       <div className="sidebar-footer"><span className="status-dot" /> Native chat<br /><small>One engine, one interaction model</small></div>
