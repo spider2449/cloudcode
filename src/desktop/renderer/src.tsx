@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
-import { VERSION } from "../../src/version.js";
+import { VERSION } from "../../version.js";
 import { ChatPane } from "./chatPane.js";
 import {
   countBusyInWorkspace, isSessionBusy, migrateAdoptedSession,
@@ -9,7 +9,7 @@ import {
 } from "./busySessions.js";
 import { dirtyRepoCount, groupSessionsByRepo, statusGitLabel } from "./workspaceView.js";
 import { StatusBar, StatuslinePicker } from "./statusBar.js";
-import type { DesktopStatusPayload } from "../../src/desktop/statusPayload.js";
+import type { DesktopStatusPayload } from "../statusPayload.js";
 import { ThemeMenu } from "./themeMenu.js";
 import { LAST_SELECTION_KEY, loadStoredSelection, resolveRestoredSelection, serializeSelection } from "./lastSelection.js";
 import type { ChatRequest, GitState, Session, Workspace } from "./bridge.js";

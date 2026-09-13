@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { GUI_SLASH_NAMES } from "../../src/commands/guiSlashNames.js";
+import { GUI_SLASH_NAMES } from "../../commands/guiSlashNames.js";
 import { confirmGuiTheme, parseThemeEvent } from "./themeState.js";
 import {
   emptyHistoryNav,

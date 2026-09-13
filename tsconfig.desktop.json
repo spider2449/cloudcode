@@ -9,5 +9,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["desktop/renderer"]
+  "include": ["src/desktop/renderer"]
 }

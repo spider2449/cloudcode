@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { STATUS_LINE_ITEMS, STATUS_LINE_LABELS } from "../../src/statusLineItems.js";
-import { formatStatusSegments, type DesktopStatusPayload } from "../../src/desktop/statusPayload.js";
+import { STATUS_LINE_ITEMS, STATUS_LINE_LABELS } from "../../statusLineItems.js";
+import { formatStatusSegments, type DesktopStatusPayload } from "../statusPayload.js";
 
 // Global footer statusline (mirrors the TUI bottom bar segment semantics).
 // Branch data comes from the shell's gitState poll, overlaid onto the backend

@@ -5,7 +5,7 @@
 // each builtin theme; dark/mono keep the GUI's established look because
 // those TUI definitions carry no background roles, and light gets a matching
 // light set for the same reason.
-import { THEMES } from "../../src/ui/builtinThemes.js";
+import { THEMES } from "../../ui/builtinThemes.js";
 
 export interface GuiThemeVars {
   bg: string;
