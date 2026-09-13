@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu } from "electron";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { spawn } from "node:child_process";
 import { DesktopShellHost } from "../../../dist/desktop/shellHost.js";
 import { requireBranchName, requirePaths, requireString } from "../../../dist/desktop/ipcContract.js";
@@ -32,7 +33,15 @@ function startChatBackend() {
   stopChatBackend();
   const cliPath = resolveCliPath();
   const executable = resolveNodeExecutable();
-  chatChild = spawn(executable, [cliPath, "--gui-server"], { cwd: projectRoot, stdio: ["pipe", "pipe", "inherit"] });
+  // Packaged layout has no resources/app directory on disk (only app.asar +
+  // app.asar.unpacked), so projectRoot does not exist there. Spawning with a
+  // missing cwd fails with ENOENT and silently kills every backend request
+  // (history replay especially: its "history" error id never matches the
+  // history-* transcript listener, so old sessions just look empty). Dev
+  // layout keeps the repo root; packaged falls back to the user's home, which
+  // always exists. Per-request cwd still scopes every turn/history call.
+  const backendCwd = existsSync(projectRoot) ? projectRoot : homedir();
+  chatChild = spawn(executable, [cliPath, "--gui-server"], { cwd: backendCwd, stdio: ["pipe", "pipe", "inherit"] });
   // Writes to a dead child's stdin surface as async EPIPE 'error' events,
   // which Electron shows as an "Uncaught Exception" dialog (seen on app
   // close when a status poll races the backend teardown). Swallow them and
