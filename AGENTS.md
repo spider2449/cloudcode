@@ -23,6 +23,17 @@ project grows. Written 2026-07-19; revisit as the codebase matures.
 - **`src/ui/`** — the hand-rolled terminal renderer: ANSI/terminal
   primitives (`term/`), widgets, themes, layout, markdown rendering. No
   provider/network calls belong here.
+- **`src/desktop/`** — the GUI backend (TypeScript, compiled into `dist/`
+  by the main `tsconfig.json`): the `--gui-server` logic, shell host, git
+  service, IPC contract. It stays UI-framework-free (no DOM/React) so the
+  TUI build and node-based unit tests keep working.
+- **`desktop/`** — the Electron shell and web UI, outside the main
+  `tsconfig.json`: `main.mjs` + `preload.cjs` (plain JS, covered by oxlint)
+  and `desktop/renderer/` (Vite+React DOM code, typechecked by
+  `tsconfig.desktop.json` via `npm run typecheck:desktop`). Cross-root
+  imports into `src/` (`../../src/*.js`) are allowed only for leaf modules
+  (version, theme data, status payloads, slash-name lists) — never for
+  `engine/` or `agent/` state.
 
 When a change could plausibly live in two places, prefer the layer closer
 to what the code *is* (a tool → `engine/tools/`, a new config field → the
@@ -51,10 +62,10 @@ as a warning, one past ~1,000 fails the build.
 `ui/appPickers.ts`, and cost/token/auto-compact accounting to
 `ui/usageTracker.ts`. A second round (0.1.100) pushed the regrown hotspots
 back under the ceiling the same way: the `--gui-server` backend moved from
-`src/cli.tsx` to `desktop/guiBackend.ts` (cli.tsx keeps a lazy dynamic
+`src/cli.tsx` to `src/desktop/guiBackend.ts` (cli.tsx keeps a lazy dynamic
 import so TUI startup stays fast), `App`'s command assembly to
 `ui/appCommandContext.ts` (behind an `AppCommandDeps` interface, mirroring
-`desktop/guiCommandContext.ts`), MCP inventory to `ui/mcpController.ts`,
+`src/desktop/guiCommandContext.ts`), MCP inventory to `ui/mcpController.ts`,
 and the permission prompt to `ui/widgets/permissionOverlay.ts`. Shared test
 fixtures live in `tests/helpers/` (`commandContext.ts`, `renderFixtures.ts`)
 so split test files don't duplicate mock setup. Those extractions moved
