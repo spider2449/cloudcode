@@ -12,9 +12,14 @@ describe("slash input classification", () => {
     expect(describeSlashInput("/")).toEqual({ kind: "command", token: "/" });
     expect(describeSlashInput("/con")).toEqual({ kind: "command", token: "/con" });
   });
-  it("jumps to argument options once the command name is exact", () => {
-    expect(describeSlashInput("/config")).toEqual({ kind: "args", prefix: "/config " });
-    expect(describeSlashInput("/model")).toEqual({ kind: "args", prefix: "/model " });
+  it("keeps an exactly-typed command as a command token (args need a user-typed space)", () => {
+    // TUI parity: the terminal shows command-name suggestions for "/config"
+    // and only completes arguments after the user types the space. Jumping to
+    // args synchronously forces a visible " " into the composer, so Backspace
+    // from "/config " snaps back to "/config " and the command can never be
+    // edited/cancelled char-by-char without Enter.
+    expect(describeSlashInput("/config")).toEqual({ kind: "command", token: "/config" });
+    expect(describeSlashInput("/model")).toEqual({ kind: "command", token: "/model" });
   });
   it("treats menu-bar-only commands as plain command tokens in the input", () => {
     // /theme is hidden from the desktop registry (View > Theme instead).
@@ -145,6 +150,30 @@ describe("completion dropdown shell", () => {
     expect(css).toContain("max-height: 208px");
     expect(css).toContain("overflow-y: auto");
     expect(css).toContain("flex-shrink: 0");
+  });
+  it("never rewrites the composer on pure echo so incomplete commands stay editable", () => {
+    // "/config provider" answers with a pure echo (["provider"]); auto-appending
+    // a space via onChange(`${current} `) undoes a manual Backspace of that same
+    // space on the next backend roundtrip, trapping the composer (only Enter
+    // still does anything). The echo must only hide the dropdown instead.
+    const pane = readFileSync("desktop/renderer/chatPane.tsx", "utf8");
+    expect(pane).not.toContain("onChange(`${current} `");
+    expect(pane).not.toContain("nestedOnce");
+  });
+  it("never normalizes the composer text for exact commands (stays cancellable)", () => {
+    // The sync `setInput(kind.prefix)` for "/config" -> "/config " rewrites a
+    // manual Backspace synchronously, trapping the composer. Argument options
+    // must load without touching the visible text.
+    const pane = readFileSync("desktop/renderer/chatPane.tsx", "utf8");
+    expect(pane).not.toContain("setInput(kind.prefix)");
+  });
+  it("keeps the highlighted completion visible while navigating past the row cap", () => {
+    // The dropdown caps at header + ~5 rows with overflow-y: auto. Moving the
+    // highlight past the visible rows must scroll the active button into view,
+    // otherwise the selection looks like it fell back into the input area.
+    const pane = readFileSync("desktop/renderer/chatPane.tsx", "utf8");
+    expect(pane).toContain("slash-complete");
+    expect(pane).toContain("scrollIntoView");
   });
   it("parks focus back in the composer after send and abort", () => {
     // Send/Stop are mouse targets; without refocus the key handlers on the

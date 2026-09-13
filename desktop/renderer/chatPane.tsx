@@ -46,13 +46,13 @@ export function applySuggestionText(
 }
 
 // Pure decision of what the dropdown should show for an input value.
-// An exactly-typed command name ("/config") jumps straight to its argument
-// options so users discover arguments without knowing the full command;
-// anything else completes command names, and plain text shows nothing.
+// Spaceless inputs (including exactly-typed "/config") complete command
+// names like the terminal does; argument options only load after the user
+// types the space themselves. Auto-jumping to args rewrites the composer
+// and traps Backspace/cancel, so it stays a manual descent (Space/Tab).
 export function describeSlashInput(value: string): SlashInputKind {
   if (!value.startsWith("/")) return { kind: "plain" };
   if (!value.includes(" ")) {
-    if ((SLASH_NAMES as string[]).includes(value)) return { kind: "args", prefix: `${value} ` };
     return { kind: "command", token: value };
   }
   return { kind: "args", prefix: value };
@@ -141,6 +141,7 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
   const [pendingIds, setPendingIds] = useState<string[]>([]);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const completeListRef = useRef<HTMLUListElement | null>(null);
   // Whether the transcript is currently pinned to the bottom. Reset on
   // every session switch (fresh transcript replays to the latest message);
   // cleared by the scroll handler when the user scrolls up to read history.
@@ -151,9 +152,6 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
   // Latest in-flight argument-completion request; stale responses are dropped.
   const completeReq = useRef<{ id: string; prefix: string } | undefined>(undefined);
   const completeSeq = useRef(0);
-  // One-shot guard for nested descent (below): prevents "/provider anthropic"
-  // style dead-ends from appending spaces forever.
-  const nestedOnce = useRef(false);
   // Which list the open dropdown currently shows. Entering argument mode
   // clears a stale command-name list (e.g. "/config" suggesting itself while
   // the backend args load); arg-to-arg typing keeps the current options to
@@ -209,7 +207,6 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
       setPendingIds([]);
       setPermissionState(undefined);
       stickRef.current = true;
-      nestedOnce.current = false;
       completeReq.current = undefined;
       void window.cloudcode.chatHistory(sessionId, workspaceId);
       // Resync busy state: a turn left running in the background survives
@@ -252,14 +249,12 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
           const [only] = items;
           if (items.length === 1 && only && applySuggestionText(current, only) === current) {
             // Pure echo: the option adds nothing (e.g. "/config theme" answered
-            // with ["theme"]). Descend one nesting level automatically so the
-            // next options appear; hide the dropdown if there is nothing deeper.
-            if (!current.endsWith(" ") && !nestedOnce.current) {
-              nestedOnce.current = true;
-              onChange(`${current} `, true);
-            } else {
-              showCompletions([]);
-            }
+            // with ["theme"]). Only hide the dropdown here: auto-appending a
+            // space rewrites the composer from the async response, which undoes
+            // a manual Backspace of that same space and traps incomplete
+            // commands ("/config provider" can then only be sent via Enter).
+            // Users descend with Space/Tab explicitly instead.
+            showCompletions([]);
           } else {
             completionSource.current = "args";
             showCompletions(items, titleForCompletionPrefix(pending.prefix));
@@ -330,10 +325,10 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
     void window.cloudcode.chatComplete({ id, prefix, sessionId, workspaceId });
   }
 
-  function onChange(value: string, auto = false) {
-    if (!auto) {
-      nestedOnce.current = false;
-      // Any manual edit abandons the in-progress history recall.
+  function onChange(value: string) {
+    // Every edit is manual now (no async auto-rewrite): abandon any
+    // in-progress history recall.
+    {
       const nav = historyNavRef.current;
       if (nav && (nav.cursor !== nav.entries.length || nav.draft !== undefined)) {
         historyNavRef.current = resetHistoryNav(nav);
@@ -360,19 +355,15 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
     }
     if (completionSource.current === "commands") {
       // Leaving the command-name list for backend argument options: drop the
-      // stale command rows now (an exactly-typed "/config" would otherwise
-      // keep suggesting itself until the slower backend answers, which is
-      // what stranded the empty-looking "Commands" shell on screen).
+      // stale command rows now so they never flash under the slower backend
+      // answers (what stranded the empty-looking "Commands" shell on screen).
       completionSource.current = "args";
       showCompletions([]);
     }
-    if (kind.prefix !== value) {
-      // Exactly-typed command ("/config"): the backend offsets assume the
-      // trailing space, so normalize the visible input first.
-      setInput(kind.prefix);
-      requestArgCompletions(kind.prefix);
-      return;
-    }
+    // No input normalization here: the visible text is only ever what the
+    // user typed or explicitly picked (Space/Tab/click). Rewriting it (e.g.
+    // "/config" -> "/config ") undoes a manual Backspace and traps the
+    // composer so an incomplete command can only leave via Enter.
     requestArgCompletions(kind.prefix);
   }
 
@@ -406,6 +397,16 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
   }, [input]);
+
+  // Keep the highlighted completion visible: the dropdown caps at header +
+  // ~5 rows with its own scrollbar, so navigating past the visible rows must
+  // follow the highlight instead of leaving it hidden below the fold (which
+  // looks like the selection fell back into the input area). Focus never
+  // leaves the composer; only the list scrolls.
+  useEffect(() => {
+    const active = completeListRef.current?.querySelector("button.active") as HTMLButtonElement | null | undefined;
+    active?.scrollIntoView({ block: "nearest" });
+  }, [completions, highlight]);
 
   // TUI parity: Esc interrupts the running turn (same path as Stop). A
   // textarea-level handler is not enough: after mouse-clicking Send the
@@ -511,7 +512,6 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
     }
     setInput("");
     completeReq.current = undefined;
-    nestedOnce.current = false;
     showCompletions([]);
     // Mouse-clicking Send leaves focus on the button; park it back in the
     // composer so Up/Down history recall keeps working without re-clicking.
@@ -556,7 +556,7 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
         ))}
       </div>
       {completions.length > 0 && (
-        <ul className="slash-complete" aria-label="Slash commands" data-title={completionTitle}>
+        <ul ref={completeListRef} className="slash-complete" aria-label="Slash commands" data-title={completionTitle}>
           {completions.map((option, index) => <li key={option.label}><button className={index === highlight ? "active" : ""} onClick={() => applyCompletion(option)}>{option.label}</button></li>)}
         </ul>
       )}
