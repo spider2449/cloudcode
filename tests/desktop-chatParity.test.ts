@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { buildRegistry } from "../src/commands/builtins.js";
+import { GUI_SLASH_NAMES } from "../src/commands/guiSlashNames.js";
 
 describe("desktop shell split", () => {
   it("preload exposes chat IPC and no terminal IPC", () => {
@@ -41,9 +42,32 @@ describe("slash parity", () => {
     const source = readFileSync("desktop/renderer/chatPane.tsx", "utf8");
     const registry = buildRegistry({ ...process.env, CLOUDCODE_DESKTOP: "1" });
     expect(registry.size).toBeGreaterThan(0);
+    // Browser-safe static list (chatPane must not import buildRegistry —
+    // that pulls node:* into the Vite bundle). Pinned equal to the registry
+    // so the two can never drift.
+    expect([...GUI_SLASH_NAMES].sort()).toEqual([...registry.keys()].sort());
     for (const name of registry.keys()) {
       expect(source, `/${name} missing from chat autocomplete`).toContain(`/${name}`);
     }
+    // No node-only command surface in the browser bundle.
+    expect(source).not.toContain("commands/builtins.js");
+  });
+  it("renderer stays browser-safe: no node:* or backend imports in the Vite bundle", () => {
+    // Regression guard for vite "externalized for browser compatibility"
+    // warnings: renderer must use builtinThemes/guiSlashNames (pure), never
+    // the node-backed theme.js / builtins.js / src/agent.
+    const files = ["chatPane.tsx", "themeMenu.tsx", "themeState.ts", "statusBar.tsx", "src.tsx"];
+    for (const file of files) {
+      const source = readFileSync(`desktop/renderer/${file}`, "utf8");
+      expect(source, `${file} must not import node: builtins`).not.toMatch(/from ["']node:/);
+      expect(source, `${file} must not import backend commands`).not.toContain("commands/builtins.js");
+      expect(source, `${file} must not import src/agent`).not.toContain("src/agent/");
+    }
+    expect(readFileSync("desktop/renderer/themeState.ts", "utf8")).toContain("ui/builtinThemes.js");
+    expect(readFileSync("desktop/renderer/themeMenu.tsx", "utf8")).toContain("ui/builtinThemes.js");
+    expect(readFileSync("desktop/renderer/chatPane.tsx", "utf8")).toContain("commands/guiSlashNames.js");
+    expect(readFileSync("src/ui/builtinThemes.ts", "utf8")).not.toMatch(/from ["']node:/);
+    expect(readFileSync("src/commands/guiSlashNames.ts", "utf8")).not.toMatch(/from ["']node:/);
   });
   it("desktop theme switching lives in the titlebar menu with preview semantics, not the input", () => {
     // Browsing previews without saving; only Enter persists via the backend.

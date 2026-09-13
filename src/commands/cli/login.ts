@@ -73,7 +73,7 @@ export async function runLoginCommand(
     "",
     "Then paste the code shown after approval (with or without the #state suffix):"
   ].join("\n"));
-  deps.openBrowser?.(url);
+  (deps.openBrowser ?? defaultOpenBrowser)(url);
   const prompt = deps.promptText ?? defaultPrompt;
   const pasted = await prompt("> ");
   // state === verifier by construction; PKCE binds the exchange to the

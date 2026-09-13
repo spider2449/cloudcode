@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { buildRegistry } from "../../src/commands/builtins.js";
+import { GUI_SLASH_NAMES } from "../../src/commands/guiSlashNames.js";
 import { confirmGuiTheme, loadStoredGuiTheme, parseThemeEvent } from "./themeState.js";
 import {
   emptyHistoryNav,
@@ -14,13 +14,14 @@ import {
 } from "./inputHistory.js";
 
 // Slash parity (enforced by tests/desktop-chatParity.test.ts): every
-// GUI-visible command from buildRegistry must appear here as /name so the
-// static autocomplete check can find it. The runtime autocomplete source is
-// SLASH_NAMES below, derived from buildRegistry (not from this comment).
+// GUI-visible command from buildRegistry must appear in GUI_SLASH_NAMES so
+// the static autocomplete check can find it. The runtime autocomplete source
+// is SLASH_NAMES below, derived from GUI_SLASH_NAMES (browser-safe; never
+// import buildRegistry here — it pulls node:* into the Vite bundle).
 // /help /clear /compact /config /context /init /model /new /permissions /provider /resume /set /cost /changes /diff /undo /review /effort /memory /statusline /mcp /skills /skill
 // (/theme is intentionally absent: desktop theme switching lives in the
-// titlebar Theme menu. Keep this list in sync with the registry above.)
-const SLASH_NAMES = [...buildRegistry({ ...globalThis.process?.env, CLOUDCODE_DESKTOP: "1" }).keys()].map(name => `/${name}`);
+// titlebar Theme menu. Keep this list in sync with guiSlashNames.ts.)
+const SLASH_NAMES = GUI_SLASH_NAMES.map(name => `/${name}`);
 
 type ChatMsg = { id: string; role: "user" | "assistant" | "notice" | "error"; text: string };
 

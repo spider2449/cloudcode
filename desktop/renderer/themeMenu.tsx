@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { THEMES } from "../../src/ui/theme.js";
+import { THEMES } from "../../src/ui/builtinThemes.js";
 import { themeMenuItems } from "../../src/desktop/appMenu.js";
 import { getConfirmedGuiTheme, previewGuiTheme } from "./themeState.js";
 

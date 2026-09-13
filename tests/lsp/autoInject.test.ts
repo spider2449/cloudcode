@@ -1,8 +1,7 @@
 // tests/lsp/autoInject.test.ts
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
 import { appendDiagnostics } from "../../src/engine/lsp/autoInject.js";
-import { LspManager, fileUri } from "../../src/engine/lsp/manager.js";
+import { LspManager } from "../../src/engine/lsp/manager.js";
 import { LspServer } from "../../src/engine/lsp/server.js";
 import { DEFAULT_SERVERS } from "../../src/engine/lsp/defaults.js";
 import { makeFakeServer } from "./fakeServer.js";
