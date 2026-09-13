@@ -198,11 +198,9 @@ function App() {
   const [multiGit, setMultiGit] = useState<Record<string, GitState | undefined>>({});
   // Last-used repo per workspace (multi only; single workspaces never set this
   // and keep the legacy wire shape with repoId undefined everywhere).
+  // Clicking a repo header in the sidebar sets this explicitly; otherwise it
+  // tracks the open session's repo. New sessions always open here.
   const [activeRepos, setActiveRepos] = useState<Record<string, string | undefined>>(() => loadStringRecord("cloudcode.activeRepos"));
-  // Explicit target repo for the next New session (multi only, ephemeral).
-  // The visible select makes the choice sticky per workspace; it never
-  // affects the currently open session's repo scoping.
-  const [newSessionRepo, setNewSessionRepo] = useState<Record<string, string | undefined>>({});
   // Collapsed Git cards per repo scope, persisted across restarts.
   const [gitCollapsed, setGitCollapsed] = useState<Record<string, boolean>>(() => loadBooleanRecord("cloudcode.gitCollapsed"));
   const [backendExit, setBackendExit] = useState<string>();
@@ -257,13 +255,15 @@ function App() {
     ?? (active !== undefined ? activeRepos[active] : undefined)
     ?? activeWorkspace.repos[0]?.id
   );
-  // New sessions default to the effective repo but the picker below can
-  // override per workspace (sticky until changed again). A stored override
-  // pointing at a repo that no longer exists falls back to the effective repo.
-  const storedTarget = active !== undefined ? newSessionRepo[active] : undefined;
-  const newSessionTarget = activeWorkspace?.kind !== "multi" ? undefined : (
-    activeWorkspace.repos.some(repo => repo.id === storedTarget) ? storedTarget : chatRepoId
-  );
+  // New sessions open in the explicitly picked repo (sidebar header click),
+  // else the open session's repo, else the first repo. Unlike chatRepoId
+  // (which must stay on the open session's repo), the explicit pick wins.
+  function newSessionTargetFor(workspaceId: string): string | undefined {
+    const workspace = workspaces.find(item => item.id === workspaceId);
+    if (workspace?.kind !== "multi") return undefined;
+    const session = workspace.sessions.find(item => item.id === activeSessions[workspaceId]);
+    return activeRepos[workspaceId] ?? session?.repoId ?? workspace.repos[0]?.id;
+  }
   useEffect(() => {
     let disposed = false;
     let timer: number | undefined;
@@ -572,16 +572,16 @@ function App() {
   return <main className={`app-shell ${sidebarOpen ? "" : "sidebar-collapsed"} ${inspectorVisible ? "" : "inspector-collapsed"}${dragging ? " resizing" : ""}`} style={{ gridTemplateColumns }}>
     {sidebarOpen && <aside className="sidebar">
       <div className="sidebar-top"><div className="brand"><span className="brand-mark">C</span><span>CloudCode</span><span className="brand-version">v{VERSION}</span></div><button className="icon-button" title="Collapse sidebar" onClick={() => setSidebarOpen(false)}>‹</button></div>
-      <div className="new-session-row"><button className="new-session" disabled={!active} onClick={() => active && selectSession(active, undefined, newSessionTarget)}><span>＋</span> New session <kbd>Ctrl N</kbd></button>{activeWorkspace?.kind === "multi" && <select className="new-session-repo" aria-label="New session repo" title="Which repo the next new session opens in" value={newSessionTarget ?? ""} onChange={event => active && setNewSessionRepo(current => ({ ...current, [active]: event.target.value || undefined }))}>{activeWorkspace.repos.map(repo => <option key={repo.id} value={repo.id}>{repo.name}</option>)}</select>}</div>
+      <button className="new-session" disabled={!active} onClick={() => active && selectSession(active, undefined, active !== undefined ? newSessionTargetFor(active) : undefined)}><span>＋</span> New session <kbd>Ctrl N</kbd></button>
       <div className="project-switcher"><span>⌘</span><select aria-label="Active project" value={active ?? ""} onChange={event => switchWorkspace(event.target.value)}>{workspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select><button className="bare-button" title="Open project" onClick={openProject}>＋</button><button className="bare-button" title="Open workspace file (.code-workspace)" onClick={openWorkspaceFile}>🗂</button><button className="bare-button" title="Attach folder to this workspace" disabled={!active} onClick={attachRepo}>📎</button></div>
       {activeWorkspace?.kind === "multi" && !activeWorkspace.saved && <div className="workspace-unsaved"><span>Workspace not saved</span><button className="bare-button" onClick={saveWorkspaceAs}>Save As…</button></div>}
       <div className="section-heading"><span>SESSIONS</span><span>{activeWorkspace?.sessions.length ?? 0}</span></div>
-      <nav className="workspace-list" aria-label="Sessions">{activeWorkspace?.kind === "multi" ? groupSessionsByRepo(activeWorkspace.repos, activeWorkspace.sessions).map(group => <div key={group.repoId} className="repo-group"><div className="repo-header" title={group.repoPath ?? group.repoName}><strong>{group.repoName}</strong><span className="repo-count">{group.sessions.length}</span></div>{activeWorkspace && group.sessions.map(session => renderSessionCard(activeWorkspace, session))}{group.sessions.length === 0 && <p className="no-sessions">No sessions yet.</p>}</div>) : activeWorkspace?.sessions.map(session => renderSessionCard(activeWorkspace, session))}{activeWorkspace && activeWorkspace.sessions.length === 0 && activeWorkspace.kind !== "multi" && <p className="no-sessions">Your first message will name this session.</p>}</nav>
+      <nav className="workspace-list" aria-label="Sessions">{activeWorkspace?.kind === "multi" ? groupSessionsByRepo(activeWorkspace.repos, activeWorkspace.sessions).map(group => <div key={group.repoId} className="repo-group"><button className={`repo-header${active !== undefined && newSessionTargetFor(active) === group.repoId ? " active" : ""}`} title={`New sessions open in ${group.repoName}${group.repoPath ? ` (${group.repoPath})` : ""} — click to switch`} onClick={() => activeWorkspace && setActiveRepos(current => ({ ...current, [activeWorkspace.id]: group.repoId }))}><strong>{group.repoName}</strong><span className="repo-count">{group.sessions.length}</span></button>{activeWorkspace && group.sessions.map(session => renderSessionCard(activeWorkspace, session))}{group.sessions.length === 0 && <p className="no-sessions">No sessions yet.</p>}</div>) : activeWorkspace?.sessions.map(session => renderSessionCard(activeWorkspace, session))}{activeWorkspace && activeWorkspace.sessions.length === 0 && activeWorkspace.kind !== "multi" && <p className="no-sessions">Your first message will name this session.</p>}</nav>
       <div className="sidebar-footer"><span className="status-dot" /> Native chat<br /><small>One engine, one interaction model</small></div>
     </aside>}
     {!sidebarOpen && <button className="sidebar-reveal icon-button" onClick={() => setSidebarOpen(true)}>☰</button>}
     {sidebarOpen && <div className="resizer resizer-left" role="separator" tabIndex={0} aria-orientation="vertical" aria-label="Resize sidebar" title="Drag to resize sidebar (double-click to reset)" onKeyDown={event => { if (event.key === "ArrowLeft" || event.key === "ArrowRight") setSidebarWidth(value => clamp(value + (event.key === "ArrowLeft" ? -10 : 10), MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH)); }} onMouseDown={event => beginResize("left", event)} onDoubleClick={() => resetResize("left")} />}
-    <section className="chat-main"><header className="titlebar"><div className="title-copy"><strong>{activeWorkspace?.sessions.find(session => session.id === activeSessions[activeWorkspace.id])?.firstMessage || "New session"}</strong><span><b>{activeWorkspace?.name ?? "No project"}</b><i /> Chat v{VERSION}</span></div><div className="title-actions">{backendExit !== undefined && <span className="backend-exit">Backend exited <button className="bare-button" onClick={retryLastChat}>Retry</button></span>}<ThemeMenu /><button className="icon-button" title="Toggle Git" onClick={() => setInspectorOpen(value => !value)}>◫</button></div></header><ChatPane workspaceId={active} repoId={chatRepoId} sessionId={activeSessionId} onSend={request => { lastChat.current = request; setBusyTurns(current => trackTurnStart(current, request.id, { workspaceId: request.workspaceId, sessionId: request.sessionId })); }} onRequestNewSession={workspaceId => { if (workspaceId) selectSession(workspaceId, undefined, workspaceId === active ? newSessionTarget : undefined); }} onAdoptSession={(workspaceId, repoId, sessionId) => {
+    <section className="chat-main"><header className="titlebar"><div className="title-copy"><strong>{activeWorkspace?.sessions.find(session => session.id === activeSessions[activeWorkspace.id])?.firstMessage || "New session"}</strong><span><b>{activeWorkspace?.name ?? "No project"}</b><i /> Chat v{VERSION}</span></div><div className="title-actions">{backendExit !== undefined && <span className="backend-exit">Backend exited <button className="bare-button" onClick={retryLastChat}>Retry</button></span>}<ThemeMenu /><button className="icon-button" title="Toggle Git" onClick={() => setInspectorOpen(value => !value)}>◫</button></div></header><ChatPane workspaceId={active} repoId={chatRepoId} sessionId={activeSessionId} onSend={request => { lastChat.current = request; setBusyTurns(current => trackTurnStart(current, request.id, { workspaceId: request.workspaceId, sessionId: request.sessionId })); }} onRequestNewSession={workspaceId => { if (workspaceId) selectSession(workspaceId, undefined, newSessionTargetFor(workspaceId)); }} onAdoptSession={(workspaceId, repoId, sessionId) => {
         if (workspaceId === undefined) return;
         if (repoId !== undefined) setActiveRepos(current => (current[workspaceId] === repoId ? current : { ...current, [workspaceId]: repoId }));
         setActiveSessions(current => current[workspaceId] === undefined ? { ...current, [workspaceId]: sessionId } : current);
