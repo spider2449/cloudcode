@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -178,5 +178,46 @@ describe("DesktopShellHost", () => {
     expect(updated.sessions).toEqual([]);
     expect(SessionFile.load("s1", sessionDir)).toEqual([]);
     expect(index.list()).toEqual([]);
+  });
+});
+
+describe("DesktopShellHost multi-repo workspaces", () => {
+  it("opens a .code-workspace file and attributes sessions per repo", () => {
+    const root = mkdtempSync(join(tmpdir(), "cloudcode-ws-"));
+    roots.push(root);
+    mkdirSync(join(root, "api"));
+    mkdirSync(join(root, "web"));
+    writeFileSync(join(root, "shop.code-workspace"), JSON.stringify({ folders: [{ path: "api" }, { path: "web" }] }));
+    // The host canonicalizes roots (lowercase on win32), so record the session
+    // cwd with the same rule or attribution will miss on Windows.
+    const apiCwd = process.platform === "win32" ? join(root, "api").toLowerCase() : join(root, "api");
+    const index = new SessionIndex(join(root, "sessions.json"));
+    index.record({ id: "s1", cwd: apiCwd, firstMessage: "api work", timestamp: "2026-09-01T00:00:00Z", provider: "local" });
+    const host = new DesktopShellHost({ sessionIndex: index, recentProjects: { load: () => [], save: () => {} } });
+
+    const workspace = host.openProject(join(root, "shop.code-workspace"));
+    expect(workspace.kind).toBe("multi");
+    expect(workspace.repos.map(r => r.name).sort()).toEqual(["api", "web"]);
+    expect(workspace.sessions).toEqual([expect.objectContaining({ id: "s1", repoId: workspace.repos[0].id })]);
+  });
+
+  it("isolates per-repo git failures", async () => {
+    const root = mkdtempSync(join(tmpdir(), "cloudcode-ws-"));
+    roots.push(root);
+    mkdirSync(join(root, "api"));
+    writeFileSync(join(root, "shop.code-workspace"), JSON.stringify({ folders: [{ path: "api" }, { path: "gone" }] }));
+    const host = new DesktopShellHost({
+      recentProjects: { load: () => [], save: () => {} },
+      gitRunner: async (_args, cwd) => {
+        if (cwd.endsWith("gone")) return { code: 128, stdout: "", stderr: "nope", truncated: false };
+        if (_args[0] === "log") return { code: 0, stdout: "", stderr: "", truncated: false };
+        return { code: 0, stdout: "## main\0", stderr: "", truncated: false };
+      }
+    });
+    const workspace = host.openProject(join(root, "shop.code-workspace"));
+    const states = await host.gitStates(workspace.id);
+    expect(Object.keys(states)).toHaveLength(2);
+    expect(states[workspace.repos[0].id].isGitRepo).toBe(true);
+    expect(states[workspace.repos[1].id].isGitRepo).toBe(false);
   });
 });
