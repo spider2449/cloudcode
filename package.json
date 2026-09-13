@@ -1,6 +1,6 @@
 {
   "name": "cloudcode",
-  "version": "0.1.118",
+  "version": "0.1.119",
   "description": "Terminal AI coding agent with its own native agent engine talking directly to the Anthropic Messages API",
   "author": {
     "name": "spider2449",
@@ -29,6 +29,7 @@
   "scripts": {
     "dev": "tsx src/cli.tsx",
     "build": "tsc -p tsconfig.json",
+    "typecheck:desktop": "tsc -p tsconfig.desktop.json --noEmit",
     "lint": "oxlint src tests",
     "lint:size": "node scripts/check-file-size.mjs",
     "test": "vitest run",

@@ -171,7 +171,7 @@ export function ChatPane({ workspaceId, repoId, sessionId, onSend, onRequestNewS
   // Remembers an adopted id across the prop change it triggers, so the
   // session-switch effect below keeps the on-screen transcript instead of
   // clearing and replaying the identical history.
-  const adoptedRef = useRef<string>();
+  const adoptedRef = useRef<string | undefined>(undefined);
   // Synchronous mirror of the permission prompt for the chat-event
   // subscription below (closures capture stale state; the ref is current).
   const permissionRef = useRef<{ id: string } | undefined>(undefined);
@@ -189,17 +189,18 @@ export function ChatPane({ workspaceId, repoId, sessionId, onSend, onRequestNewS
   }
   // Outstanding session-switch status seed (see below); only a status
   // response bearing this exact id may reseed pending state.
-  const seedReq = useRef<string>();
+  const seedReq = useRef<string | undefined>(undefined);
   function setPermissionState(next: { id: string; toolName: string; toolInput?: Record<string, unknown> } | undefined) {
     permissionRef.current = next;
     setPermission(next);
   }
   useStoredGuiTheme();
 
-  // Backend scope for this pane: multi-repo workspaces add repoId so the IPC
-  // layer resolves the turn against one repo; single-repo panes send none and
-  // keep the wire shape exactly as before.
-  const scope = repoId === undefined ? {} : { repoId };
+  // Backend scope for this pane: repoId is always present (undefined for
+  // single-repo panes) so the object matches the ChatRequest bridge type.
+  // JSON.stringify drops undefined values, so the wire shape is exactly as
+  // before and the backend still resolves single-repo panes to their root.
+  const scope = { repoId };
 
   // Session switch: drop the previous transcript, permission prompt, and
   // pending state, then ask the backend to replay the stored history.
@@ -312,7 +313,7 @@ export function ChatPane({ workspaceId, repoId, sessionId, onSend, onRequestNewS
           return [...current, { id: event.id, role: "assistant", text: event.text ?? "" }];
         });
       } else if ((event.type === "notice" || event.type === "error") && event.text) {
-        setMessages(current => [...current, { id: event.id, role: event.type, text: event.text ?? "" }]);
+        setMessages(current => [...current, { id: event.id, role: event.type === "notice" ? "notice" : "error", text: event.text ?? "" }]);
       }
     });
   }, [sessionId, workspaceId, repoId]);
