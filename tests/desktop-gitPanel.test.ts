@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatRelativeTime, gitFilePaths, gitStatusLabel } from "../desktop/renderer/gitPanel.js";
+import { formatRelativeTime, gitFilePaths, gitStatusLabel } from "../src/desktop/renderer/gitPanel.js";
 
 describe("git status labels", () => {
   it("maps index/working-tree codes to badge letters", () => {

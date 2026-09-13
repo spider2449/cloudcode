@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applySuggestionText, busyLabel, describeSlashInput, echoUserBubble, isLiveTurnEvent, isNewSessionEvent, parseSessionIdEvent, shouldStickToBottom, STICK_THRESHOLD_PX, titleForCompletionPrefix, visibleCompletions } from "../desktop/renderer/chatHelpers.js";
+import { applySuggestionText, busyLabel, describeSlashInput, echoUserBubble, isLiveTurnEvent, isNewSessionEvent, parseSessionIdEvent, shouldStickToBottom, STICK_THRESHOLD_PX, titleForCompletionPrefix, visibleCompletions } from "../src/desktop/renderer/chatHelpers.js";
 
 describe("slash input classification", () => {
   it("treats plain text as non-slash", () => {

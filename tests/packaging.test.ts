@@ -132,7 +132,7 @@ describe("desktop packaging", () => {
     expect(pkg.devDependencies["electron-builder"]).toBeDefined();
     expect(pkg.build.appId).toBe("app.cloudcode");
     expect(pkg.build.directories.output).toBe("release/desktop");
-    for (const pattern of ["dist/**", "desktop/dist/**", "desktop/preload.cjs"]) {
+    for (const pattern of ["dist/**", "src/desktop/dist/**", "src/desktop/shell/preload.cjs"]) {
       expect(pkg.build.files).toContain(pattern);
     }
     // The desktop terminal spawns a plain node.exe child, which cannot read
@@ -144,13 +144,13 @@ describe("desktop packaging", () => {
     // via node_modules on disk, so production dependencies must be unpacked
     // too — otherwise the child exits with ERR_MODULE_NOT_FOUND.
     expect(pkg.build.asarUnpack).toEqual(expect.arrayContaining(["node_modules/**/*"]));
-    expect(read("desktop/main.mjs")).toContain("app.asar.unpacked");
+    expect(read("src/desktop/shell/main.mjs")).toContain("app.asar.unpacked");
     expect(pkg.scripts["desktop:dist"]).toContain("desktop-package.mjs");
     expect(pkg.scripts["desktop:package"]).toContain("desktop-package.mjs");
   });
 
   it("the desktop orchestrator script exists and guards build output", () => {
     expect(existsSync(join(root, "scripts/desktop-package.mjs"))).toBe(true);
-    expect(read("scripts/desktop-package.mjs")).toContain("desktop/dist");
+    expect(read("scripts/desktop-package.mjs")).toContain("src/desktop/dist");
   });
 });

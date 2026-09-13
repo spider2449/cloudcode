@@ -11,7 +11,7 @@ import {
   parseThemeEvent,
   previewGuiTheme,
   resolveGuiTheme
-} from "../desktop/renderer/themeState.js";
+} from "../src/desktop/renderer/themeState.js";
 
 describe("gui theme palette", () => {
   it("covers every TUI theme name so /theme never misses in the GUI", () => {

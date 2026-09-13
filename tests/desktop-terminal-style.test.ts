@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 // Native chat has no xterm/PTY backend: no terminal- or xterm-scoped CSS may
 // remain in the renderer stylesheet (comments excluded).
 const css = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "..", "desktop", "renderer", "style.css"),
+  join(dirname(fileURLToPath(import.meta.url)), "..", "src", "desktop", "renderer", "style.css"),
   "utf8"
 );
 const code = css.replace(/\/\*[\s\S]*?\*\//g, "");

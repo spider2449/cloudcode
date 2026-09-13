@@ -7,7 +7,7 @@ import {
   recallHistoryForward,
   resetHistoryNav,
   shouldRecallHistory,
-} from "../desktop/renderer/inputHistory.js";
+} from "../src/desktop/renderer/inputHistory.js";
 
 describe("pushInputHistoryEntry", () => {
   it("trims and ignores empty input", () => {

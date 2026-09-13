@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { moveHighlight } from "../desktop/renderer/themeMenu.js";
+import { moveHighlight } from "../src/desktop/renderer/themeMenu.js";
 
 describe("titlebar theme menu navigation", () => {
   it("moves the highlight by delta", () => {

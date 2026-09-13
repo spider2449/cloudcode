@@ -5,7 +5,7 @@ import {
   parseStoredSelection,
   resolveRestoredSelection,
   serializeSelection
-} from "../desktop/renderer/lastSelection.js";
+} from "../src/desktop/renderer/lastSelection.js";
 
 const workspaces = [
   { id: "w1", sessions: [{ id: "s1" }, { id: "s2" }] },

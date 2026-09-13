@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dirtyRepoCount, groupSessionsByRepo, statusGitLabel } from "../desktop/renderer/workspaceView.js";
+import { dirtyRepoCount, groupSessionsByRepo, statusGitLabel } from "../src/desktop/renderer/workspaceView.js";
 
 describe("groupSessionsByRepo", () => {
   it("groups sessions under their repo and keeps empty repos", () => {

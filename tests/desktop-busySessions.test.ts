@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   countBusyInWorkspace, isSessionBusy, migrateAdoptedSession,
   trackTurnEnd, trackTurnStart, type BusyTurns
-} from "../desktop/renderer/busySessions.js";
+} from "../src/desktop/renderer/busySessions.js";
 
 describe("busy session tracking", () => {
   it("marks the sending session busy until its turn ends", () => {

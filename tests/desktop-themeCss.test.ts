@@ -2,13 +2,13 @@ import { describe, expect, it, afterEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { applyGuiTheme } from "../desktop/renderer/themeState.js";
+import { applyGuiTheme } from "../src/desktop/renderer/themeState.js";
 
 // Every selector chatPane.tsx / src.tsx actually renders must have a themed
 // rule: hardcoded dark hexes elsewhere mean a theme switch only recolors the
 // app background while inputs, bubbles, and dialogs stay dark.
 const css = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "..", "desktop", "renderer", "style.css"),
+  join(dirname(fileURLToPath(import.meta.url)), "..", "src", "desktop", "renderer", "style.css"),
   "utf8"
 );
 const code = css.replace(/\/\*[\s\S]*?\*\//g, "");
@@ -30,7 +30,7 @@ function ruleOf(selector: string): string {
 
 describe("desktop theme css follows gui vars", () => {
   it("chatPane permission overlay has a themed style rule", () => {
-    const pane = readFileSync("desktop/renderer/chatPane.tsx", "utf8");
+    const pane = readFileSync("src/desktop/renderer/chatPane.tsx", "utf8");
     expect(pane).toContain("permission-overlay");
     const rule = ruleOf(".permission-overlay");
     expect(rule).toContain("var(--gui-element");
