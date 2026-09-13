@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu } from "electron";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
@@ -118,6 +118,21 @@ function createWindow() {
     title: `CloudCode v${VERSION}`,
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: join(desktopDir, "preload.cjs") }
   });
+  // Custom menu: the only addition over Electron's default is File > Save
+  // Workspace As... The main process cannot know the active workspace, so the
+  // click notifies the renderer, which runs its own save flow and no-ops
+  // unless an unsaved multi workspace is active. Standard roles preserve the
+  // copy/paste and window behavior of the default menu.
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { label: "File", submenu: [
+      { label: "Save Workspace As…", accelerator: "CmdOrCtrl+S", click: () => send("cloudcode:menu-action", { action: "save-workspace" }) },
+      { type: "separator" },
+      { role: "quit" }
+    ]},
+    { role: "editMenu" },
+    { role: "viewMenu" },
+    { role: "windowMenu" }
+  ]));
   const devServer = process.env.CLOUDCODE_DESKTOP_DEV_SERVER;
   if (devServer) void window.loadURL(devServer);
   else void window.loadFile(join(desktopDir, "dist", "index.html"));

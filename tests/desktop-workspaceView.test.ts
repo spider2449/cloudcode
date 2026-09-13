@@ -4,13 +4,14 @@ import { dirtyRepoCount, groupSessionsByRepo, statusGitLabel } from "../desktop/
 describe("groupSessionsByRepo", () => {
   it("groups sessions under their repo and keeps empty repos", () => {
     const groups = groupSessionsByRepo(
-      [{ id: "r1", name: "api" }, { id: "r2", name: "web" }],
+      [{ id: "r1", name: "api", cwd: "/ws/api" }, { id: "r2", name: "web" }],
       [{ id: "s1", firstMessage: "hi", timestamp: "2026-09-01", provider: "local", repoId: "r2" }]
     );
     expect(groups).toHaveLength(2);
-    expect(groups[0]).toMatchObject({ repoId: "r1", repoName: "api" });
+    expect(groups[0]).toMatchObject({ repoId: "r1", repoName: "api", repoPath: "/ws/api" });
     expect(groups[0].sessions).toEqual([]);
     expect(groups[1].sessions.map(s => s.id)).toEqual(["s1"]);
+    expect(groups[1].repoPath).toBeUndefined();
   });
 });
 

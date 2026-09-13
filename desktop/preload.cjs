@@ -50,5 +50,10 @@ contextBridge.exposeInMainWorld("cloudcode", {
     ipcRenderer.on("cloudcode:chat-event", callback);
     return () => ipcRenderer.removeListener("cloudcode:chat-event", callback);
   },
+  onMenuAction: listener => {
+    const callback = (_event, payload) => listener(payload);
+    ipcRenderer.on("cloudcode:menu-action", callback);
+    return () => ipcRenderer.removeListener("cloudcode:menu-action", callback);
+  },
   closeApplication: () => ipcRenderer.invoke("cloudcode:close-application")
 });

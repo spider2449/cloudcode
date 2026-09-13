@@ -1,16 +1,16 @@
 export interface SessionRef { id: string; firstMessage: string; timestamp: string; provider: string; repoId: string }
-export interface RepoSessionGroup { repoId: string; repoName: string; sessions: SessionRef[] }
+export interface RepoSessionGroup { repoId: string; repoName: string; repoPath: string | undefined; sessions: SessionRef[] }
 
 // Group sessions under their repo, preserving repo order. Repos with no
 // sessions still produce an (empty) group so the sidebar shows every repo.
-export function groupSessionsByRepo(repos: { id: string; name: string }[], sessions: SessionRef[]): RepoSessionGroup[] {
+export function groupSessionsByRepo(repos: { id: string; name: string; cwd?: string }[], sessions: SessionRef[]): RepoSessionGroup[] {
   const byRepo = new Map<string, SessionRef[]>();
   for (const session of sessions) {
     const list = byRepo.get(session.repoId) ?? [];
     list.push(session);
     byRepo.set(session.repoId, list);
   }
-  return repos.map(repo => ({ repoId: repo.id, repoName: repo.name, sessions: byRepo.get(repo.id) ?? [] }));
+  return repos.map(repo => ({ repoId: repo.id, repoName: repo.name, repoPath: repo.cwd, sessions: byRepo.get(repo.id) ?? [] }));
 }
 
 export function dirtyRepoCount(states: Record<string, { files: { length: number } } | undefined>): number {
