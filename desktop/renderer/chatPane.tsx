@@ -131,7 +131,7 @@ export function busyLabel(pendingCount: number): string | null {
   return pendingCount > 0 ? "Thinking" : null;
 }
 
-export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, onAdoptSession }: { workspaceId: string | undefined; sessionId: string | undefined; onSend?: (request: { id: string; sessionId: string | undefined; text: string; workspaceId: string | undefined }) => void; onRequestNewSession?: (workspaceId: string | undefined) => void; onAdoptSession?: (workspaceId: string | undefined, sessionId: string) => void }) {
+export function ChatPane({ workspaceId, repoId, sessionId, onSend, onRequestNewSession, onAdoptSession }: { workspaceId: string | undefined; repoId: string | undefined; sessionId: string | undefined; onSend?: (request: { id: string; sessionId: string | undefined; text: string; workspaceId: string | undefined; repoId: string | undefined }) => void; onRequestNewSession?: (workspaceId: string | undefined) => void; onAdoptSession?: (workspaceId: string | undefined, repoId: string | undefined, sessionId: string) => void }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [completions, setCompletions] = useState<Completion[]>([]);
@@ -163,8 +163,8 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
   newSessionRef.current = onRequestNewSession;
   // Live selection mirror for the adoption guard below: only adopt when the
   // pane is still showing the anonymous session the event belongs to.
-  const liveRef = useRef({ workspaceId, sessionId });
-  liveRef.current = { workspaceId, sessionId };
+  const liveRef = useRef({ workspaceId, repoId, sessionId });
+  liveRef.current = { workspaceId, repoId, sessionId };
   const adoptRef = useRef(onAdoptSession);
   adoptRef.current = onAdoptSession;
   // Remembers an adopted id across the prop change it triggers, so the
@@ -195,6 +195,11 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
   }
   useStoredGuiTheme();
 
+  // Backend scope for this pane: multi-repo workspaces add repoId so the IPC
+  // layer resolves the turn against one repo; single-repo panes send none and
+  // keep the wire shape exactly as before.
+  const scope = repoId === undefined ? {} : { repoId };
+
   // Session switch: drop the previous transcript, permission prompt, and
   // pending state, then ask the backend to replay the stored history.
   // Adopting an anonymous session skips the reset: the visible transcript
@@ -208,7 +213,7 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
       setPermissionState(undefined);
       stickRef.current = true;
       completeReq.current = undefined;
-      void window.cloudcode.chatHistory(sessionId, workspaceId);
+      void window.cloudcode.chatHistory(sessionId, workspaceId, repoId);
       // Resync busy state: a turn left running in the background survives
       // the switch (per-session backend), but local pending was just reset.
       // Without reseeding, the next send fails with "already running" while
@@ -216,7 +221,7 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
       // owned by src.tsx; only this exact seed id is honored below.
       const seedId = `seed-${Date.now()}-${++seedSeq}`;
       seedReq.current = seedId;
-      void window.cloudcode.chatStatus({ id: seedId, sessionId, workspaceId });
+      void window.cloudcode.chatStatus({ id: seedId, sessionId, workspaceId, ...scope });
     }
     return window.cloudcode.onChatEvent((event: { id: string; type: string; text?: string; toolName?: string; toolInput?: Record<string, unknown>; items?: Completion[]; sessionId?: unknown; status?: { inFlightId?: unknown } }) => {
       if (isNewSessionEvent(event)) {
@@ -235,7 +240,7 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
         const live = liveRef.current;
         if (live.sessionId === undefined) {
           adoptedRef.current = adoptedId;
-          adoptRef.current?.(live.workspaceId, adoptedId);
+          adoptRef.current?.(live.workspaceId, live.repoId, adoptedId);
         }
         return;
       }
@@ -309,7 +314,7 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
         setMessages(current => [...current, { id: event.id, role: event.type, text: event.text ?? "" }]);
       }
     });
-  }, [sessionId, workspaceId]);
+  }, [sessionId, workspaceId, repoId]);
 
   function showCompletions(items: Completion[], title = "Commands") {
     setCompletions(items);
@@ -322,7 +327,7 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
     completeSeq.current += 1;
     const id = `complete-${Date.now()}-${completeSeq.current}`;
     completeReq.current = { id, prefix };
-    void window.cloudcode.chatComplete({ id, prefix, sessionId, workspaceId });
+    void window.cloudcode.chatComplete({ id, prefix, sessionId, workspaceId, ...scope });
   }
 
   function onChange(value: string) {
@@ -516,8 +521,8 @@ export function ChatPane({ workspaceId, sessionId, onSend, onRequestNewSession, 
     // Mouse-clicking Send leaves focus on the button; park it back in the
     // composer so Up/Down history recall keeps working without re-clicking.
     requestAnimationFrame(() => inputRef.current?.focus());
-    onSend?.({ id, sessionId, text, workspaceId });
-    void window.cloudcode.chatSend({ id, sessionId, text, workspaceId });
+    onSend?.({ id, sessionId, text, workspaceId, repoId });
+    void window.cloudcode.chatSend({ id, sessionId, text, workspaceId, ...scope });
   }
 
   function abort(id: string) {
