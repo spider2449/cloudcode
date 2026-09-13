@@ -20,6 +20,18 @@ import { makeClient } from "../src/engine/api.js";
 
 const wait = (ms = 30) => new Promise(r => setTimeout(r, ms));
 
+// Poll until cond() holds (throws with context on timeout). A fixed sleep
+// assumes an unloaded machine, but under a full-suite run two sequential
+// drain turns need more than 80ms. Polling keeps the test fast when idle
+// yet robust under load.
+async function waitFor(cond: () => boolean, what: string, timeoutMs = 5000): Promise<void> {
+  const start = Date.now();
+  while (!cond()) {
+    if (Date.now() - start > timeoutMs) throw new Error(`timed out waiting for ${what}`);
+    await wait(10);
+  }
+}
+
 // A client whose first turn stalls mid-stream until release() is called, so
 // tests can submit input while the app is verifiably in the streaming phase.
 // Later turns pass through the already-resolved gate immediately.
@@ -78,7 +90,10 @@ describe("App input queue", () => {
     app.submitForTest("third");
     await wait();
     release();
-    await wait(80);
+    await waitFor(
+      () => client.create.mock.calls.length === 3 && terminal.writes.join("").includes("> third"),
+      "3 sends and the '> third' render"
+    );
     const all = terminal.writes.join("");
     expect(all).toContain("> second");
     expect(all).toContain("> third");
