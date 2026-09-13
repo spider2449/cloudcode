@@ -124,7 +124,10 @@ function createWindow() {
 }
 
 ipcMain.handle("cloudcode:open-project", async () => {
-  const result = await dialog.showOpenDialog(window, { properties: ["openDirectory"] });
+  const result = await dialog.showOpenDialog(window, {
+    properties: ["openDirectory", "openFile"],
+    filters: [{ name: "Workspace", extensions: ["code-workspace"] }]
+  });
   if (result.canceled || result.filePaths.length !== 1) return undefined;
   return host.openProject(result.filePaths[0]);
 });
@@ -143,18 +146,39 @@ ipcMain.handle("cloudcode:git-create-branch", async (_event, workspaceId, branch
 ipcMain.handle("cloudcode:git-push", async (_event, workspaceId, branch) => host.gitPush(requireString(workspaceId, "workspace ID"), branch === undefined ? undefined : requireBranchName(branch)));
 ipcMain.handle("cloudcode:git-pull", async (_event, workspaceId) => host.gitPull(requireString(workspaceId, "workspace ID")));
 ipcMain.handle("cloudcode:git-fetch", async (_event, workspaceId) => host.gitFetch(requireString(workspaceId, "workspace ID")));
+// Multi-repo workspace surface: same operations scoped to one repo via
+// (workspaceId, repoId). The single-repo channels above are untouched so old
+// callers keep working byte-for-byte.
+function repoCwdOf(workspaceId, repoId) {
+  const wid = requireString(workspaceId, "workspace ID");
+  return repoId === undefined ? host.cwd(wid) : host.repoCwd(wid, requireString(repoId, "repo ID"));
+}
+ipcMain.handle("cloudcode:git-states", (_event, workspaceId) => host.gitStates(requireString(workspaceId, "workspace ID")));
+ipcMain.handle("cloudcode:git-diff-in", (_event, workspaceId, repoId, path, staged) => host.gitService().diff(repoCwdOf(workspaceId, repoId), requireString(path, "Git path"), staged === true));
+ipcMain.handle("cloudcode:git-stage-in", async (_event, workspaceId, repoId, paths) => host.gitService().stage(repoCwdOf(workspaceId, repoId), requirePaths(paths)));
+ipcMain.handle("cloudcode:git-stage-all-in", async (_event, workspaceId, repoId) => host.gitService().stageAll(repoCwdOf(workspaceId, repoId)));
+ipcMain.handle("cloudcode:git-unstage-in", async (_event, workspaceId, repoId, paths) => host.gitService().unstage(repoCwdOf(workspaceId, repoId), requirePaths(paths)));
+ipcMain.handle("cloudcode:git-unstage-all-in", async (_event, workspaceId, repoId) => host.gitService().unstageAll(repoCwdOf(workspaceId, repoId)));
+ipcMain.handle("cloudcode:git-commit-in", async (_event, workspaceId, repoId, message) => host.gitService().commit(repoCwdOf(workspaceId, repoId), requireString(message, "commit message").trim()));
+ipcMain.handle("cloudcode:git-branches-in", (_event, workspaceId, repoId) => host.gitService().branches(repoCwdOf(workspaceId, repoId)));
+ipcMain.handle("cloudcode:git-checkout-in", async (_event, workspaceId, repoId, branch) => host.gitService().checkout(repoCwdOf(workspaceId, repoId), requireBranchName(branch)));
+ipcMain.handle("cloudcode:git-create-branch-in", async (_event, workspaceId, repoId, branch) => host.gitService().createBranch(repoCwdOf(workspaceId, repoId), requireBranchName(branch)));
+ipcMain.handle("cloudcode:git-push-in", async (_event, workspaceId, repoId, branch) => host.gitService().push(repoCwdOf(workspaceId, repoId), branch === undefined ? undefined : requireBranchName(branch)));
+ipcMain.handle("cloudcode:git-pull-in", async (_event, workspaceId, repoId) => host.gitService().pull(repoCwdOf(workspaceId, repoId)));
+ipcMain.handle("cloudcode:git-fetch-in", async (_event, workspaceId, repoId) => host.gitService().fetch(repoCwdOf(workspaceId, repoId)));
 ipcMain.handle("cloudcode:chat-send", (_event, request) => {
   if (typeof request !== "object" || request === null) {
     send("cloudcode:chat-event", { id: "unknown", type: "error", text: "Invalid chat request." });
     send("cloudcode:chat-event", { id: "unknown", type: "done" });
     return;
   }
-  const { workspaceId, ...rest } = request;
+  const { workspaceId, repoId, ...rest } = request;
   // Resolve the workspace to its filesystem root so turns and slash commands
   // run in the project the user is looking at, not the backend's own cwd.
+  // Multi-repo workspaces pass repoId to target one repo instead of the first.
   let cwd;
   try {
-    cwd = workspaceId === undefined ? undefined : host.cwd(requireString(workspaceId, "workspace ID"));
+    cwd = workspaceId === undefined ? undefined : repoCwdOf(workspaceId, repoId);
   } catch (error) {
     const id = typeof rest.id === "string" ? rest.id : "unknown";
     send("cloudcode:chat-event", { id, type: "error", text: error instanceof Error ? error.message : String(error) });
@@ -166,13 +190,14 @@ ipcMain.handle("cloudcode:chat-send", (_event, request) => {
 ipcMain.handle("cloudcode:chat-abort", (_event, id) => {
   forwardChatLine(JSON.stringify({ kind: "abort", id }), typeof id === "string" ? id : "unknown");
 });
-ipcMain.handle("cloudcode:chat-history", (_event, sessionId, workspaceId) => {
+ipcMain.handle("cloudcode:chat-history", (_event, sessionId, workspaceId, repoId) => {
   // Same workspace-to-directory resolution as chat-send: the backend resets
   // the workspace's live anonymous session on history(undefined), so the
   // New Session button starts genuinely fresh without touching other projects.
+  // Multi-repo workspaces pass repoId to target one repo instead of the first.
   let cwd;
   try {
-    cwd = workspaceId === undefined ? undefined : host.cwd(requireString(workspaceId, "workspace ID"));
+    cwd = workspaceId === undefined ? undefined : repoCwdOf(workspaceId, repoId);
   } catch {
     cwd = undefined;
   }
@@ -184,12 +209,12 @@ ipcMain.handle("cloudcode:chat-respond", (_event, response) => {
 });
 ipcMain.handle("cloudcode:chat-complete", (_event, request) => {
   if (typeof request !== "object" || request === null) return;
-  const { workspaceId, ...rest } = request;
+  const { workspaceId, repoId, ...rest } = request;
   // Same workspace-to-directory resolution as chat-send so argument values
   // complete against the project the user is looking at.
   let cwd;
   try {
-    cwd = workspaceId === undefined ? undefined : host.cwd(requireString(workspaceId, "workspace ID"));
+    cwd = workspaceId === undefined ? undefined : repoCwdOf(workspaceId, repoId);
   } catch {
     return;
   }
@@ -201,10 +226,10 @@ ipcMain.handle("cloudcode:chat-complete", (_event, request) => {
 });
 ipcMain.handle("cloudcode:chat-status", (_event, request) => {
   if (typeof request !== "object" || request === null) return;
-  const { workspaceId, ...rest } = request;
+  const { workspaceId, repoId, ...rest } = request;
   let cwd;
   try {
-    cwd = workspaceId === undefined ? undefined : host.cwd(requireString(workspaceId, "workspace ID"));
+    cwd = workspaceId === undefined ? undefined : repoCwdOf(workspaceId, repoId);
   } catch {
     cwd = undefined;
   }
@@ -213,10 +238,10 @@ ipcMain.handle("cloudcode:chat-status", (_event, request) => {
 });
 ipcMain.handle("cloudcode:chat-statusline-set", (_event, request) => {
   if (typeof request !== "object" || request === null) return;
-  const { workspaceId, ...rest } = request;
+  const { workspaceId, repoId, ...rest } = request;
   let cwd;
   try {
-    cwd = workspaceId === undefined ? undefined : host.cwd(requireString(workspaceId, "workspace ID"));
+    cwd = workspaceId === undefined ? undefined : repoCwdOf(workspaceId, repoId);
   } catch {
     cwd = undefined;
   }
