@@ -22,7 +22,7 @@ the split physically.
 ```text
 src/desktop/
 ├── <18 backend files, untouched>  # guiBackend.ts, shellHost.ts, …
-├── renderer/                      # moved from desktop/renderer (12 files)
+├── renderer/                      # moved from desktop/renderer (15 files)
 ├── shell/                         # main.mjs + preload.cjs from desktop/
 └── vite.config.ts                 # moved from desktop/vite.config.ts
 ```
@@ -35,7 +35,7 @@ all hold without edits.
 
 ## Moves and import rewrites (mechanical, no logic changes)
 
-- `desktop/renderer/*` → `src/desktop/renderer/*` (12 files): `../../src/X.js`
+- `desktop/renderer/*` → `src/desktop/renderer/*` (15 files): `../../src/X.js`
   becomes `../../X.js` (6 imports: version, statusPayload,
   builtinThemes ×2, guiSlashNames, appMenu, statusLineItems). `./`
   sibling imports, `index.html`, `style.css` untouched.
