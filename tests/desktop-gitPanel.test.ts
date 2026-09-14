@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatRelativeTime, gitFilePaths, gitStatusLabel } from "../src/desktop/renderer/gitPanel.js";
+import { collapseToggleLabel, formatRelativeTime, gitFilePaths, gitStatusLabel, isSectionCollapsed } from "../src/desktop/renderer/gitPanel.js";
 
 describe("git status labels", () => {
   it("maps index/working-tree codes to badge letters", () => {
@@ -22,6 +22,17 @@ describe("git file paths", () => {
   });
 });
 
+describe("section collapse helpers", () => {
+  it("labels the toggle by collapsed state", () => {
+    expect(collapseToggleLabel(true, "CHANGES")).toBe("Expand CHANGES");
+    expect(collapseToggleLabel(false, "CHANGES")).toBe("Collapse CHANGES");
+  });
+  it("defaults sections to expanded", () => {
+    expect(isSectionCollapsed(undefined)).toBe(false);
+    expect(isSectionCollapsed(false)).toBe(false);
+    expect(isSectionCollapsed(true)).toBe(true);
+  });
+});
 describe("relative fetch time", () => {
   it("formats recency without throwing on missing values", () => {
     expect(formatRelativeTime(undefined)).toBe("never fetched yet");

@@ -105,6 +105,8 @@ function GitFileGroup({ title, files, status, action, disabled, onSelect, onActi
 
 export function gitStatusLabel(status: string): string { return status === "?" || status === "A" ? "A" : status === "D" ? "D" : status === "R" ? "R" : status === "U" ? "U" : "M"; }
 export function gitFilePaths(file: GitFile): string[] { return file.originalPath ? [file.path, file.originalPath] : [file.path]; }
+export function collapseToggleLabel(collapsed: boolean, title: string): string { return `${collapsed ? "Expand" : "Collapse"} ${title}`; }
+export function isSectionCollapsed(value: boolean | undefined): boolean { return value === true; }
 export function formatRelativeTime(epochMs: number | undefined): string {
   if (!epochMs) return "never fetched yet";
   const diff = Date.now() - epochMs;
