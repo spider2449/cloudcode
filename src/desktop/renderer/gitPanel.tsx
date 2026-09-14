@@ -98,9 +98,20 @@ export function GitRepoCard({ workspaceId, repoId, repoName, state, collapsed, o
   </>}</section>;
 }
 
-function GitFileGroup({ title, files, status, action, disabled, onSelect, onAction, onAll }: { title: string; files: GitState["files"]; status: "index" | "workingTree"; action: string; disabled: boolean; onSelect(file: GitFile): void; onAction(file: GitFile): void; onAll(): void }) {
+type SectionId = "sync" | "current" | "recent" | "staged" | "changes";
+
+function CollapsibleSection({ id, title, actions, collapsed, onToggle, children }: { id: SectionId; title: string; actions?: ReactNode; collapsed: boolean; onToggle(): void; children: ReactNode }) {
+  return <section className={`git-${id}`}><div className="section-heading"><button className="bare-button" aria-label={collapseToggleLabel(collapsed, title)} aria-expanded={!collapsed} onClick={onToggle}>{collapsed ? "▸" : "▾"}</button><span>{title}</span>{actions}</div>{!collapsed && children}</section>;
+}
+
+function GitFileGroup({ title, files, status, action, disabled, collapsed, onToggle, onSelect, onAction, onAll }: { title: string; files: GitState["files"]; status: "index" | "workingTree"; action: string; disabled: boolean; collapsed?: boolean; onToggle?(): void; onSelect(file: GitFile): void; onAction(file: GitFile): void; onAll(): void }) {
   if (files.length === 0) return null;
-  return <section className="git-group"><div className="section-heading"><span>{title} · {files.length}</span><button disabled={disabled} onClick={onAll}>{action} all</button></div>{files.map((file, index) => <div className="git-file" key={`${file.path}-${index}`}><button className="git-file-name" title={file.path} onClick={() => onSelect(file)}><span className="git-badge">{gitStatusLabel(file[status])}</span><span>{file.path}</span></button><button disabled={disabled} onClick={() => onAction(file)}>{action}</button></div>)}</section>;
+  const isCollapsed = isSectionCollapsed(collapsed);
+  const heading = onToggle
+    ? <div className="section-heading"><button className="bare-button" aria-label={collapseToggleLabel(isCollapsed, title)} aria-expanded={!isCollapsed} onClick={onToggle}>{isCollapsed ? "▸" : "▾"}</button><span>{title} · {files.length}</span><button disabled={disabled} onClick={onAll}>{action} all</button></div>
+    : <div className="section-heading"><span>{title} · {files.length}</span><button disabled={disabled} onClick={onAll}>{action} all</button></div>;
+  if (isCollapsed) return <section className="git-group">{heading}</section>;
+  return <section className="git-group">{heading}{files.map((file, index) => <div className="git-file" key={`${file.path}-${index}`}><button className="git-file-name" title={file.path} onClick={() => onSelect(file)}><span className="git-badge">{gitStatusLabel(file[status])}</span><span>{file.path}</span></button><button disabled={disabled} onClick={() => onAction(file)}>{action}</button></div>)}</section>;
 }
 
 export function gitStatusLabel(status: string): string { return status === "?" || status === "A" ? "A" : status === "D" ? "D" : status === "R" ? "R" : status === "U" ? "U" : "M"; }
