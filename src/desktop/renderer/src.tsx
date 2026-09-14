@@ -11,6 +11,7 @@ import { dirtyRepoCount, groupSessionsByRepo, statusGitLabel } from "./workspace
 import { StatusBar, StatuslinePicker } from "./statusBar.js";
 import type { DesktopStatusPayload } from "../statusPayload.js";
 import { ThemeMenu } from "./themeMenu.js";
+import { buildRepoMenuItems, RepoContextMenu } from "./repoContextMenu.js";
 import { LAST_SELECTION_KEY, loadStoredSelection, resolveRestoredSelection, serializeSelection } from "./lastSelection.js";
 import type { ChatRequest, GitState, Session, Workspace } from "./bridge.js";
 import { GitPanel, GitRepoCard } from "./gitPanel.js";
@@ -100,6 +101,9 @@ function App() {
   const [dragging, setDragging] = useState<"left" | "right" | null>(null);
   const [status, setStatus] = useState<DesktopStatusPayload | undefined>(undefined);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Right-click target for the repo header context menu (multi workspaces).
+  // Null when closed; opening records the cursor position and repo.
+  const [contextMenu, setContextMenu] = useState<{ workspaceId: string; repoId: string; repoName: string; x: number; y: number } | null>(null);
   // In-flight turns by request id (recorded on send, released on turn end).
   // Background sessions keep running across switches; the sidebar marks
   // them busy and leaving their repo asks for confirmation.
@@ -465,7 +469,7 @@ function App() {
       <div className="project-switcher"><span>⌘</span><select aria-label="Active project" value={active ?? ""} onChange={event => switchWorkspace(event.target.value)}>{workspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}</select><button className="bare-button" title="Open project" onClick={openProject}>＋</button><button className="bare-button" title="Open workspace file (.code-workspace)" onClick={openWorkspaceFile}>🗂</button><button className="bare-button" title="Attach folder to this workspace" disabled={!active} onClick={attachRepo}>📎</button></div>
       {activeWorkspace?.kind === "multi" && !activeWorkspace.saved && <div className="workspace-unsaved"><span>Workspace not saved</span><button className="bare-button" onClick={saveWorkspaceAs}>Save As…</button></div>}
       <div className="section-heading"><span>SESSIONS</span><span>{activeWorkspace?.sessions.length ?? 0}</span></div>
-      <nav className="workspace-list" aria-label="Sessions">{activeWorkspace?.kind === "multi" ? groupSessionsByRepo(activeWorkspace.repos, activeWorkspace.sessions).map(group => <div key={group.repoId} className="repo-group"><button className={`repo-header${active !== undefined && newSessionTargetFor(active) === group.repoId ? " active" : ""}`} title={`New sessions open in ${group.repoName}${group.repoPath ? ` (${group.repoPath})` : ""} — click to switch`} onClick={() => activeWorkspace && setActiveRepos(current => ({ ...current, [activeWorkspace.id]: group.repoId }))}><strong>{group.repoName}</strong><span className="repo-count">{group.sessions.length}</span></button>{activeWorkspace && group.sessions.map(session => renderSessionCard(activeWorkspace, session))}{group.sessions.length === 0 && <p className="no-sessions">No sessions yet.</p>}</div>) : activeWorkspace?.sessions.map(session => renderSessionCard(activeWorkspace, session))}{activeWorkspace && activeWorkspace.sessions.length === 0 && activeWorkspace.kind !== "multi" && <p className="no-sessions">Your first message will name this session.</p>}</nav>
+      <nav className="workspace-list" aria-label="Sessions">{activeWorkspace?.kind === "multi" ? groupSessionsByRepo(activeWorkspace.repos, activeWorkspace.sessions).map(group => <div key={group.repoId} className="repo-group"><button className={`repo-header${active !== undefined && newSessionTargetFor(active) === group.repoId ? " active" : ""}`} title={`New sessions open in ${group.repoName}${group.repoPath ? ` (${group.repoPath})` : ""} — click to switch`} onClick={() => activeWorkspace && setActiveRepos(current => ({ ...current, [activeWorkspace.id]: group.repoId }))} onContextMenu={event => { if (activeWorkspace === undefined) return; event.preventDefault(); const workspaceId = activeWorkspace.id; const repoId = group.repoId; const repoName = group.repoName; setContextMenu({ workspaceId, repoId, repoName, x: event.clientX, y: event.clientY }); }}><strong>{group.repoName}</strong><span className="repo-count">{group.sessions.length}</span></button>{activeWorkspace && group.sessions.map(session => renderSessionCard(activeWorkspace, session))}{group.sessions.length === 0 && <p className="no-sessions">No sessions yet.</p>}</div>) : activeWorkspace?.sessions.map(session => renderSessionCard(activeWorkspace, session))}{activeWorkspace && activeWorkspace.sessions.length === 0 && activeWorkspace.kind !== "multi" && <p className="no-sessions">Your first message will name this session.</p>}</nav>
       <div className="sidebar-footer"><span className="status-dot" /> Native chat<br /><small>One engine, one interaction model</small></div>
     </aside>}
     {!sidebarOpen && <button className="sidebar-reveal icon-button" onClick={() => setSidebarOpen(true)}>☰</button>}
@@ -511,6 +515,7 @@ function App() {
       }}
       onClose={() => setPickerOpen(false)}
     />}
+    {contextMenu && <RepoContextMenu x={contextMenu.x} y={contextMenu.y} repoName={contextMenu.repoName} items={buildRepoMenuItems(contextMenu.repoName)} onSelect={id => { if (id === "new-session") selectSession(contextMenu.workspaceId, undefined, contextMenu.repoId); setContextMenu(null); }} onClose={() => setContextMenu(null)} />}
   </main>;
 }
 
