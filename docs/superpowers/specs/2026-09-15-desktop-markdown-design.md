@@ -64,7 +64,10 @@ User decisions:
   and newlines never break the attribute); (3) links get
   `target="_blank" rel="noopener"`. On any throw, the caller falls back to
   plain `<pre>`.
-- New `src/desktop/renderer/Markdown.tsx` (thin wrapper): props `{ text }`;
+- New `src/desktop/renderer/markdownView.tsx` (thin wrapper, camelCase per
+  renderer convention like `chatPane.tsx`; renamed from `Markdown.tsx`
+  during implementation because the latter collides with `markdown.ts` on
+  case-insensitive filesystems): props `{ text }`;
   memoizes `DOMPurify.sanitize(renderAssistantHtml(text))` (with `button`
   and the `data-code` attribute allowlisted so the sanitizer keeps the copy
   button), renders `<div class="md-body" dangerouslySetInnerHTML>`, and
@@ -112,7 +115,7 @@ User decisions:
 
 ### 4.6 Files to touch
 
-- New: `src/desktop/renderer/markdown.ts`, `src/desktop/renderer/Markdown.tsx`,
+- New: `src/desktop/renderer/markdown.ts`, `src/desktop/renderer/markdownView.tsx`,
   `tests/desktop-markdown.test.ts`, this spec.
 - Edit: `src/desktop/renderer/chatPane.tsx` (one render branch),
   `src/desktop/renderer/style.css` (append `.md-*` block), `package.json` +

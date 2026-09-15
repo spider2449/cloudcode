@@ -13,7 +13,7 @@
 ## File structure
 
 - Create `src/desktop/renderer/markdown.ts` — pure helpers, no DOM: `escapeHtml`, `encodeCode` (base64 of UTF-8 bytes, no `Buffer` import so the Vite bundle stays browser-safe), `closeUnclosedFence`, `isSafeHref`, `renderAssistantHtml`. Importable from node tests.
-- Create `src/desktop/renderer/Markdown.tsx` — thin wrapper: `DOMPurify.sanitize(renderAssistantHtml(text))` memoized, renders `div.md-body` via `dangerouslySetInnerHTML`, handles `button[data-code]` clicks with `navigator.clipboard` + `execCommand` fallback.
+- Create `src/desktop/renderer/markdownView.tsx` (camelCase per renderer convention; `Markdown.tsx` collides with `markdown.ts` on case-insensitive filesystems) — thin wrapper: `DOMPurify.sanitize(renderAssistantHtml(text))` memoized, renders `div.md-body` via `dangerouslySetInnerHTML`, handles `button[data-code]` clicks with `navigator.clipboard` + `execCommand` fallback.
 - Modify `src/desktop/renderer/chatPane.tsx` — add the `Markdown` import; render `<Markdown text={...}/>` only for `role === "assistant"`, keep `<pre>` for user/notice/error.
 - Modify `src/desktop/renderer/style.css` — append `.bubble.assistant .md-*` rules using existing `var(--gui-*)` tokens.
 - Create `tests/desktop-markdown.test.ts` — unit tests for `markdown.ts` only (vitest runs in node env, so DOMPurify/the wrapper are verified by `typecheck:desktop` + manual desktop run instead).
@@ -240,7 +240,7 @@ git commit -m "Add desktop markdown renderer pure module with tests (0.1.143)"
 
 **Files:**
 - Modify: `package.json`, `package-lock.json` (new deps)
-- Create: `src/desktop/renderer/Markdown.tsx`
+- Create: `src/desktop/renderer/markdownView.tsx`
 
 - [ ] **Step 1: Install dompurify**
 
@@ -328,7 +328,7 @@ Expected: clean (no errors). If `Tokens.Checkbox` does not exist in `marked@15`,
 - [ ] **Step 4: Commit (bump 0.1.143 -> 0.1.144 in the same four files)**
 
 ```bash
-git add src/desktop/renderer/Markdown.tsx package.json package-lock.json src/version.ts installer/cloudcode.iss
+git add src/desktop/renderer/markdownView.tsx package.json package-lock.json src/version.ts installer/cloudcode.iss
 git commit -m "Add desktop Markdown wrapper with sanitize and copy (0.1.144)"
 ```
 
@@ -345,7 +345,7 @@ git commit -m "Add desktop Markdown wrapper with sanitize and copy (0.1.144)"
 Add after the `chatHelpers.js` import (line 29):
 
 ```tsx
-import { Markdown } from "./Markdown.js";
+import { Markdown } from "./markdownView.js";
 ```
 
 Replace the message render block:
