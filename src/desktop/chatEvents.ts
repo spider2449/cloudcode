@@ -23,7 +23,15 @@ export function toChatEvents(id: string, msg: EngineMessage): ChatEvent[] {
       if (msg.event.delta.type === "text_delta") return [{ id, type: "text_delta", text: msg.event.delta.text }];
       return [];
     case "assistant": {
-      return assistantBlocksToEvents(id, msg.message.content);
+      // Live final blocks must not reuse text_delta: streaming deltas already
+      // appended the same text to the transcript, so the renderer would append
+      // it a second time. assistant_text lets the pane dedup (ignore an
+      // already-streamed final, append a never-streamed notice instead).
+      // History replay (fromApiMessages below) keeps text_delta: it has no
+      // streaming phase, so a single copy is correct there.
+      return assistantBlocksToEvents(id, msg.message.content).map(event =>
+        event.type === "text_delta" ? { ...event, type: "assistant_text" as const } : event,
+      );
     }
     case "tool_result":
       return [{ id, type: "tool_result", text: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content) }];

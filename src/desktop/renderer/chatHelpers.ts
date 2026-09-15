@@ -95,6 +95,27 @@ export function echoUserBubble(text: string): boolean {
   return !text.startsWith("/");
 }
 
+export type ChatBubble = { id: string; role: "user" | "assistant" | "notice" | "error"; text: string };
+
+// Merge a live final assistant block into the transcript without duplicating
+// already-streamed text. Streaming deltas (text_delta) append incrementally;
+// the final (assistant_text) carries the whole block again, so appending it
+// blindly doubles the bubble. Rules, mirroring the TUI's stream-then-commit:
+// - same-id assistant bubble already contains the final text -> ignore it
+// - otherwise append the unseen tail to the same bubble (never-streamed
+//   notices such as truncation warnings still appear)
+// - no matching bubble -> start a new assistant bubble
+export function mergeAssistantFinal(messages: ChatBubble[], id: string, text: string): ChatBubble[] {
+  if (text === "") return messages;
+  const last = messages[messages.length - 1];
+  if (last?.id === id && last.role === "assistant") {
+    if (last.text.includes(text)) return messages;
+    if (text.includes(last.text)) return [...messages.slice(0, -1), { ...last, text }];
+    return [...messages.slice(0, -1), { ...last, text: last.text + text }];
+  }
+  return [...messages, { id, role: "assistant", text }];
+}
+
 // Text status for an in-flight LLM turn. Null means idle (hide the label).
 // The animated dots are a separate CSS span so this stays a pure function
 // that node-based unit tests can import (same pattern as lastSelection.ts).

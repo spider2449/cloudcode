@@ -6,8 +6,10 @@ describe("toChatEvents", () => {
     expect(toChatEvents("7", { type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "hi" } } })).toEqual([
       { id: "7", type: "text_delta", text: "hi" },
     ]);
+    // Live finals use assistant_text so the renderer can dedup against the
+    // already-streamed text_delta content instead of appending it twice.
     expect(toChatEvents("7", { type: "assistant", message: { content: [{ type: "text", text: "hello" }] } })).toEqual([
-      { id: "7", type: "text_delta", text: "hello" },
+      { id: "7", type: "assistant_text", text: "hello" },
     ]);
   });
   it("maps tool activity and errors, ignores control messages", () => {

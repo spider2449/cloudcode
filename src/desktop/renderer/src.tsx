@@ -126,7 +126,7 @@ function App() {
         setBackendExit(event.text ?? "Backend exited");
         // Backend death drops all of its in-memory turn state with it.
         setBusyTurns({});
-      } else if (event.type === "text_delta" || event.type === "done") setBackendExit(undefined);
+      } else if (event.type === "text_delta" || event.type === "assistant_text" || event.type === "done") setBackendExit(undefined);
       // Turn end releases the sidebar busy mark, including turns running in
       // background sessions (their done arrives here, not in ChatPane).
       if (event.type === "done" || event.type === "error") {
@@ -173,7 +173,7 @@ function App() {
       else if (typed.type === "statusline_picker" && (typed as { status?: DesktopStatusPayload }).status && !disposed) {
         setStatus((typed as { status: DesktopStatusPayload }).status);
         setPickerOpen(true);
-      } else if (!disposed && (typed.type === "done" || typed.type === "text_delta")) {
+      } else if (!disposed && (typed.type === "done" || typed.type === "text_delta" || typed.type === "assistant_text")) {
         const id = `status-${Date.now()}-${(seq += 1)}`;
         void window.cloudcode.chatStatus({ id, sessionId: activeSessionId, workspaceId: active, ...(chatRepoId === undefined ? {} : { repoId: chatRepoId }) }).catch(() => {});
       }

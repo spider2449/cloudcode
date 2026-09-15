@@ -19,6 +19,7 @@ import {
   echoUserBubble,
   isLiveTurnEvent,
   isNewSessionEvent,
+  mergeAssistantFinal,
   parseSessionIdEvent,
   shouldStickToBottom,
   useStoredGuiTheme,
@@ -225,6 +226,11 @@ export function ChatPane({ workspaceId, repoId, sessionId, onSend, onRequestNewS
           }
           return [...current, { id: event.id, role: "assistant", text: event.text ?? "" }];
         });
+      } else if (event.type === "assistant_text" && event.text) {
+        // Live final block: the same text already streamed via text_delta,
+        // so a blind append would double the bubble (the reported bug).
+        if (!isLiveTurnEvent(event.id, pendingRef.current)) return;
+        setMessages(current => mergeAssistantFinal(current, event.id, event.text ?? ""));
       } else if ((event.type === "notice" || event.type === "error") && event.text) {
         setMessages(current => [...current, { id: event.id, role: event.type === "notice" ? "notice" : "error", text: event.text ?? "" }]);
       }
