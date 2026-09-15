@@ -27,6 +27,7 @@ import {
   visibleCompletions,
   type Completion,
 } from "./chatHelpers.js";
+import { Markdown } from "./markdownView.js";
 
 // Slash parity (enforced by tests/desktop-chatParity.test.ts): every
 // GUI-visible command from buildRegistry must appear in GUI_SLASH_NAMES so
@@ -477,7 +478,7 @@ export function ChatPane({ workspaceId, repoId, sessionId, onSend, onRequestNewS
       <div className="chat-list" role="log" aria-label="Conversation" ref={listRef} onScroll={onChatListScroll}>
         {messages.map((message, index) => (
           <article key={`${message.id}-${message.role}-${index}`} className={`bubble ${message.role}`}>
-            <pre>{message.text}</pre>
+            {message.role === "assistant" ? <Markdown text={message.text} /> : <pre>{message.text}</pre>}
           </article>
         ))}
       </div>
