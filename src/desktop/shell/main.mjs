@@ -41,7 +41,11 @@ function startChatBackend() {
   // layout keeps the repo root; packaged falls back to the user's home, which
   // always exists. Per-request cwd still scopes every turn/history call.
   const backendCwd = existsSync(projectRoot) ? projectRoot : homedir();
-  chatChild = spawn(executable, [cliPath, "--gui-server"], { cwd: backendCwd, stdio: ["pipe", "pipe", "inherit"] });
+  chatChild = spawn(executable, [cliPath, "--gui-server"], {
+    cwd: backendCwd,
+    stdio: ["pipe", "pipe", "inherit"],
+    windowsHide: true
+  });
   // Writes to a dead child's stdin surface as async EPIPE 'error' events,
   // which Electron shows as an "Uncaught Exception" dialog (seen on app
   // close when a status poll races the backend teardown). Swallow them and

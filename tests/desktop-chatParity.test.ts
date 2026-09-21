@@ -15,6 +15,7 @@ describe("desktop shell split", () => {
   it("main spawns the gui server, not a pty", () => {
     const source = readFileSync("src/desktop/shell/main.mjs", "utf8");
     expect(source).toContain("--gui-server");
+    expect(source).toContain("windowsHide: true");
     expect(source).not.toContain("node-pty");
     expect(source).not.toContain("pty.spawn");
   });
