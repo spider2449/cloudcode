@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld("cloudcode", {
   renameSession: (workspaceId, sessionId, title) => ipcRenderer.invoke("cloudcode:rename-session", workspaceId, sessionId, title),
   removeSession: (workspaceId, sessionId) => ipcRenderer.invoke("cloudcode:remove-session", workspaceId, sessionId),
   setTheme: name => ipcRenderer.invoke("cloudcode:set-theme", name),
+  setNativeTheme: name => ipcRenderer.invoke("cloudcode:set-native-theme", name),
   onChatEvent: listener => {
     const callback = (_event, payload) => listener(payload);
     ipcRenderer.on("cloudcode:chat-event", callback);

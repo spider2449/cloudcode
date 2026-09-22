@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { THEMES } from "../src/ui/theme.js";
 import {
   GUI_THEMES,
@@ -51,5 +51,35 @@ describe("gui theme palette", () => {
     expect(getConfirmedGuiTheme()).toBe("dracula");
     expect(confirmGuiTheme("nope")).toBe("dark");
     expect(getConfirmedGuiTheme()).toBe("dark");
+  });
+});
+
+describe("native title bar theme synchronization", () => {
+  afterEach(() => {
+    Reflect.deleteProperty(globalThis, "document");
+    Reflect.deleteProperty(globalThis, "window");
+  });
+
+  it("uses light controls for the light theme and dark otherwise", () => {
+    const nativeThemes: string[] = [];
+    const props: Record<string, string> = {};
+    const fakeRoot = {
+      dataset: {} as Record<string, string>,
+      style: { setProperty: (key: string, value: string) => { props[key] = value; } }
+    };
+    (globalThis as Record<string, unknown>)["document"] = { documentElement: fakeRoot };
+    (globalThis as Record<string, unknown>)["window"] = {
+      cloudcode: {
+        setNativeTheme: (name: string) => {
+          nativeThemes.push(name);
+          return Promise.resolve();
+        }
+      }
+    };
+
+    expect(applyGuiTheme("light")).toBe("light");
+    expect(applyGuiTheme("dracula")).toBe("dracula");
+    expect(props["color-scheme"]).toBe("dark");
+    expect(nativeThemes).toEqual(["light", "dark"]);
   });
 });

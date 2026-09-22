@@ -96,6 +96,13 @@ function setThemeVars(resolved: string, vars: GuiThemeVars): void {
   // without this a light theme keeps dark scrollbars. The stylesheet also
   // carries a :root[data-theme="light"] rule as a second layer.
   style.setProperty("color-scheme", resolved === "light" ? "light" : "dark");
+  const nativeTheme = resolved === "light" ? "light" : "dark";
+  try {
+    const request = globalThis.window?.cloudcode?.setNativeTheme?.(nativeTheme);
+    if (request) void request.catch(() => {});
+  } catch {
+    // Native titlebar synchronization is best effort and must not break theme changes.
+  }
 }
 
 // Previews a theme without persisting anything: the in-app menu calls this

@@ -84,8 +84,11 @@ describe("slash parity", () => {
     const main = readFileSync("src/desktop/shell/main.mjs", "utf8");
     expect(main).toContain("cloudcode:set-theme");
     expect(main).toContain('kind: "theme-set"');
+    expect(main).toContain("nativeTheme.themeSource");
+    expect(main).toContain("cloudcode:set-native-theme");
     const preload = readFileSync("src/desktop/shell/preload.cjs", "utf8");
     expect(preload).toContain("setTheme");
+    expect(preload).toContain("setNativeTheme");
     const backend = readFileSync("src/desktop/guiBackend.ts", "utf8");
     expect(backend).toContain('kind === "theme-set"');
     const pane = readFileSync("src/desktop/renderer/chatPane.tsx", "utf8");

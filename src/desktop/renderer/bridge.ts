@@ -58,6 +58,7 @@ declare global {
       onChatEvent(listener: (event: ChatBridgeEvent) => void): () => void;
       onMenuAction(listener: (payload: { action: string }) => void): () => void;
       setTheme(name: string): Promise<void>;
+      setNativeTheme(name: "dark" | "light"): Promise<void>;
       closeApplication(): Promise<void>;
     };
   }

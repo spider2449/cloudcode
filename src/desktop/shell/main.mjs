@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme } from "electron";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
@@ -21,6 +21,12 @@ let chatChild;
 // Set on before-quit so late renderer polls (e.g. the statusline footer)
 // never respawn the backend or write to a dying pipe during shutdown.
 let quitting = false;
+
+function setNativeTheme(name) {
+  // CloudCode has one light palette; every other built-in and custom palette
+  // is dark. Electron uses this source for the native title bar and menu.
+  nativeTheme.themeSource = name === "light" ? "light" : "dark";
+}
 
 function send(channel, payload) {
   if (!window || window.isDestroyed() || window.webContents.isDestroyed()) return;
@@ -126,6 +132,7 @@ function resolveCliPath() {
 }
 
 function createWindow() {
+  setNativeTheme("dark");
   window = new BrowserWindow({
     width: 1440, height: 880, minWidth: 900, minHeight: 600, backgroundColor: "#101216",
     title: `CloudCode v${VERSION}`,
@@ -304,6 +311,9 @@ ipcMain.handle("cloudcode:set-theme", (_event, name) => {
   // the renderer applies. Previews never reach here, so browsing stays free
   // of persistence.
   forwardChatLine(JSON.stringify({ kind: "theme-set", name }), `menu-theme-${Date.now()}`);
+});
+ipcMain.handle("cloudcode:set-native-theme", (_event, name) => {
+  setNativeTheme(name);
 });
 
 app.whenReady().then(createWindow);
