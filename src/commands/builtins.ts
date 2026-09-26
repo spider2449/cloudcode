@@ -251,7 +251,7 @@ const commands: Command[] = [
     description: "Switch model: /model <model-name>; no arg lists available models",
     async run(ctx, args) {
       if (!args) {
-        const models = ctx.availableModels();
+        const models = ctx.refreshModels ? await ctx.refreshModels() : ctx.availableModels();
         if (models.length === 0) {
           ctx.notice("Usage: /model <model-name> (model list unavailable for this provider)");
           return;

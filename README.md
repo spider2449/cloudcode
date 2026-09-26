@@ -211,6 +211,10 @@ Anthropic-compatible `/v1/messages` endpoint. Create `~/.cloudcode/providers.jso
     }
 
 Then `npm run dev -- --provider local` or `/provider local` at runtime.
+Run `/model` to fetch the server's model list, then `/model <id>` to switch.
+With llama.cpp router mode (`llama-server --models-dir <directory>`), the list
+includes available unloaded models; selecting one routes subsequent requests
+to that model and lets the router load it automatically.
 
 `model_context_window` overrides the 200k default used to compute the context
 usage percentage shown in the status bar and to trigger auto-compact — set it

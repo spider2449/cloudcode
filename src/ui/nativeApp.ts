@@ -291,7 +291,9 @@ export class App {
         this.buffer.append(item);
       }
     }
-    void fetchModels(this.props.providers[name] ?? {}).then(models => { this.availableModels = models; });
+    void fetchModels(this.props.providers[name] ?? {}).then(models => {
+      if (this.providerName === name) this.availableModels = models;
+    });
     return session;
   }
 
@@ -342,6 +344,12 @@ export class App {
       restartSession: (name?: string) => this.restartSession(name ?? this.providerName),
       providerName: () => this.providerName, currentEffort: () => this.effort,
       availableModels: () => this.availableModels, currentModel: () => this.model,
+      refreshModels: async () => {
+        const name = this.providerName;
+        const models = await fetchModels(this.props.providers[name] ?? {});
+        if (this.providerName === name) this.availableModels = models;
+        return models;
+      },
       setModel: async m => { await this.session?.setModel(m); this.model = m; this.servedModel = undefined; },
       setEffort: async level => { await this.session?.setEffort(level); this.effort = level; },
       setPermissionMode: async m => {

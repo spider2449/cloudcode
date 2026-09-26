@@ -14,6 +14,7 @@ export interface CommandContext {
   setEffort(level: EffortLevel): Promise<void>;
   currentEffort(): EffortLevel;
   availableModels(): string[];
+  refreshModels?(): Promise<string[]>;
   currentModel(): string | undefined;
   setPermissionMode(mode: PermissionMode): Promise<void>;
   switchProvider(name: string): Promise<void>;

@@ -90,11 +90,12 @@ export async function runGuiServer(): Promise<void> {
     keyStates.set(key, state);
     return state;
   }
-  function refreshModels(key: string, state: GuiKeyState): void {
-    void fetchModels(guiProviders[state.providerName] ?? {}).then(models => {
-      const live = keyStates.get(key);
-      if (live) live.models = models;
-    }).catch(() => {});
+  async function refreshModels(key: string, state: GuiKeyState): Promise<string[]> {
+    const providerName = state.providerName;
+    const models = await fetchModels(guiProviders[providerName] ?? {});
+    const live = keyStates.get(key);
+    if (live === state && live.providerName === providerName) live.models = models;
+    return models;
   }
   function getSession(key: string, state: GuiKeyState): InstanceType<typeof AgentSession> {
     const existing = sessions.get(key);
@@ -144,7 +145,7 @@ export async function runGuiServer(): Promise<void> {
     });
     session.start();
     sessions.set(key, session);
-    refreshModels(key, state);
+    void refreshModels(key, state);
     return session;
   }
   async function disposeKey(key: string): Promise<void> {
@@ -219,6 +220,7 @@ export async function runGuiServer(): Promise<void> {
       providers: guiProviders,
       providerName: () => state.providerName,
       availableModels: () => state.models,
+      refreshModels: () => refreshModels(key, state),
       currentModel: () => state.model,
       setCurrentModel: model => { state.model = model; },
       currentEffort: () => state.effort,
@@ -229,7 +231,11 @@ export async function runGuiServer(): Promise<void> {
       getSession: () => getSession(key, state),
       runSlashPrompt: text => runSlashPrompt(key, state, id, text),
       restartSession: async provider => {
-        if (provider) state.providerName = provider;
+        if (provider) {
+          state.providerName = provider;
+          state.model = guiProviders[provider]?.model;
+          state.models = [];
+        }
         await disposeKey(key);
         return getSession(key, state);
       },
@@ -305,17 +311,24 @@ export async function runGuiServer(): Promise<void> {
             const completeSession = typeof request.sessionId === "string" ? request.sessionId : undefined;
             const completeKey = sessionKey(completeCwd, completeSession);
             const completeState = keyState(completeCwd, completeSession);
-            refreshModels(completeKey, completeState);
-            emit({
-              id: replyId,
-              type: "complete",
-              items: suggestCompletions(prefix, {
-                cwd: completeCwd,
-                providers: guiProviders,
-                availableModels: completeState.models
-              })
-            });
-            emit({ id: replyId, type: "done" });
+            const sendCompletions = (models: string[]) => {
+              emit({
+                id: replyId,
+                type: "complete",
+                items: suggestCompletions(prefix, {
+                  cwd: completeCwd,
+                  providers: guiProviders,
+                  availableModels: models
+                })
+              });
+              emit({ id: replyId, type: "done" });
+            };
+            if (/^\/(?:model\s|config\s+model\s)/.test(prefix)) {
+              void refreshModels(completeKey, completeState).then(sendCompletions).catch(error => {
+                emit({ id: replyId, type: "error", text: error instanceof Error ? error.message : String(error) });
+                emit({ id: replyId, type: "done" });
+              });
+            } else sendCompletions(completeState.models);
           } catch (error) {
             emit({ id: replyId, type: "error", text: error instanceof Error ? error.message : String(error) });
             emit({ id: replyId, type: "done" });

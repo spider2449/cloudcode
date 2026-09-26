@@ -47,6 +47,7 @@ export interface GuiCommandDeps {
   providers: Record<string, ProviderConfig>;
   providerName(): string;
   availableModels(): string[];
+  refreshModels(): Promise<string[]>;
   currentModel(): string | undefined;
   setCurrentModel(model: string): void;
   currentEffort(): EffortLevel;
@@ -105,6 +106,7 @@ export function buildGuiCommandContext(deps: GuiCommandDeps): CommandContext {
     },
     currentEffort: () => deps.currentEffort(),
     availableModels: () => deps.availableModels(),
+    refreshModels: () => deps.refreshModels(),
     currentModel: () => deps.currentModel(),
     setPermissionMode: async m => {
       const pm = m as PermissionMode;

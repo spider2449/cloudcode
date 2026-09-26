@@ -10,7 +10,7 @@ describe("fetchModels", () => {
     const models = await fetchModels({ baseUrl: "http://localhost:8080", apiKey: "sk-x" }, fetchFn as never);
     expect(models).toEqual(["llama-3", "qwen-2.5"]);
     const [url, init] = fetchFn.mock.calls[0];
-    expect(url).toBe("http://localhost:8080/v1/models");
+    expect(url).toBe("http://localhost:8080/models");
     expect(init.headers).toMatchObject({ Authorization: "Bearer sk-x" });
   });
 
@@ -24,14 +24,35 @@ describe("fetchModels", () => {
   it("strips a trailing slash from baseUrl", async () => {
     const fetchFn = ok({ data: [] });
     await fetchModels({ baseUrl: "http://localhost:8080/" }, fetchFn as never);
-    expect(fetchFn.mock.calls[0][0]).toBe("http://localhost:8080/v1/models");
+    expect(fetchFn.mock.calls[0][0]).toBe("http://localhost:8080/models");
   });
 
   it("does not double /v1 when baseUrl already ends with /v1", async () => {
     const fetchFn = ok({ data: [{ id: "z-ai/glm-5.2" }] });
-    const models = await fetchModels({ baseUrl: "https://integrate.api.nvidia.com/v1", apiKey: "nvapi-x" }, fetchFn as never);
+    const models = await fetchModels({ kind: "openai", baseUrl: "https://integrate.api.nvidia.com/v1", apiKey: "nvapi-x" }, fetchFn as never);
     expect(models).toEqual(["z-ai/glm-5.2"]);
     expect(fetchFn.mock.calls[0][0]).toBe("https://integrate.api.nvidia.com/v1/models");
+  });
+
+  it("reads all router models, including unloaded entries", async () => {
+    const fetchFn = ok({ data: [
+      { id: "loaded-model", status: { value: "loaded" } },
+      { id: "unloaded-model", status: { value: "unloaded" } }
+    ] });
+    expect(await fetchModels({ baseUrl: "http://127.0.0.1:8080/v1" }, fetchFn as never))
+      .toEqual(["loaded-model", "unloaded-model"]);
+    expect(fetchFn.mock.calls[0][0]).toBe("http://127.0.0.1:8080/models");
+  });
+
+  it("falls back to /v1/models when a local server has no router endpoint", async () => {
+    const fetchFn = vi.fn()
+      .mockResolvedValueOnce({ ok: false })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ data: [{ id: "single-model" }] }) });
+    expect(await fetchModels({ baseUrl: "http://localhost:8080" }, fetchFn as never))
+      .toEqual(["single-model"]);
+    expect(fetchFn.mock.calls.map(call => call[0])).toEqual([
+      "http://localhost:8080/models", "http://localhost:8080/v1/models"
+    ]);
   });
 
   it("queries the Anthropic API with x-api-key when no baseUrl", async () => {

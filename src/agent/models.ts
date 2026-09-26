@@ -32,6 +32,21 @@ export async function fetchModels(
     headers["anthropic-version"] = "2023-06-01";
   }
   try {
+    // llama.cpp's router exposes available (including unloaded) models at
+    // /models. Keep /v1/models for other OpenAI-compatible providers and
+    // older single-model servers.
+    if (provider.baseUrl && (provider.kind !== "openai" || /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(provider.baseUrl))) {
+      const base = provider.baseUrl.replace(/\/+$/, "").replace(/\/v1$/, "");
+      try {
+        const router = await fetchFn(`${base}/models`, { headers, signal: AbortSignal.timeout(3000) });
+        if (router.ok) {
+          const ids = parseIds(await router.json());
+          if (ids.length > 0) return ids;
+        }
+      } catch {
+        // Other local OpenAI-compatible servers may not expose /models.
+      }
+    }
     const res = await fetchFn(url, { headers, signal: AbortSignal.timeout(3000) });
     if (!res.ok) return [];
     return parseIds(await res.json());

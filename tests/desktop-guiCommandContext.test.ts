@@ -64,6 +64,7 @@ function setup() {
     providers,
     providerName: () => providerName,
     availableModels: () => ["a-model", "a-other"],
+    refreshModels: async () => ["a-model", "a-other"],
     currentModel: () => model,
     setCurrentModel: m => { model = m; },
     currentEffort: () => "off",

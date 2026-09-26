@@ -25,6 +25,7 @@ export interface AppCommandDeps {
   restartSession(name?: string): Promise<void>;
   providerName(): string;
   availableModels(): string[];
+  refreshModels(): Promise<string[]>;
   currentModel(): string | undefined;
   setModel(m: string): Promise<void>;
   currentEffort(): EffortLevel;
@@ -84,6 +85,7 @@ export function buildAppCommandContext(deps: AppCommandDeps): CommandContext {
     },
     setModel: async m => { await deps.setModel(m); deps.recompute(); },
     availableModels: () => deps.availableModels(),
+    refreshModels: () => deps.refreshModels(),
     currentModel: () => deps.currentModel(),
     setEffort: async level => { await deps.setEffort(level); },
     currentEffort: () => deps.currentEffort(),

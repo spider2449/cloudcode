@@ -81,6 +81,15 @@ describe("builtins", () => {
     );
   });
 
+  it("/model refreshes the server list before displaying it", async () => {
+    const ctx = mockCtx();
+    ctx.refreshModels = vi.fn().mockResolvedValue(["router-a", "router-b"]);
+    vi.mocked(ctx.currentModel).mockReturnValue("router-b");
+    await buildRegistry().get("model")!.run(ctx, "");
+    expect(ctx.refreshModels).toHaveBeenCalledOnce();
+    expect(ctx.notice).toHaveBeenCalledWith("  router-a\n● router-b");
+  });
+
   it("/model completes from the fetched list", () => {
     const cmd = buildRegistry().get("model")!;
     const cctx = { availableModels: () => ["llama-3", "qwen-2.5"] } as never;
