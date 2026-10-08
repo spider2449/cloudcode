@@ -31,7 +31,9 @@ export function saveWorkspaceId(
   id: string,
   filePath: string = join(configDir(), FILE_NAME)
 ): void {
-  const ids = { [cwd]: id, ...loadWorkspaceIds(filePath) };
+  const previous = loadWorkspaceIds(filePath);
+  delete previous[cwd];
+  const ids = { [cwd]: id, ...previous };
   const pruned = Object.fromEntries(Object.entries(ids).slice(0, MAX_ENTRIES));
   mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(filePath, JSON.stringify(pruned, null, 2));

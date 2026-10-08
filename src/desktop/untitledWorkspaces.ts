@@ -32,7 +32,9 @@ export function saveUntitledWorkspace(
   dirs: string[],
   filePath: string = join(configDir(), FILE_NAME)
 ): void {
-  const all = { [id]: dirs, ...loadUntitledWorkspaces(filePath) };
+  const previous = loadUntitledWorkspaces(filePath);
+  delete previous[id];
+  const all = { [id]: dirs, ...previous };
   const pruned = Object.fromEntries(Object.entries(all).slice(0, MAX_ENTRIES));
   mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(filePath, JSON.stringify(pruned, null, 2));

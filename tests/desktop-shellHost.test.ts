@@ -1,16 +1,42 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as providers from "../src/agent/providers.js";
 import { SessionIndex } from "../src/agent/sessionIndex.js";
 import { SessionFile } from "../src/engine/sessions.js";
 import { DesktopShellHost, parseDesktopGitStatus } from "../src/desktop/shellHost.js";
 import { loadUntitledWorkspaces } from "../src/desktop/untitledWorkspaces.js";
 
 const roots: string[] = [];
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+beforeEach(() => {
+  const root = mkdtempSync(join(tmpdir(), "cloudcode-shell-config-"));
+  roots.push(root);
+  vi.spyOn(providers, "configDir").mockReturnValue(root);
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
 
 describe("DesktopShellHost", () => {
+  it("forgets a missing project across restarts without deleting session records", () => {
+    const root = mkdtempSync(join(tmpdir(), "cloudcode-forget-"));
+    roots.push(root);
+    const project = join(root, "missing");
+    let recent = [project];
+    const index = new SessionIndex(join(root, "sessions.json"));
+    index.record({ id: "retained", cwd: project, firstMessage: "Keep", timestamp: "2026-10-08", provider: "local" });
+    const options = { sessionIndex: index, workspaceIdsFile: join(root, "ids.json"),
+      untitledWorkspacesFile: join(root, "untitled.json"),
+      recentProjects: { load: () => recent, save: () => {}, remove: (path: string) => { recent = recent.filter(entry => entry.toLowerCase() !== path.toLowerCase()); } } };
+    const host = new DesktopShellHost(options);
+    const workspace = host.restoreProjects()[0];
+    host.removeWorkspace(workspace.id);
+    expect(() => host.refresh(workspace.id)).toThrow("Unknown workspace");
+    expect(new DesktopShellHost(options).restoreProjects()).toEqual([]);
+    expect(index.list().map(session => session.id)).toEqual(["retained"]);
+  });
   it("parses branch and file states", () => {
     expect(parseDesktopGitStatus("## main...origin/main\0M  src/a.ts\0 M src/b.ts\0?? src/c.ts\0")).toEqual({
       isGitRepo: true,
@@ -247,6 +273,17 @@ describe("DesktopShellHost attach/save workspace", () => {
     return process.platform === "win32" ? dir.toLowerCase() : dir;
   }
 
+  it("removes an untitled workspace without deleting its member directories", () => {
+    const { dirA, dirB, host, options } = setup();
+    const single = host.openProject(dirA);
+    host.attachRepo(single.id, dirB);
+    host.removeWorkspace(single.id);
+    expect(loadUntitledWorkspaces(options.untitledWorkspacesFile as string)).toEqual({});
+    expect(new DesktopShellHost(options).restoreProjects()).toEqual([]);
+    expect(host.openProject(dirA).repos).toHaveLength(1);
+    expect(host.openProject(dirB).repos).toHaveLength(1);
+  });
+
   it("converts a single workspace to an unsaved multi in place, keeping its id", () => {
     const { dirA, dirB, removedRecent, host } = setup();
     const single = host.openProject(dirA);
@@ -313,5 +350,57 @@ describe("DesktopShellHost attach/save workspace", () => {
     const single = host.openProject(dirA);
     host.attachRepo(single.id, dirB);
     expect(loadUntitledWorkspaces(options.untitledWorkspacesFile as string)[single.id]).toEqual([canonical(dirA), canonical(dirB)]);
+  });
+
+  it("restores every repo after multiple attachments and a restart", () => {
+    const { root, dirA, dirB, host, options } = setup();
+    const dirC = join(root, "worker");
+    mkdirSync(dirC);
+    const single = host.openProject(dirA);
+    host.attachRepo(single.id, dirB);
+    host.attachRepo(single.id, dirC);
+    const revived = new DesktopShellHost(options);
+    const restored = revived.restoreProjects().find(workspace => workspace.id === single.id);
+    expect(restored?.repos.map(repo => repo.cwd)).toEqual([canonical(dirA), canonical(dirB), canonical(dirC)]);
+    expect(restored?.repos.map(repo => repo.id)).toEqual(["repo-0", "repo-1", "repo-2"]);
+  });
+
+  it("keeps missing single projects and their sessions on restart", () => {
+    const { root, dirA, host, options } = setup();
+    const single = host.openProject(dirA);
+    options.sessionIndex.record({ id: "old-session", cwd: dirA, firstMessage: "Review", timestamp: "2026-10-08", provider: "local" });
+    rmSync(dirA, { recursive: true });
+    const revived = new DesktopShellHost({ ...options, recentProjects: { load: () => [dirA], save: () => {} } });
+    const restored = revived.restoreProjects()[0];
+    expect(restored).toMatchObject({ id: single.id, kind: "single", repos: [{ id: "repo-0", missing: true }] });
+    expect(restored.sessions.map(session => session.id)).toEqual(["old-session"]);
+    expect(() => revived.cwd(single.id)).toThrow("Project directory unavailable");
+    expect(() => host.openProject(join(root, "never-opened"))).toThrow("unavailable");
+    mkdirSync(dirA);
+    expect(revived.refresh(single.id).repos[0].missing).toBeUndefined();
+    expect(revived.cwd(single.id)).toBe(canonical(dirA));
+  });
+
+  it("retains missing multi members without shifting repo ids or running Git", async () => {
+    const { dirA, dirB, host, options } = setup();
+    const single = host.openProject(dirA);
+    host.attachRepo(single.id, dirB);
+    rmSync(dirA, { recursive: true });
+    const gitRunner = vi.fn(async (_args: string[], _cwd: string) => ({ code: 0, stdout: "", stderr: "", truncated: false }));
+    const revived = new DesktopShellHost({ ...options, gitRunner });
+    const restored = revived.restoreProjects()[0];
+    expect(restored.repos).toMatchObject([
+      { id: "repo-0", cwd: canonical(dirA), missing: true },
+      { id: "repo-1", cwd: canonical(dirB) }
+    ]);
+    expect(() => revived.repoCwd(single.id, "repo-0")).toThrow("Project directory unavailable");
+    expect(revived.repoCwd(single.id, "repo-1")).toBe(canonical(dirB));
+    const states = await revived.gitStates(single.id);
+    expect(states["repo-0"].error).toContain("Project directory unavailable");
+    expect(gitRunner.mock.calls.every(call => call[1] !== canonical(dirA))).toBe(true);
+    rmSync(dirB, { recursive: true });
+    const allMissing = new DesktopShellHost(options).restoreProjects()[0];
+    expect(allMissing.repos).toHaveLength(2);
+    expect(allMissing.repos.every(repo => repo.missing)).toBe(true);
   });
 });

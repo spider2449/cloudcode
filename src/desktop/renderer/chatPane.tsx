@@ -47,7 +47,7 @@ let sendSeq = 0;
 // turn ids: a seed response is only honored when its id matches exactly).
 let seedSeq = 0;
 
-export function ChatPane({ workspaceId, repoId, sessionId, onSend, onRequestNewSession, onAdoptSession }: { workspaceId: string | undefined; repoId: string | undefined; sessionId: string | undefined; onSend?: (request: { id: string; sessionId: string | undefined; text: string; workspaceId: string | undefined; repoId: string | undefined }) => void; onRequestNewSession?: (workspaceId: string | undefined) => void; onAdoptSession?: (workspaceId: string | undefined, repoId: string | undefined, sessionId: string) => void }) {
+export function ChatPane({ workspaceId, repoId, sessionId, unavailablePath, onSend, onRequestNewSession, onAdoptSession }: { unavailablePath?: string; workspaceId: string | undefined; repoId: string | undefined; sessionId: string | undefined; onSend?: (request: { id: string; sessionId: string | undefined; text: string; workspaceId: string | undefined; repoId: string | undefined }) => void; onRequestNewSession?: (workspaceId: string | undefined) => void; onAdoptSession?: (workspaceId: string | undefined, repoId: string | undefined, sessionId: string) => void }) {
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [input, setInput] = useState("");
   const [completions, setCompletions] = useState<Completion[]>([]);
@@ -422,7 +422,7 @@ export function ChatPane({ workspaceId, repoId, sessionId, onSend, onRequestNewS
 
   function send() {
     const text = input.trim();
-    if (!text) return;
+    if (!text || unavailablePath) return;
     if (pendingIds.length > 0) return;
     const id = `${Date.now()}-${++sendSeq}`;
     setPendingIds(current => [...current, id]);
@@ -467,6 +467,7 @@ export function ChatPane({ workspaceId, repoId, sessionId, onSend, onRequestNewS
 
   return (
     <section className={completions.length > 0 ? "chat-pane has-complete" : "chat-pane"}>
+      {unavailablePath && <p className="git-empty" role="alert">Project directory unavailable: {unavailablePath}. Restore the directory or open its new location.</p>}
       {permission && (
         <div className="permission-overlay" role="alertdialog" aria-label="Permission request">
           <strong>Allow {permission.toolName}?</strong>
@@ -499,7 +500,7 @@ export function ChatPane({ workspaceId, repoId, sessionId, onSend, onRequestNewS
           onCompositionEnd={() => { composingRef.current = false; }}
           placeholder="Message, or / for commands (Shift+Enter for newline)"
         />
-        <button className="chat-send" onClick={send} disabled={pendingIds.length > 0}>Send</button>
+        <button className="chat-send" onClick={send} disabled={pendingIds.length > 0 || unavailablePath !== undefined}>Send</button>
         {pendingIds.length > 0 && <button className="chat-stop" aria-label="Abort turn" onClick={() => { const last = pendingIds[pendingIds.length - 1]; if (last) abort(last); }}>Stop</button>}
       </div>
       {busyLabel(pendingIds.length) !== null && (

@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { SessionIndex } from "../agent/sessionIndex.js";
@@ -76,9 +76,9 @@ export class DesktopShellHost {
     this.git = new DesktopGitService(options.gitRunner);
   }
 
-  openProject(selectedPath: string): DesktopShellWorkspace {
+  openProject(selectedPath: string, restoreMissing = false): DesktopShellWorkspace {
     if (selectedPath.toLowerCase().endsWith(".code-workspace")) return this.openWorkspaceFile(selectedPath);
-    const cwd = canonicalProjectRoot(selectedPath);
+    const cwd = canonicalProjectRoot(selectedPath, restoreMissing);
     const existing = [...this.workspaces.entries()].find(([, record]) => record.kind === "single" && record.root === cwd);
     // Workspace ids must survive app restarts: the renderer remembers its
     // selection by id, so reuse the persisted id for a known directory and
@@ -92,7 +92,7 @@ export class DesktopShellHost {
     if (!existing) {
       const name = cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? cwd;
       this.workspaces.set(id, { name, kind: "single", root: cwd, repos: [{ id: "repo-0", name, cwd }], saved: true });
-      if (!persisted) saveWorkspaceId(cwd, id, this.options.workspaceIdsFile);
+      if (persisted !== id) saveWorkspaceId(cwd, id, this.options.workspaceIdsFile);
     }
     this.recentStore().save(cwd);
     return this.describe(id);
@@ -190,23 +190,22 @@ export class DesktopShellHost {
       try { restored.push(this.restoreUntitled(id, dirs)); } catch { /* stale entries are ignored */ }
     }
     for (const path of this.recentStore().load()) {
-      try { restored.push(this.openProject(path)); } catch { /* stale entries are ignored */ }
+      try { restored.push(this.openProject(path, true)); } catch { /* unreadable workspace files are ignored */ }
     }
     return restored;
   }
 
   // Rebuild an unsaved multi-repo workspace from its persisted member
   // directories, reusing its id so the renderer's selection survives restarts.
-  // Missing directories are skipped; with none left it throws (ignored above).
+  // Retain unavailable directories and their positions so repo ids and session
+  // associations do not shift when a drive is disconnected or a folder moves.
   private restoreUntitled(id: string, dirs: string[]): DesktopShellWorkspace {
     const repos: DesktopRepoEntry[] = [];
-    for (const dir of dirs) {
-      let cwd: string;
-      try { cwd = canonicalProjectRoot(dir); }
-      catch { continue; }
+    for (const [index, dir] of dirs.entries()) {
+      const cwd = canonicalProjectRoot(dir, true);
       if (repos.some(repo => sameProjectPath(repo.cwd, cwd))) continue;
       const name = cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? cwd;
-      repos.push({ id: `repo-${repos.length}`, name, cwd });
+      repos.push({ id: `repo-${index}`, name, cwd });
     }
     if (repos.length === 0) throw new Error("The saved workspace has no available directories.");
     const name = repos[0].name;
@@ -218,14 +217,27 @@ export class DesktopShellHost {
     return this.describe(workspaceId);
   }
 
+  // Forget navigation state only; project files and session transcripts remain.
+  removeWorkspace(workspaceId: string): void {
+    const record = this.workspaces.get(workspaceId);
+    if (!record) throw new Error("Unknown workspace.");
+    const paths = Object.entries(loadWorkspaceIds(this.options.workspaceIdsFile))
+      .filter(([, id]) => id === workspaceId).map(([path]) => path);
+    if (record.filePath) paths.push(record.filePath);
+    else if (record.kind === "single") paths.push(record.root);
+    for (const path of new Set(paths)) this.recentStore().remove?.(path);
+    removeUntitledWorkspace(workspaceId, this.options.untitledWorkspacesFile);
+    this.workspaces.delete(workspaceId);
+  }
+
   cwd(workspaceId: string): string {
     // Single workspaces hold their directory as the sole repo. Multi
     // workspaces resolve to the first repo so legacy single-cwd callers keep
     // working; per-repo callers must use repoCwd instead.
     const record = this.workspaces.get(workspaceId);
-    const cwd = record?.repos[0]?.cwd;
-    if (!cwd) throw new Error("Unknown workspace.");
-    return cwd;
+    const repo = record?.repos[0];
+    if (!repo) throw new Error("Unknown workspace.");
+    return this.repoCwd(workspaceId, repo.id);
   }
 
   reposOf(workspaceId: string): DesktopRepoEntry[] {
@@ -237,6 +249,7 @@ export class DesktopShellHost {
   repoCwd(workspaceId: string, repoId: string): string {
     const repo = this.reposOf(workspaceId).find(entry => entry.id === repoId);
     if (!repo) throw new Error("Unknown repo.");
+    if (!isProjectDirectory(repo.cwd)) throw new Error(`Project directory unavailable: ${repo.cwd}`);
     return repo.cwd;
   }
 
@@ -268,7 +281,7 @@ export class DesktopShellHost {
     const states: Record<string, DesktopGitState> = {};
     for (const repo of this.reposOf(workspaceId)) {
       try {
-        states[repo.id] = await this.git.status(repo.cwd);
+        states[repo.id] = await this.git.status(this.repoCwd(workspaceId, repo.id));
       } catch (error) {
         states[repo.id] = { isGitRepo: false, ahead: 0, behind: 0, files: [], truncated: false, recent: [], error: error instanceof Error ? error.message : String(error) };
       }
@@ -293,6 +306,10 @@ export class DesktopShellHost {
   private describe(id: string): DesktopShellWorkspace {
     const record = this.workspaces.get(id);
     if (!record) throw new Error("Unknown workspace.");
+    for (const repo of record.repos) {
+      if (isProjectDirectory(repo.cwd)) delete repo.missing;
+      else repo.missing = true;
+    }
     const sessions: (DesktopSessionEntry & { repoId: string })[] = [];
     for (const entry of this.sessionIndex.list()) {
       const repo = record.repos.find(candidate => sameProjectPath(entry.cwd, candidate.cwd));
@@ -311,9 +328,19 @@ function sameProjectPath(left: string, right: string): boolean {
     : normalizedLeft === normalizedRight;
 }
 
-function canonicalProjectRoot(path: string): string {
+function isProjectDirectory(path: string): boolean {
+  try { return statSync(path).isDirectory(); }
+  catch { return false; }
+}
+
+function canonicalProjectRoot(path: string, restoreMissing = false): string {
   let root: string;
   try { root = realpathSync.native(resolve(path)); }
-  catch { throw new Error("The selected project directory is unavailable."); }
+  catch {
+    if (!restoreMissing) throw new Error("The selected project directory is unavailable.");
+    root = resolve(path);
+  }
+
+  if (!restoreMissing && !isProjectDirectory(root)) throw new Error("The selected project directory is unavailable.");
   return process.platform === "win32" ? root.toLowerCase() : root;
 }

@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("cloudcode", {
   attachRepo: workspaceId => ipcRenderer.invoke("cloudcode:attach-repo", workspaceId),
   saveWorkspace: (workspaceId, suggestedName) => ipcRenderer.invoke("cloudcode:save-workspace", workspaceId, suggestedName),
   restoreProjects: () => ipcRenderer.invoke("cloudcode:restore-projects"),
+  removeWorkspace: workspaceId => ipcRenderer.invoke("cloudcode:remove-workspace", workspaceId),
   refreshWorkspace: workspaceId => ipcRenderer.invoke("cloudcode:refresh-workspace", workspaceId),
   gitState: workspaceId => ipcRenderer.invoke("cloudcode:git-state", workspaceId),
   gitStates: workspaceId => ipcRenderer.invoke("cloudcode:git-states", workspaceId),

@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { ChatPane } from "../src/desktop/renderer/chatPane.js";
+
+describe("unavailable project", () => {
+  it("shows the missing path and disables sending while retaining the transcript area", () => {
+    const html = renderToStaticMarkup(createElement(ChatPane, {
+      workspaceId: "workspace", repoId: "repo-0", sessionId: undefined,
+      unavailablePath: "D:/missing/project"
+    }));
+    expect(html).toContain("Project directory unavailable: D:/missing/project");
+    expect(html).toContain('role="log"');
+    expect(html).toMatch(/class="chat-send"[^>]*disabled/);
+  });
+});
 
 describe("completion dropdown shell", () => {
   it("clears the stale command list when entering argument mode", () => {

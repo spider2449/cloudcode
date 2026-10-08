@@ -14,6 +14,16 @@ function tempFile(): string {
 }
 
 describe("untitled workspaces", () => {
+  it("updates members of an existing workspace and keeps it most recent", () => {
+    const file = tempFile();
+    saveUntitledWorkspace("first", ["D:/work/api"], file);
+    saveUntitledWorkspace("second", ["D:/work/other"], file);
+    saveUntitledWorkspace("first", ["D:/work/api", "D:/work/web"], file);
+    expect(loadUntitledWorkspaces(file)).toEqual({
+      first: ["D:/work/api", "D:/work/web"], second: ["D:/work/other"]
+    });
+    expect(Object.keys(loadUntitledWorkspaces(file))).toEqual(["first", "second"]);
+  });
   it("round-trips workspace id to member dirs", () => {
     const file = tempFile();
     expect(loadUntitledWorkspaces(file)).toEqual({});

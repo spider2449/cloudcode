@@ -19,6 +19,7 @@ declare global {
       attachRepo(workspaceId: string): Promise<Workspace | undefined>;
       saveWorkspace(workspaceId: string, suggestedName: string): Promise<Workspace | undefined>;
       restoreProjects(): Promise<Workspace[]>;
+      removeWorkspace(workspaceId: string): Promise<void>;
       refreshWorkspace(workspaceId: string): Promise<Workspace>;
       gitState(workspaceId: string): Promise<GitState>;
       gitStates(workspaceId: string): Promise<Record<string, GitState>>;

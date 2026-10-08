@@ -14,6 +14,14 @@ function tempFile(): string {
 }
 
 describe("workspace ids", () => {
+  it("replaces a stale identity and keeps the updated path most recent", () => {
+    const file = tempFile();
+    saveWorkspaceId("D:/work/proj", "old", file);
+    saveWorkspaceId("D:/work/other", "other", file);
+    saveWorkspaceId("D:/work/proj", "new", file);
+    expect(loadWorkspaceIds(file)).toEqual({ "D:/work/proj": "new", "D:/work/other": "other" });
+    expect(Object.keys(loadWorkspaceIds(file))).toEqual(["D:/work/proj", "D:/work/other"]);
+  });
   it("round-trips cwd to id mappings", () => {
     const file = tempFile();
     expect(loadWorkspaceIds(file)).toEqual({});

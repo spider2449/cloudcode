@@ -172,6 +172,7 @@ ipcMain.handle("cloudcode:open-workspace-file", async () => {
   return host.openProject(result.filePaths[0]);
 });
 ipcMain.handle("cloudcode:restore-projects", () => host.restoreProjects());
+ipcMain.handle("cloudcode:remove-workspace", (_event, workspaceId) => host.removeWorkspace(requireString(workspaceId, "workspace ID")));
 ipcMain.handle("cloudcode:attach-repo", async (_event, workspaceId) => {
   const result = await dialog.showOpenDialog(window, { properties: ["openDirectory"] });
   if (result.canceled || result.filePaths.length !== 1) return undefined;
