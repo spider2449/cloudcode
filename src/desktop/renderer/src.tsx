@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./style.css";
 import { VERSION } from "../../version.js";
 import { ChatPane } from "./chatPane.js";
+import { shouldRefreshStatus } from "./chatHelpers.js";
 import {
   countBusyInWorkspace, isSessionBusy, migrateAdoptedSession,
   trackTurnEnd, trackTurnStart, type BusyTurns
@@ -174,7 +175,7 @@ function App() {
       else if (typed.type === "statusline_picker" && (typed as { status?: DesktopStatusPayload }).status && !disposed) {
         setStatus((typed as { status: DesktopStatusPayload }).status);
         setPickerOpen(true);
-      } else if (!disposed && (typed.type === "done" || typed.type === "text_delta" || typed.type === "assistant_text")) {
+      } else if (!disposed && shouldRefreshStatus(event)) {
         const id = `status-${Date.now()}-${(seq += 1)}`;
         void window.cloudcode.chatStatus({ id, sessionId: activeSessionId, workspaceId: active, ...(chatRepoId === undefined ? {} : { repoId: chatRepoId }) }).catch(() => {});
       }
@@ -313,11 +314,13 @@ function App() {
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("blur", onUp);
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
     return () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("blur", onUp);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
     };

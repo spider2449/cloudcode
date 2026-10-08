@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import DOMPurify from "dompurify";
 import { renderAssistantHtml } from "./markdown.js";
 
@@ -28,7 +28,8 @@ async function copyText(code: string): Promise<boolean> {
   }
 }
 
-export function Markdown({ text }: { text: string }) {
+// Preserve the transcript DOM and native text selection on unrelated status updates.
+export const Markdown = memo(function Markdown({ text }: { text: string }) {
   // data-code carries the raw snippet for the copy button; DOMPurify keeps
   // data-* attributes by default, listed here explicitly so a config change
   // can never silently drop the copy payload.
@@ -64,4 +65,4 @@ export function Markdown({ text }: { text: string }) {
   }
 
   return <div className="md-body" onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />;
-}
+});

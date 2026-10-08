@@ -1,5 +1,24 @@
 import { describe, expect, it } from "vitest";
+import { shouldRefreshStatus } from "../src/desktop/renderer/chatHelpers.js";
 import { applySuggestionText, busyLabel, describeSlashInput, echoUserBubble, isLiveTurnEvent, isNewSessionEvent, parseSessionIdEvent, shouldStickToBottom, STICK_THRESHOLD_PX, titleForCompletionPrefix, visibleCompletions } from "../src/desktop/renderer/chatHelpers.js";
+
+describe("status refresh routing", () => {
+  it("does not recursively refresh status query completions", () => {
+    for (const id of ["status-123-1", "seed-123-1"]) {
+      expect(shouldRefreshStatus({ id, type: "status" })).toBe(false);
+      expect(shouldRefreshStatus({ id, type: "done" })).toBe(false);
+      expect(shouldRefreshStatus({ id, type: "error" })).toBe(false);
+    }
+  });
+  it("still refreshes after turns, commands, and statusline changes", () => {
+    for (const id of ["chat-123-1", "history-123", "statusline-123"]) {
+      expect(shouldRefreshStatus({ id, type: "done" })).toBe(true);
+    }
+    expect(shouldRefreshStatus({ id: "chat-123", type: "text_delta" })).toBe(true);
+    expect(shouldRefreshStatus({ id: "chat-123", type: "assistant_text" })).toBe(true);
+    expect(shouldRefreshStatus({ id: "chat-123", type: "notice" })).toBe(false);
+  });
+});
 
 describe("slash input classification", () => {
   it("treats plain text as non-slash", () => {

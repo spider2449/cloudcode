@@ -3,6 +3,13 @@ import { confirmGuiTheme, loadStoredGuiTheme } from "./themeState.js";
 
 export type Completion = { label: string; value: string; replaceStart: number; replaceEnd: number };
 
+// Status queries end with `done` too. Refreshing in response to their own
+// completion creates an unbounded renderer/backend feedback loop.
+export function shouldRefreshStatus(event: { id: string; type: string }): boolean {
+  if (event.type === "text_delta" || event.type === "assistant_text") return true;
+  return event.type === "done" && !event.id.startsWith("status-") && !event.id.startsWith("seed-");
+}
+
 export type SlashInputKind =
   | { kind: "plain" }
   | { kind: "command"; token: string }
