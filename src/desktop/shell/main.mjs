@@ -1,13 +1,31 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell } from "electron";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, release, freemem, totalmem } from "node:os";
 import { spawn } from "node:child_process";
 import { DesktopShellHost } from "../../../dist/desktop/shellHost.js";
 import { requireBranchName, requirePaths, requireString } from "../../../dist/desktop/ipcContract.js";
 import { resolveNodeExecutable } from "../../../dist/desktop/runtime.js";
 import { VERSION } from "../../../dist/version.js";
+import { DesktopDebugLog, desktopDebugDirectory, diagnosticError } from "../../../dist/desktop/debugLog.js";
+
+const debugLog = new DesktopDebugLog(desktopDebugDirectory(), process.env.CLOUDCODE_DESKTOP_DEBUG !== "0");
+debugLog.write("startup", { version: VERSION, platform: process.platform, osRelease: release(), arch: process.arch,
+  electron: process.versions.electron, node: process.versions.node, chrome: process.versions.chrome, packaged: app.isPackaged, totalMemory: totalmem() });
+process.on("uncaughtExceptionMonitor", (error, origin) => debugLog.write("main-uncaught-exception", { ...diagnosticError(error), origin }));
+process.on("exit", code => debugLog.write("main-exit", { code }));
+app.on("child-process-gone", (_event, details) => debugLog.write("child-process-gone", { type: details.type, reason: details.reason, exitCode: details.exitCode }));
+const memoryTimer = setInterval(() => {
+  const memory = process.memoryUsage();
+  debugLog.write("heartbeat", { rss: memory.rss, heapUsed: memory.heapUsed, external: memory.external, freeMemory: freemem() });
+  if (debugLog.enabled && app.isReady()) {
+    for (const metric of app.getAppMetrics()) {
+      debugLog.write("process-memory", { processPid: metric.pid, type: metric.type, workingSetKB: metric.memory.workingSetSize, peakWorkingSetKB: metric.memory.peakWorkingSetSize });
+    }
+  }
+}, 15000);
+memoryTimer.unref();
 
 const desktopDir = fileURLToPath(new URL(".", import.meta.url));
 // Packaged layout: src/desktop/shell/main.mjs lives inside app.asar, resources at process.resourcesPath.
@@ -49,15 +67,28 @@ function startChatBackend() {
   const backendCwd = existsSync(projectRoot) ? projectRoot : homedir();
   chatChild = spawn(executable, [cliPath, "--gui-server"], {
     cwd: backendCwd,
-    stdio: ["pipe", "pipe", "inherit"],
+    stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true
+  });
+  const child = chatChild;
+  debugLog.write("backend-start", { childPid: child.pid, runtime: executable === process.execPath ? "current-executable" : "external-node" });
+  child.stderr.on("data", chunk => {
+    const text = chunk.toString();
+    debugLog.write("backend-stderr", { childPid: child.pid, bytes: chunk.length,
+      outOfMemory: /heap out of memory|allocation failed|out of memory/i.test(text) });
   });
   // Writes to a dead child's stdin surface as async EPIPE 'error' events,
   // which Electron shows as an "Uncaught Exception" dialog (seen on app
   // close when a status poll races the backend teardown). Swallow them and
   // drop the reference so the next write restarts the backend instead.
-  chatChild.stdin.on("error", () => { stopChatBackend(); });
-  chatChild.on("error", () => { stopChatBackend(); });
+  chatChild.stdin.on("error", error => {
+    debugLog.write("backend-stdin-error", { childPid: child.pid, ...diagnosticError(error) });
+    if (chatChild === child) stopChatBackend();
+  });
+  chatChild.on("error", error => {
+    debugLog.write("backend-error", { childPid: child.pid, ...diagnosticError(error) });
+    if (chatChild === child) stopChatBackend();
+  });
   let buffer = "";
   chatChild.stdout.setEncoding("utf8");
   chatChild.stdout.on("data", (chunk) => {
@@ -68,10 +99,13 @@ function startChatBackend() {
     buffer = buffer.slice(newline + 1);
     for (const line of complete) {
       if (!line) continue;
-      try { send("cloudcode:chat-event", JSON.parse(line)); } catch { /* malformed child output is ignored */ }
+      try { send("cloudcode:chat-event", JSON.parse(line)); }
+      catch (error) { debugLog.write("backend-output-error", { childPid: child.pid, bytes: Buffer.byteLength(line), ...diagnosticError(error) }); }
     }
   });
-  chatChild.on("exit", () => {
+  chatChild.on("exit", (code, signal) => {
+    debugLog.write("backend-exit", { childPid: child.pid, code, signal, current: chatChild === child, quitting });
+    if (chatChild !== child) return;
     chatChild = undefined;
     // Reserved backend id: the renderer shows the exit banner only for this id.
     send("cloudcode:chat-event", { id: "backend", type: "error", text: "Chat backend exited." });
@@ -81,6 +115,7 @@ function startChatBackend() {
 function stopChatBackend() {
   if (!chatChild) return;
   const active = chatChild;
+  debugLog.write("backend-stop", { childPid: active.pid, quitting });
   chatChild = undefined;
   try { active.kill(); } catch { /* already exited */ }
 }
@@ -97,7 +132,8 @@ function writeChatBackend(line) {
     if (!chatChild) return false;
     chatChild.stdin.write(`${line}\n`);
     return true;
-  } catch {
+  } catch (error) {
+    debugLog.write("backend-write-error", diagnosticError(error));
     stopChatBackend();
     if (!quitting) startChatBackend();
     return false;
@@ -138,6 +174,16 @@ function createWindow() {
     title: `CloudCode v${VERSION}`,
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, preload: join(desktopDir, "preload.cjs") }
   });
+  window.on("close", () => debugLog.write("window-close", { quitting }));
+  window.on("closed", () => debugLog.write("window-closed"));
+  window.on("unresponsive", () => debugLog.write("window-unresponsive"));
+  window.on("responsive", () => debugLog.write("window-responsive"));
+  window.webContents.on("render-process-gone", (_event, details) => debugLog.write("renderer-gone", { reason: details.reason, exitCode: details.exitCode }));
+  window.webContents.on("did-fail-load", (_event, code, _description, _url, mainFrame) => debugLog.write("renderer-load-failed", { code, mainFrame }));
+  window.webContents.on("did-finish-load", () => debugLog.write("renderer-loaded"));
+  window.webContents.on("console-message", (_event, details) => {
+    if (details.level === "error") debugLog.write("renderer-console-error", { line: details.lineNumber });
+  });
   // Custom menu: the only addition over Electron's default is File > Save
   // Workspace As... The main process cannot know the active workspace, so the
   // click notifies the renderer, which runs its own save flow and no-ops
@@ -151,11 +197,20 @@ function createWindow() {
     ]},
     { role: "editMenu" },
     { role: "viewMenu" },
-    { role: "windowMenu" }
+    { role: "windowMenu" },
+    { label: "Help", submenu: [
+      { label: "Open Debug Log Folder", click: () => {
+        debugLog.write("open-log-folder");
+        void shell.openPath(debugLog.directory).then(error => {
+          if (error) dialog.showErrorBox("Debug Logs", "Unable to open the debug log folder.");
+        }).catch(error => debugLog.write("open-log-folder-error", diagnosticError(error)));
+      } }
+    ] }
   ]));
   const devServer = process.env.CLOUDCODE_DESKTOP_DEV_SERVER;
-  if (devServer) void window.loadURL(devServer);
-  else void window.loadFile(join(desktopDir, "..", "..", "..", "dist", "renderer", "index.html"));
+  const loaded = devServer ? window.loadURL(devServer)
+    : window.loadFile(join(desktopDir, "..", "..", "..", "dist", "renderer", "index.html"));
+  void loaded.catch(error => debugLog.write("window-load-error", diagnosticError(error)));
 }
 
 ipcMain.handle("cloudcode:open-project", async () => {
@@ -317,6 +372,10 @@ ipcMain.handle("cloudcode:set-native-theme", (_event, name) => {
   setNativeTheme(name);
 });
 
-app.whenReady().then(createWindow);
-app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
-app.on("before-quit", () => { quitting = true; stopChatBackend(); });
+app.whenReady().then(createWindow).catch(error => {
+  debugLog.write("startup-error", diagnosticError(error));
+  app.exit(1);
+});
+app.on("window-all-closed", () => { debugLog.write("window-all-closed"); if (process.platform !== "darwin") app.quit(); });
+app.on("before-quit", () => { debugLog.write("before-quit"); quitting = true; clearInterval(memoryTimer); stopChatBackend(); });
+app.on("will-quit", () => debugLog.write("will-quit"));

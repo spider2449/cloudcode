@@ -449,6 +449,10 @@ Input supports cursor movement (←/→), command history (↑/↓, persisted to
 
 ## Desktop app
 
+Desktop debug logs are enabled by default. Use **Help > Open Debug Log Folder**
+after a failure; see [Desktop debug logs](docs/desktop-debug-logs.md) for recorded
+events, file limits, and disabling diagnostics.
+
 An optional Electron shell with a native chat UI: project and session
 navigation on the left, a React chat pane in the center, Git status and local
 Git actions on the right. The renderer talks to a headless
