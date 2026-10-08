@@ -56,12 +56,15 @@ export function makeClient(cfg: ProviderConfig, auth?: ClientAuth): MessagesClie
   });
   return {
     async *create(req, signal) {
-      // Per-request betas (e.g. context-management) ride in the request body;
-      // the SDK merges them with defaultHeaders (OAuth) automatically.
+      // Request beta headers override SDK defaults, so include OAuth explicitly.
+      const betas = [...new Set([
+        ...(req.betas ?? []),
+        ...(auth ? [auth.betaHeader ?? OAUTH_BETA_HEADER] : [])
+      ])];
       // Separate branches: beta and stable create() overloads are incompatible
       // as a union, so they cannot share one callable reference.
       const stream = req.betas !== undefined && req.betas.length > 0
-        ? await anthropic.beta.messages.create({ ...req, stream: true } as never, { signal })
+        ? await anthropic.beta.messages.create({ ...req, betas, stream: true } as never, { signal })
         : await anthropic.messages.create({ ...req, stream: true } as never, { signal });
       for await (const event of stream as unknown as AsyncIterable<Record<string, unknown>>) yield event;
     }

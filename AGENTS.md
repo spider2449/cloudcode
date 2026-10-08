@@ -148,8 +148,8 @@ None currently tracked. See "Closed" below for what's been addressed.
 Closed: CI (`.github/workflows/ci.yml`, runs lint/size-check/build/test/audit
 on push and PR to `master`), linting (`oxlint`, via `npm run lint`), the
 module-size ceiling (`npm run lint:size`), dependency
-auditing (`npm audit --audit-level=high` in CI plus `.github/dependabot.yml`
-for weekly npm/Actions update PRs), the missing `LICENSE` file, and a
+auditing (`npm audit --audit-level=high` in CI; dependency updates are
+manual to avoid automated update PRs), the missing `LICENSE` file, and a
 release smoke test (`.github/workflows/release-smoke-test.yml`, triggered
 on `v*` tags: builds the npm package and the Windows/Linux compiled
 binaries, then runs each with `--version` to catch a broken packaging
