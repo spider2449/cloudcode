@@ -69,7 +69,15 @@ export function GitRepoCard({ workspaceId, repoId, repoName, state, collapsed, o
   const toggleSection = (id: SectionId) => setCollapsedSections(current => ({ ...current, [id]: !current[id] }));
   const staged = state?.files.filter(file => file.index !== " " && file.index !== "?") ?? [];
   const changes = state?.files.filter(file => file.workingTree !== " " || file.index === "?") ?? [];
-  useEffect(() => { void git.branches().then(setBranches).catch(() => setBranches([])); }, [git, state?.branch]);
+  // Re-read branches on every status poll (not only when the current branch
+  // changes): a branch deleted outside the panel (terminal, agent) must drop
+  // out of the dropdown, or selecting it fails with "invalid reference".
+  useEffect(() => {
+    let disposed = false;
+    void git.branches().then(next => { if (!disposed) setBranches(current => sameBranches(current, next) ? current : next); }).catch(() => { if (!disposed) setBranches([]); });
+    return () => { disposed = true; };
+  }, [git, state]);
+  const branchList = branchOptions(branches, state?.branch);
   useEffect(() => {
     if (!selected) { setDiff(undefined); return; }
     let disposed = false;
@@ -87,7 +95,7 @@ export function GitRepoCard({ workspaceId, repoId, repoName, state, collapsed, o
   if (collapsed === true) return <section className="git-repo">{header}</section>;
   return <section className="git-repo">{header}{!state ? <p className="git-empty">Reading repository status…</p> : !state.isGitRepo ? <p className="git-empty">{state.error ?? "Not a Git repository."}</p> : <>
     {state.truncated && <p className="git-error">Status is truncated; some files may be missing.</p>}
-    <div className="git-branch"><select aria-label="Current branch" value={state.branch ?? ""} disabled={busy} onChange={event => void mutate(() => git.checkout(event.target.value))}>{branches.map(branch => <option key={branch}>{branch}</option>)}</select><input aria-label="New branch" placeholder="New branch" value={newBranch} onChange={event => setNewBranch(event.target.value)} /><button disabled={busy || !newBranch.trim()} onClick={() => void mutate(async () => { await git.createBranch(newBranch.trim()); setNewBranch(""); })}>Create</button></div>
+    <div className="git-branch"><select aria-label="Current branch" value={state.branch ?? ""} disabled={busy} onChange={event => { const target = event.target.value; if (target && target !== state.branch) void mutate(() => git.checkout(target)); }}>{branchList.map(branch => <option key={branch}>{branch}</option>)}</select><input aria-label="New branch" placeholder="New branch" value={newBranch} onChange={event => setNewBranch(event.target.value)} /><button disabled={busy || !newBranch.trim()} onClick={() => void mutate(async () => { await git.createBranch(newBranch.trim()); setNewBranch(""); })}>Create</button></div>
     <CollapsibleSection id="sync" title={`SYNC · ${state.upstream ?? "untracked"}`} actions={<button disabled={busy || !state.upstream} onClick={() => void mutate(() => git.fetch())}>Fetch</button>} collapsed={collapsedSections.sync} onToggle={() => toggleSection("sync")}><div className="git-sync-line"><span>↑{state.ahead} ahead · ↓{state.behind} behind · {formatRelativeTime(state.lastFetchedAt)}</span></div><div className="git-sync-actions"><button disabled={busy || (!state.upstream && !state.branch) || (state.ahead === 0 && !!state.upstream)} onClick={() => void mutate(() => state.upstream ? git.push() : git.push(state.branch))}>Push{state.ahead ? ` ↑${state.ahead}` : ""}</button><button disabled={busy || !state.upstream || state.behind === 0} onClick={() => void mutate(async () => { await git.fetch(); await git.pull(); })}>Pull{state.behind ? ` ↓${state.behind}` : ""}</button></div>{!state.upstream && <p className="git-hint">Untracked branch — Push sets upstream to origin/{state.branch}.</p>}</CollapsibleSection>
     {state.lastCommit ? <CollapsibleSection id="current" title="CURRENT" collapsed={collapsedSections.current} onToggle={() => toggleSection("current")}><div className="git-commit-line" title={`${state.lastCommit.hash} · ${state.lastCommit.author} · ${state.lastCommit.date}`}><span className="git-hash">{state.lastCommit.shortHash}</span><span>{state.lastCommit.subject}</span></div><div className="git-meta">{state.lastCommit.author} · {state.lastCommit.date}</div></CollapsibleSection> : <p className="git-empty">No commits yet.</p>}
     {state.recent.length > 1 && <CollapsibleSection id="recent" title={`RECENT · ${state.recent.length}`} collapsed={collapsedSections.recent} onToggle={() => toggleSection("recent")}>{state.recent.slice(1).map(commit => <div className="git-commit-line" key={commit.hash} title={`${commit.hash} · ${commit.author} · ${commit.date}`}><span className="git-hash">{commit.shortHash}</span><span>{commit.subject}</span></div>)}</CollapsibleSection>}
@@ -117,6 +125,10 @@ function GitFileGroup({ title, files, status, action, disabled, collapsed, onTog
 }
 
 export function gitStatusLabel(status: string): string { return status === "?" || status === "A" ? "A" : status === "D" ? "D" : status === "R" ? "R" : status === "U" ? "U" : "M"; }
+export function sameBranches(a: string[], b: string[]): boolean { return a.length === b.length && a.every((branch, index) => branch === b[index]); }
+// The current branch always appears, so the select never falls back to
+// displaying (and then "switching" to) some other, possibly stale, entry.
+export function branchOptions(branches: string[], current: string | undefined): string[] { return current && !branches.includes(current) ? [current, ...branches] : branches; }
 export function gitFilePaths(file: GitFile): string[] { return file.originalPath ? [file.path, file.originalPath] : [file.path]; }
 export function collapseToggleLabel(collapsed: boolean, title: string): string { return `${collapsed ? "Expand" : "Collapse"} ${title}`; }
 export function isSectionCollapsed(value: boolean | undefined): boolean { return value === true; }

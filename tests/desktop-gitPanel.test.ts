@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collapseToggleLabel, formatRelativeTime, gitFilePaths, gitStatusLabel, isSectionCollapsed } from "../src/desktop/renderer/gitPanel.js";
+import { branchOptions, collapseToggleLabel, formatRelativeTime, gitFilePaths, gitStatusLabel, isSectionCollapsed, sameBranches } from "../src/desktop/renderer/gitPanel.js";
 
 describe("git status labels", () => {
   it("maps index/working-tree codes to badge letters", () => {
@@ -39,5 +39,17 @@ describe("relative fetch time", () => {
     expect(formatRelativeTime(Date.now())).toBe("just now");
     expect(formatRelativeTime(Date.now() - 5 * 60_000)).toBe("5 min ago");
     expect(formatRelativeTime(Date.now() - 3 * 3_600_000)).toBe("3 h ago");
+  });
+});
+describe("branch dropdown helpers", () => {
+  it("detects unchanged branch lists", () => {
+    expect(sameBranches(["main", "dev"], ["main", "dev"])).toBe(true);
+    expect(sameBranches(["main", "dev"], ["main"])).toBe(false);
+    expect(sameBranches(["main", "dev"], ["dev", "main"])).toBe(false);
+  });
+  it("keeps the current branch listed even when the ref list lacks it", () => {
+    expect(branchOptions(["main", "dev"], "dev")).toEqual(["main", "dev"]);
+    expect(branchOptions(["main"], "HEAD (no branch)")).toEqual(["HEAD (no branch)", "main"]);
+    expect(branchOptions([], undefined)).toEqual([]);
   });
 });
